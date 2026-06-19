@@ -1,0 +1,8 @@
+node_modules/
+.next/
+uploads/
+backups/
+.env
+.mongo-memory/
+*.log
+.DS_Store

@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html, body {
+  padding: 0;
+  margin: 0;
+}
+body {
+  font-family: var(--font-sans);
+  color: theme("colors.ink");
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keep autofilled inputs white instead of the browser's lavender/yellow fill. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: theme("colors.slate.900");
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  caret-color: theme("colors.slate.900");
+  transition: background-color 9999s ease-in-out 0s;
+}
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-text-fill-color: theme("colors.slate.100");
+  -webkit-box-shadow: 0 0 0 1000px theme("colors.slate.800") inset;
+  caret-color: theme("colors.slate.100");
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition;
+  }
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700 shadow-sm;
+  }
+  .btn-ghost {
+    @apply bg-slate-100 text-slate-700 hover:bg-slate-200;
+  }
+  .btn-success { @apply bg-emerald-600 text-white hover:bg-emerald-700; }
+  .btn-danger { @apply bg-rose-600 text-white hover:bg-rose-700; }
+  .btn-sm { @apply px-3 py-1.5 text-xs; }
+
+  .card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-card;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-100 transition;
+  }
+  .label { @apply block text-xs font-medium text-slate-500 mb-1; }
+
+  .chip { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .chip-public { @apply bg-emerald-50 text-emerald-700; }
+  .chip-necessary { @apply bg-amber-50 text-amber-700; }
+  .chip-sensitive { @apply bg-rose-50 text-rose-700; }
+  .chip-status { @apply bg-brand-50 text-brand-700; }
+  .chip-gray { @apply bg-slate-100 text-slate-600; }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600
+      hover:bg-slate-100 hover:text-slate-900 transition;
+  }
+  .nav-link-active {
+    @apply bg-brand-50 text-brand-700 hover:bg-brand-50 hover:text-brand-700;
+  }
+}
+
+/* ---- Org chart: top-down tree with connector lines ---- */
+.orgtree { --oc: #cbd5e1; }
+.orgtree ul {
+  position: relative;
+  padding: 26px 0 0;
+  margin: 0;
+  white-space: nowrap;
+  text-align: center;
+}
+.orgtree li {
+  display: inline-block;
+  vertical-align: top;
+  list-style: none;
+  position: relative;
+  padding: 26px 14px 0;
+}
+/* connectors between a node and its siblings/parent */
+.orgtree li::before,
+.orgtree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  border-top: 2px solid var(--oc);
+  width: 50%;
+  height: 26px;
+}
+.orgtree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid var(--oc);
+}
+.orgtree li:only-child::after,
+.orgtree li:only-child::before { display: none; }
+.orgtree li:only-child { padding-top: 0; }
+.orgtree li:first-child::before,
+.orgtree li:last-child::after { border: 0 none; }
+.orgtree li:last-child::before {
+  border-right: 2px solid var(--oc);
+  border-radius: 0 8px 0 0;
+}
+.orgtree li:first-child::after { border-radius: 8px 0 0 0; }
+/* vertical line dropping from a parent down to its children */
+.orgtree ul ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid var(--oc);
+  width: 0;
+  height: 26px;
+}
+.orgtree > ul { padding-top: 0; }
+.orgtree .oc-node { display: inline-block; white-space: normal; }
+
+/* ---- Org chart: VERTICAL indented tree with elbow connectors ---- */
+.vtree { --oc: #cbd5e1; }
+.vtree ul { list-style: none; margin: 0; padding: 0; }
+.vtree li { position: relative; padding: 7px 0 7px 34px; }
+/* vertical spine connecting a node to its siblings */
+.vtree li::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 0;
+  height: 100%;
+  border-left: 2px solid var(--oc);
+}
+/* last/only child: spine only reaches the elbow (no dangling tail) */
+.vtree li:last-child::before,
+.vtree li:only-child::before { height: 50%; }
+/* horizontal elbow into the node, at its vertical centre */
+.vtree li::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  width: 19px;
+  border-top: 2px solid var(--oc);
+}
+/* root node: no indent, no connectors */
+.vtree > ul > li { padding-left: 0; }
+.vtree > ul > li::before,
+.vtree > ul > li::after { display: none; }
+.vtree .oc-node { display: inline-block; }
