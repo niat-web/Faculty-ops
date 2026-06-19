@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
@@ -64,13 +65,15 @@ export function clearPending2FA() {
 }
 
 // Plain object (not a Mongoose doc) safe to pass to client components.
-export async function getCurrentUser() {
+// Wrapped in React cache() so the layout + page in one render share a single
+// DB lookup instead of hitting Atlas twice per navigation.
+export const getCurrentUser = cache(async () => {
   const token = cookies().get(COOKIE)?.value;
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret);
     await connectDB();
-    const u = await User.findById(payload.sub).lean();
+    const u = await User.findById(payload.sub).select("email name role active managerId").lean();
     if (!u || !u.active) return null;
     return {
       id: String(u._id),
@@ -82,7 +85,7 @@ export async function getCurrentUser() {
   } catch {
     return null;
   }
-}
+});
 
 export async function requireUser(allowedRoles) {
   const user = await getCurrentUser();

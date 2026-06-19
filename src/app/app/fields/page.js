@@ -15,10 +15,14 @@ export default async function FieldsPage() {
   const defs = await FieldDefinition.find().sort({ archivedAt: 1, module: 1, createdAt: 1 }).lean();
   const instructors = await Instructor.find().select("name employeeId").sort({ employeeId: 1 }).lean();
 
-  // value counts per field key (best-effort)
-  const all = await Instructor.find().select("values").lean();
-  const counts = {};
-  for (const i of all) for (const k of Object.keys(i.values || {})) counts[k] = (counts[k] || 0) + 1;
+  // Value counts per field key — computed in the DB (avoids shipping every
+  // instructor's `values` object to the server just to tally them).
+  const countAgg = await Instructor.aggregate([
+    { $project: { kv: { $objectToArray: { $ifNull: ["$values", {}] } } } },
+    { $unwind: "$kv" },
+    { $group: { _id: "$kv.k", n: { $sum: 1 } } },
+  ]);
+  const counts = Object.fromEntries(countAgg.map((c) => [c._id, c.n]));
 
   return (
     <div className="space-y-5">

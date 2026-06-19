@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, GitPullRequestArrow, Layers,
   Network, History, UserCog, X, UploadCloud, Workflow,
-  ChevronRight, User as UserIcon, Settings, LogOut,
+  ChevronRight, User as UserIcon, Settings, LogOut, GraduationCap,
 } from "lucide-react";
 import { ROLE_LABEL } from "@/lib/enums.js";
 import Logo from "./Logo.js";
@@ -14,6 +14,7 @@ import Logo from "./Logo.js";
 const ICONS = {
   dashboard: LayoutDashboard, instructors: Users, requests: GitPullRequestArrow,
   fields: Layers, mapping: Network, audit: History, users: UserCog, import: UploadCloud, org: Workflow,
+  training: GraduationCap,
 };
 
 export default function Sidebar({ user, nav, open, onClose }) {

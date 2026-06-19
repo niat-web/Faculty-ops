@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth.js";
-import { connectDB } from "@/lib/db.js";
-import { Notification } from "@/models/index.js";
 import {
   canApproveRequests, canSubmitRequests, canManageSchema,
-  canManageMapping, canManageUsers, canViewAudit,
+  canManageMapping, canManageUsers, canViewAudit, canEditDirectly,
 } from "@/lib/rbac.js";
 import AppShell from "@/components/AppShell.js";
 
@@ -12,11 +10,11 @@ export default async function AppLayout({ children }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  await connectDB();
-  const unread = await Notification.countDocuments({ userId: user.id, read: false });
-
   const nav = [{ href: "/app", label: "Dashboard", icon: "dashboard" }];
   nav.push({ href: "/app/instructors", label: "Instructors", icon: "instructors" });
+  // Training stats grid — Ops Admin, Senior Manager and Capability Manager.
+  if (canEditDirectly(user) || canSubmitRequests(user))
+    nav.push({ href: "/app/training", label: "Instructors Training Stats", icon: "training" });
   if (canApproveRequests(user) || canSubmitRequests(user))
     nav.push({ href: "/app/requests", label: "Requests", icon: "requests" });
   if (canManageSchema(user)) nav.push({ href: "/app/fields", label: "Dynamic Fields", icon: "fields" });
@@ -27,7 +25,7 @@ export default async function AppLayout({ children }) {
   if (canViewAudit(user)) nav.push({ href: "/app/audit", label: "Audit Log", icon: "audit" });
 
   return (
-    <AppShell user={user} nav={nav} unread={unread}>
+    <AppShell user={user} nav={nav}>
       {children}
     </AppShell>
   );

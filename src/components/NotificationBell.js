@@ -18,6 +18,7 @@ export default function NotificationBell({ initial = 0 }) {
         if (typeof j.unread === "number") setUnread(j.unread);
       } catch {}
     }
+    poll(); // fetch once on mount (no server-side initial count anymore)
     const id = setInterval(poll, 30000);
     const onFocus = () => poll();
     window.addEventListener("focus", onFocus);
