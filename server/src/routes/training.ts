@@ -3,6 +3,7 @@ import { Instructor, User, FieldDefinition, TrainingColumn } from "../models";
 import { Role } from "../enums";
 import { instructorScopeFilter, canAccessInstructor } from "../lib/rbac";
 import { tabForInstructor, TRACK_META, seedTrainingColumns, STATUS_OPTIONS } from "../lib/training";
+import { computeSummary, summaryStored, COMPUTED_KEYS } from "../lib/trainingScore";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
 import { writeAudit } from "../lib/services";
 import { requireUser } from "../middleware";
@@ -63,6 +64,8 @@ router.get("/", staffGuard, async (req, res) => {
     trackCount[tab] = (trackCount[tab] || 0) + 1;
     const vals: Record<string, string> = {};
     for (const k of valueKeys) vals[k] = (sensitiveKeys.has(k) ? maybeDecrypt(values[k]) : values[k]) ?? "";
+    // Summary cells are always computed live from the dropdowns — never trust stale stored numbers.
+    Object.assign(vals, summaryStored(computeSummary(vals, moduleStatus, tab)));
     rows.push({ id: String(d._id), tab, employeeId: d.employeeId, name: d.name, manager: d.currentManagerId ? (mgrName[String(d.currentManagerId)] || "—") : "—", values: vals, moduleStatus });
   }
   rows.sort((a, b) => (a.employeeId || "").localeCompare(b.employeeId || ""));
@@ -181,6 +184,9 @@ router.post("/", staffGuard, async (req, res) => {
   if (!["module", "value"].includes(target)) return res.status(400).json({ error: "Bad target" });
   if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
 
+  // Summary cells are calculated from the dropdowns — they can't be edited directly.
+  if (target === "value" && (COMPUTED_KEYS as readonly string[]).includes(key)) return res.status(400).json({ error: "This column is calculated automatically and can't be edited." });
+
   // The key MUST be a real training column (prevents writing arbitrary/sensitive keys here).
   const col: any = await TrainingColumn.findOne({ key, storage: target, archivedAt: null, ...(track ? { track } : {}) }).lean();
   if (!col) return res.status(400).json({ error: "Unknown training column" });
@@ -191,19 +197,27 @@ router.post("/", staffGuard, async (req, res) => {
   const inst: any = await Instructor.findById(instructorId);
   if (!inst) return res.status(404).json({ error: "Not found" });
 
+  let auditField = col.label;
+  let auditValue = clean || "(cleared)";
   if (target === "module") {
     if (clean) inst.moduleStatus.set(key, clean); else inst.moduleStatus.delete(key);
-    await inst.save();
-    await writeAudit({ instructorId, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: col.label, newValue: clean || "(cleared)", reason: "Training stats update" });
-    return res.json({ ok: true });
+  } else {
+    // value: encrypt only if a matching field happens to be SENSITIVE.
+    const def: any = await FieldDefinition.findOne({ key, archivedAt: null }).select("visibility label").lean();
+    const sensitive = def?.visibility === "SENSITIVE";
+    if (clean) inst.values.set(key, sensitive ? encrypt(clean) : clean); else inst.values.delete(key);
+    auditField = def?.label || col.label;
+    auditValue = sensitive ? "••••" : (clean || "(cleared)");
   }
-  // value: encrypt only if a matching field happens to be SENSITIVE.
-  const def: any = await FieldDefinition.findOne({ key, archivedAt: null }).select("visibility label").lean();
-  const sensitive = def?.visibility === "SENSITIVE";
-  if (clean) inst.values.set(key, sensitive ? encrypt(clean) : clean); else inst.values.delete(key);
+
+  // Recompute the summary from the just-applied change and persist it (so dashboards/exports stay in sync).
+  const tab = track || tabForInstructor(Object.fromEntries(inst.values), Object.fromEntries(inst.moduleStatus));
+  const summary = tab ? summaryStored(computeSummary(Object.fromEntries(inst.values), Object.fromEntries(inst.moduleStatus), tab)) : null;
+  if (summary) for (const [k, v] of Object.entries(summary)) { if (v) inst.values.set(k, v); else inst.values.delete(k); }
+
   await inst.save();
-  await writeAudit({ instructorId, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: def?.label || col.label, newValue: sensitive ? "••••" : (clean || "(cleared)"), reason: "Training stats update" });
-  res.json({ ok: true });
+  await writeAudit({ instructorId, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: auditField, newValue: auditValue, reason: "Training stats update" });
+  res.json({ ok: true, summary });
 });
 
 export default router;

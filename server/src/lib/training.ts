@@ -71,13 +71,36 @@ const CONTEXT_SEED = [
   { label: "Ongoing Start", key: "ongoing_start", type: "DATE" },
   { label: "Deadline", key: "track_deadline", type: "DATE" },
 ];
-// Summary value-columns shown AFTER the module columns.
-const SUMMARY_SEED = [
-  { label: "Primary %", key: "primary_pct", type: "NUMBER" },
-  { label: "Secondary %", key: "secondary_pct", type: "NUMBER" },
-  { label: "Health", key: "health_status", type: "TEXT" },
-  { label: "Predicted Completion", key: "predicted_completion", type: "TEXT" },
-];
+// --- Dropdown option sets for the editable post-module columns ---
+export const REPORTING_DAY_OPTS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "NONE", "DEPLOYED"];
+const SEM_OPTS: Record<string, string[]> = {
+  tech: ["BACKENDPROJECTS", "DEVELOPER FOUNDATION", "DIA", "DSA", "DYNAMIC", "FRONT END PROJECTS", "GEN AI", "IPS", "JS ESSENTIALS", "JS SPRINT", "LLM", "MODERN RESPONSIVE", "MONGO DB", "NODE JS", "PYTHON", "REACT JS", "RESPONSIVE", "SQL", "STATIC", "NONE", "WORK FROM HOME", "MERN"],
+  math_aptitude: ["Quanitative Aptitude", "Numerical Ability", "Logical Reasoning", "Advanced Aptitude", "Mathematics for Computer science", "Probability and Statistics", "Linear Algebra and Calculus", "In Training", "Work From Home"],
+  english: ["Communicative English Foundation", "Communicative English Advanced", "Communicative English Applied", "Language Analytics", "WORK FROM HOME", "NA"],
+};
+
+// Post-module columns shown AFTER the module columns, in display order (matches the source sheets).
+// Computed cells (group "Summary") are recomputed live and rendered read-only; the rest are editable.
+export type TrainingColDef = { label: string; key: string; storage: "value"; type: string; group: string; options: string[] };
+const sem1 = (t: string): TrainingColDef => ({ label: "SEM 1", key: "sem1", storage: "value", type: "DROPDOWN", group: "", options: SEM_OPTS[t] });
+const sem2 = (t: string): TrainingColDef => ({ label: "SEM 2", key: "sem2", storage: "value", type: "DROPDOWN", group: "", options: SEM_OPTS[t] });
+const repDay: TrainingColDef = { label: "Reporting Day", key: "reporting_day", storage: "value", type: "DROPDOWN", group: "", options: REPORTING_DAY_OPTS };
+const remarks: TrainingColDef = { label: "Remarks", key: "remarks", storage: "value", type: "TEXT", group: "", options: [] };
+const otherLearn: TrainingColDef = { label: "Other learnings", key: "other_learnings", storage: "value", type: "TEXT", group: "", options: [] };
+const cmp = (label: string, key: string, type: string): TrainingColDef => ({ label, key, storage: "value", type, group: "Summary", options: [] });
+const PRIMARY_PCT = cmp("Primary % Done", "primary_pct", "NUMBER");
+const PRIMARY_HEALTH = cmp("Health Status", "health_status", "TEXT");
+const PRIMARY_PRED = cmp("Predicted Completion", "predicted_completion", "TEXT");
+const SECONDARY_PCT = cmp("Secondary % Done", "secondary_pct", "NUMBER");
+const SECONDARY_HEALTH = cmp("Health Status", "secondary_health_status", "TEXT");
+const SECONDARY_PRED = cmp("Predicted Completion", "secondary_predicted_completion", "TEXT");
+
+export function summaryColumnsFor(track: string): TrainingColDef[] {
+  if (track === "tech") return [PRIMARY_PCT, PRIMARY_HEALTH, PRIMARY_PRED, SECONDARY_PCT, SECONDARY_HEALTH, SECONDARY_PRED, sem1("tech"), sem2("tech"), repDay, otherLearn, remarks];
+  if (track === "math_aptitude") return [sem1("math_aptitude"), sem2("math_aptitude"), repDay, PRIMARY_PCT, PRIMARY_HEALTH, PRIMARY_PRED, SECONDARY_PCT, SECONDARY_HEALTH, SECONDARY_PRED, remarks];
+  if (track === "english") return [sem1("english"), sem2("english"), repDay, PRIMARY_PCT, PRIMARY_HEALTH, PRIMARY_PRED, remarks];
+  return [];
+}
 
 // On first use, materialise the hardcoded taxonomy into editable TrainingColumn docs.
 let _backfilled = false;
@@ -90,7 +113,7 @@ export async function seedTrainingColumns() {
       for (const c of CONTEXT_SEED) docs.push({ track: tab.key, group: "Context", label: c.label, key: c.key, storage: "value", type: c.type, options: [], order: order++ });
       // STATUS columns carry their (editable) option set so admins can rename/add statuses.
       for (const g of tab.groups) for (const m of g.modules) docs.push({ track: tab.key, group: g.name, label: m, key: m, storage: "module", type: "STATUS", options: [...STATUS_OPTIONS], order: order++ });
-      for (const s of SUMMARY_SEED) docs.push({ track: tab.key, group: "Summary", label: s.label, key: s.key, storage: "value", type: s.type, options: [], order: order++ });
+      for (const s of summaryColumnsFor(tab.key)) docs.push({ track: tab.key, group: s.group, label: s.label, key: s.key, storage: "value", type: s.type, options: s.options, order: order++ });
     }
     if (docs.length) await TrainingColumn.insertMany(docs);
   }

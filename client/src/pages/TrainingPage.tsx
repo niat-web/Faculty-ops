@@ -5,6 +5,9 @@ import { useToast } from "../toast";
 import Loading from "../components/Loading";
 import Pagination from "../components/Pagination";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
+import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
+
+const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
 
 const ID_W = 116, NAME_W = 200;
 
@@ -130,11 +133,23 @@ export default function TrainingPage() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => (
+            {shown.map((r) => {
+              // Recomputed every render → %, Health and Predicted update instantly when a dropdown changes.
+              const summary = computeSummary(r.values, r.moduleStatus, r.tab);
+              return (
               <tr key={r.id} className="group">
                 <td className="sticky z-20 border-b border-slate-100 bg-white px-3 py-3 font-mono text-[11px] text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W }}>{r.employeeId}</td>
                 <td className="sticky z-20 whitespace-nowrap border-b border-slate-100 bg-white px-3 py-3 font-medium text-slate-800" style={{ left: ID_W, minWidth: NAME_W }}>{r.name}</td>
                 {cols.map((col) => {
+                  // Computed (read-only) summary cells.
+                  if (COMPUTED.has(col.key)) {
+                    const { text, tone: ctone } = summaryCell(col.key, summary);
+                    return (
+                      <td key={col.id} className="border-b border-l border-slate-100 p-0 text-center">
+                        <div className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${ctone ? TONE[ctone] : "text-slate-600"}`} title="Calculated automatically">{text}</div>
+                      </td>
+                    );
+                  }
                   const val = cellValue(r, col);
                   const isEditing = edit && edit.id === r.id && edit.colKey === col.key;
                   const isStatus = col.type === "STATUS";
@@ -162,7 +177,8 @@ export default function TrainingPage() {
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
             {!shown.length && <tr><td colSpan={2 + cols.length} className="px-5 py-8 text-center text-slate-400">No instructors in this track.</td></tr>}
           </tbody>
         </table>
