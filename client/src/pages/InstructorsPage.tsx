@@ -10,10 +10,14 @@ import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 
+const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
+
 export default function InstructorsPage() {
   const { user } = useAuth();
   const isOps = user!.role === "OPS_ADMIN";
   const canManage = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
+  // Ops/SM/CM can change a row's status inline (server enforces row-level scope for CMs).
+  const canEditStatus = canManage || user!.role === "CAPABILITY_MANAGER";
   const toast = useToast();
   const confirm = useConfirm();
   const prompt = usePrompt();
@@ -104,6 +108,17 @@ export default function InstructorsPage() {
   async function removeInstructor(i: any) {
     if (!(await confirm({ title: "Delete instructor?", message: `Delete ${i.name} (${i.employeeId})? This cannot be undone.` }))) return;
     try { await api.del(`/instructors/${i.id}`); toast.success("Instructor deleted."); loadList(); } catch (e: any) { toast.error(e.message); }
+  }
+  // Inline status change — optimistic, reverts on error. Persists a lifecycle event server-side.
+  function setRowStatus(id: string, status: string) {
+    setData((d: any) => d ? { ...d, instructors: d.instructors.map((x: any) => x.id === id ? { ...x, status } : x) } : d);
+  }
+  async function changeStatus(i: any, status: string) {
+    if (status === i.status) return;
+    const prev = i.status;
+    setRowStatus(i.id, status);
+    try { await api.post(`/instructors/${i.id}/lifecycle`, { status }); toast.success(`${i.name} → ${LIFECYCLE_LABEL[status] || status}`); }
+    catch (e: any) { toast.error(e.message || "Failed to update status"); setRowStatus(i.id, prev); }
   }
 
   const rows: any[] = data?.instructors || [];
@@ -201,7 +216,15 @@ export default function InstructorsPage() {
                   <td className="px-5 py-3 text-slate-500">{i.campus || "—"}</td>
                   <td className="px-5 py-3 text-slate-500">{i.managerName || "—"}</td>
                   <td className="px-5 py-3">{i.training == null ? <span className="text-slate-300">—</span> : <div className="flex items-center gap-2"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(i.training), 100)}%` }} /></div><span className="text-xs text-slate-500">{i.training}%</span></div>}</td>
-                  <td className="px-5 py-3"><span className="chip chip-status">{LIFECYCLE_LABEL[i.status] || i.status}</span></td>
+                  <td className="px-5 py-3">
+                    {canEditStatus ? (
+                      <select value={i.status} onChange={(e) => changeStatus(i, e.target.value)} title="Change status" className="cursor-pointer rounded-full border-0 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 outline-none ring-1 ring-inset ring-transparent transition hover:ring-brand-200 focus:ring-2 focus:ring-brand-300">
+                        {(LIFECYCLE_ORDER.includes(i.status) ? LIFECYCLE_ORDER : [i.status, ...LIFECYCLE_ORDER]).map((s) => <option key={s} value={s}>{LIFECYCLE_LABEL[s] || s}</option>)}
+                      </select>
+                    ) : (
+                      <span className="chip chip-status">{LIFECYCLE_LABEL[i.status] || i.status}</span>
+                    )}
+                  </td>
                   {isOps && (
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-1">
