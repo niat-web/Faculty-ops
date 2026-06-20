@@ -1,15 +1,20 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, Users2, Layers, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, LogOut, ChevronRight, UserCircle } from "lucide-react";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { GraduationCap, LayoutDashboard, Users2, Layers, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 
 const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
-const NAV = [
+const NAV: any[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
   { to: "/app/instructors", label: "Instructors", icon: Users2, roles: STAFF },
   { to: "/app/training", label: "Instructors Training Stats", icon: BookOpen, roles: STAFF },
+  { label: "Contribution", icon: Award, roles: STAFF, children: [
+    { to: "/app/contribution/distribution", label: "Contribution Distribution" },
+    { to: "/app/contribution/campuswise", label: "Campuswise Instructors" },
+    { to: "/app/contribution/managers", label: "Capability Manager Distribution" },
+  ] },
   { to: "/app/fields", label: "Dynamic Fields", icon: Layers, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   { to: "/app/mapping", label: "Assigns", icon: Network, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   { to: "/app/org", label: "Org Chart", icon: GitBranch, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
@@ -21,8 +26,10 @@ const NAV = [
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,11 +65,32 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <span><span className="block text-sm font-bold leading-tight">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
         </Link>
         <nav className="flex-1 space-y-1 overflow-y-auto">
-          {items.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
-              <n.icon className="h-4 w-4" /> <span className="flex-1">{n.label}</span>
-            </NavLink>
-          ))}
+          {items.map((n) => {
+            if (n.children) {
+              const childActive = n.children.some((c: any) => location.pathname.startsWith(c.to));
+              const open = openGroups[n.label] ?? childActive; // auto-open when a child is active
+              return (
+                <div key={n.label}>
+                  <button onClick={() => setOpenGroups((g) => ({ ...g, [n.label]: !open }))} className={`nav-link w-full text-left ${childActive ? "nav-link-active" : ""}`}>
+                    <n.icon className="h-4 w-4" /> <span className="flex-1">{n.label}</span>
+                    {open ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                  </button>
+                  {open && (
+                    <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
+                      {n.children.map((c: any) => (
+                        <NavLink key={c.to} to={c.to} className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"}`}>{c.label}</NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
+                <n.icon className="h-4 w-4" /> <span className="flex-1">{n.label}</span>
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* Profile row → opens a popup menu to the right with Edit profile / Notifications / Logout */}

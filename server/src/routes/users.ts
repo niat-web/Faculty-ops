@@ -21,7 +21,8 @@ router.get("/", opsOnly, async (req, res) => {
   const q = String(req.query.q || "").trim();
   const role = String(req.query.role || "").trim();
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
-  const PER = 50;
+  const reqPer = parseInt(String(req.query.per || ""), 10);
+  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
   const query: any = {};
   if (role) query.role = role;
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); query.$or = [{ name: rx }, { email: rx }]; }

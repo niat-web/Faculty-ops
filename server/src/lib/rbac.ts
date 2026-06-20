@@ -5,6 +5,9 @@ export interface SessionUser { id: string; email: string; name: string; role: st
 
 export const canManageUsers = (u: SessionUser) => u.role === Role.OPS_ADMIN;
 export const canEditDirectly = (u: SessionUser) => u.role === Role.OPS_ADMIN || u.role === Role.SENIOR_MANAGER;
+// Capability Managers may now edit their OWN reportees' details directly (row-level scope still
+// enforced via canAccessInstructor on every route). Ops/SM may edit anyone.
+export const canEditDetails = (u: SessionUser) => u.role === Role.OPS_ADMIN || u.role === Role.SENIOR_MANAGER || u.role === Role.CAPABILITY_MANAGER;
 export const canManageSchema = (u: SessionUser) => u.role === Role.OPS_ADMIN || u.role === Role.SENIOR_MANAGER;
 export const canManageMapping = (u: SessionUser) => u.role === Role.OPS_ADMIN || u.role === Role.SENIOR_MANAGER;
 export const canApproveRequests = (u: SessionUser) => u.role === Role.SENIOR_MANAGER;

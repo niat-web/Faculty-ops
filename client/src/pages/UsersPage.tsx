@@ -5,6 +5,7 @@ import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
+import Pagination from "../components/Pagination";
 
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
 
@@ -14,6 +15,7 @@ export default function UsersPage() {
   const dq = useDebouncedValue(q, 300);
   const [role, setRole] = useState("");
   const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null); // user object or {} for new
@@ -25,11 +27,11 @@ export default function UsersPage() {
   function load() { setReloadKey((k) => k + 1); }
   useEffect(() => {
     const ac = new AbortController();
-    const p = new URLSearchParams({ page: String(page) });
+    const p = new URLSearchParams({ page: String(page), per: String(per) });
     if (dq) p.set("q", dq); if (role) p.set("role", role);
     api.get(`/users?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
-  }, [dq, role, page, reloadKey]);
+  }, [dq, role, page, per, reloadKey]);
 
   async function remove(u: any) {
     if (!confirm(`Delete ${u.name}? This cannot be undone.`)) return;
@@ -101,15 +103,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {data && pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Page {data.page} of {pages}</span>
-          <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn btn-ghost btn-sm disabled:opacity-40">← Prev</button>
-            <button disabled={page >= pages} onClick={() => setPage((p) => p + 1)} className="btn btn-ghost btn-sm disabled:opacity-40">Next →</button>
-          </div>
-        </div>
-      )}
+      {data && <Pagination page={data.page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {editing && <UserModal user={editing} seniors={data?.seniors || []} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
       {invite && (

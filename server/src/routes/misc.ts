@@ -57,7 +57,8 @@ router.get("/audit", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const action = String(req.query.action || "").trim();
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
-  const PER = 50;
+  const reqPer = parseInt(String(req.query.per || ""), 10);
+  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
   const filter: any = {};
   if (action) filter.action = action;
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ instructorName: rx }, { actorName: rx }, { fieldName: rx }, { reason: rx }]; }

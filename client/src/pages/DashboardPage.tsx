@@ -83,7 +83,7 @@ function SeniorDash({ d, first }: any) {
         <StatCard label="Campuses" value={k.campuses} icon={Building2} tone="cyan" />
       </div>
       {k.pending > 0 && (
-        <Link to="/app/requests" className="flex items-center justify-between rounded-xl bg-amber-50 px-5 py-3 text-sm text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100">
+        <Link to="/app/requests" className="flex items-center justify-between bg-amber-50 px-5 py-3 text-sm text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100">
           <span>You have {k.pending} edit request(s) waiting for your decision.</span><span className="font-medium">Review now →</span>
         </Link>
       )}
@@ -132,7 +132,7 @@ function CapabilityDash({ d, first }: any) {
           ) : <p className="text-sm text-slate-400">No deadlines in the next 30 days.</p>}
         </ChartCard>
       </div>
-      <Link to="/app/instructors" className="block rounded-xl bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100">View and manage all your reportees →</Link>
+      <Link to="/app/instructors" className="block bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100">View and manage all your reportees →</Link>
     </div>
   );
 }
@@ -159,7 +159,7 @@ function InstructorDash({ d, first }: any) {
           </dl>
         </ChartCard>
       </div>
-      <Link to={`/app/instructors/${me.id}`} className="block rounded-xl bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100">Open my full profile →</Link>
+      <Link to={`/app/instructors/${me.id}`} className="block bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-100 hover:bg-brand-100">Open my full profile →</Link>
     </div>
   );
 }

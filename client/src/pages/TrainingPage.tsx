@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, GraduationCap } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import Loading from "../components/Loading";
+import Pagination from "../components/Pagination";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
 
 const ID_W = 116, NAME_W = 200;
@@ -17,8 +18,16 @@ export default function TrainingPage() {
   const [tabKey, setTabKey] = useState("tech");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(100);
+  const [pageSize, setPageSize] = useState(50);
   const [edit, setEdit] = useState<any>(null); // { id, colKey }
+  const editRef = useRef<HTMLSelectElement | HTMLInputElement | null>(null);
+
+  // When a cell enters edit mode, open its native dropdown/picker immediately (single click).
+  useEffect(() => {
+    if (!edit || !editRef.current) return;
+    const el = editRef.current as any;
+    try { el.showPicker?.(); } catch { /* not supported — autoFocus still applies */ }
+  }, [edit]);
 
   useEffect(() => {
     api.get("/training")
@@ -119,16 +128,19 @@ export default function TrainingPage() {
                   const isEditing = edit && edit.id === r.id && edit.colKey === col.key;
                   const isStatus = col.type === "STATUS";
                   const tone = isStatus ? statusTone(val) : "other";
+                  // Put the current value first in the dropdown, then the rest.
+                  const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
+                  const ordered = val && baseOpts.includes(val) ? [val, ...baseOpts.filter((o) => o !== val)] : baseOpts;
                   return (
                     <td key={col.id} className={`border-b border-l border-slate-100 p-0 ${isStatus ? "text-center" : ""}`}>
                       {isEditing ? (
                         col.type === "STATUS" || col.type === "DROPDOWN" ? (
-                          <select autoFocus defaultValue={val || ""} onBlur={() => setEdit(null)} onChange={(e) => save(r, col, e.target.value)} className="w-full bg-white px-1 py-1.5 text-xs outline-none ring-2 ring-brand-400">
+                          <select ref={editRef as any} autoFocus defaultValue={val || ""} onBlur={() => setEdit(null)} onChange={(e) => save(r, col, e.target.value)} className="w-full bg-white px-1 py-1.5 text-xs outline-none ring-2 ring-brand-400">
+                            {ordered.map((s: string) => <option key={s} value={s}>{s}</option>)}
                             <option value="">— clear —</option>
-                            {(col.options?.length ? col.options : (col.type === "STATUS" ? STATUS_OPTIONS : [])).map((s: string) => <option key={s} value={s}>{s}</option>)}
                           </select>
                         ) : (
-                          <input autoFocus type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => save(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className="w-full bg-white px-2 py-1.5 text-xs outline-none ring-2 ring-brand-400" />
+                          <input ref={editRef as any} autoFocus type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => save(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className="w-full bg-white px-2 py-1.5 text-xs outline-none ring-2 ring-brand-400" />
                         )
                       ) : isStatus ? (
                         <button onClick={() => setEdit({ id: r.id, colKey: col.key })} className={`block w-full px-2 py-1.5 text-[11px] ${TONE[tone]} hover:opacity-80`}>{SHORT[tone] || val || "—"}</button>
@@ -145,17 +157,7 @@ export default function TrainingPage() {
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-slate-500">
-        <span>{filtered.length} instructor(s) · {tab?.label}</span>
-        <div className="flex items-center gap-2">
-          <select className="input h-8 w-28 py-1 text-xs" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
-            {[50, 100, 200].map((n) => <option key={n} value={n}>{n} / page</option>)}
-          </select>
-          <button disabled={safePage <= 0} onClick={() => setPage((p) => p - 1)} className="btn btn-ghost btn-sm disabled:opacity-40">← Prev</button>
-          <span>{safePage + 1} / {pageCount}</span>
-          <button disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => p + 1)} className="btn btn-ghost btn-sm disabled:opacity-40">Next →</button>
-        </div>
-      </div>
+      <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
     </div>
   );
 }

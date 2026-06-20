@@ -19,6 +19,7 @@ import mappingRoutes from "./routes/mapping";
 import miscRoutes from "./routes/misc";
 import cronRoutes from "./routes/cron";
 import trainingRoutes from "./routes/training";
+import contributionRoutes from "./routes/contribution";
 
 async function main() {
   await connectDB();
@@ -48,6 +49,7 @@ async function main() {
   app.use("/api/requests", requestRoutes);
   app.use("/api/mapping", mappingRoutes);
   app.use("/api/training", trainingRoutes);
+  app.use("/api/contribution", contributionRoutes);
   app.use("/api/cron", cronRoutes); // reminders, digest (x-cron-secret gated)
   app.use("/api", miscRoutes); // dashboard, org, audit, notifications, settings, saved views
 

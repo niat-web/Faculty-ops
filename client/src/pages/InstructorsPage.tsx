@@ -7,6 +7,7 @@ import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
+import Pagination from "../components/Pagination";
 
 export default function InstructorsPage() {
   const { user } = useAuth();
@@ -22,6 +23,7 @@ export default function InstructorsPage() {
   const [minTraining, setMinTraining] = useState("");
   const dMin = useDebouncedValue(minTraining, 400);
   const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [campuses, setCampuses] = useState<string[]>([]);
@@ -51,12 +53,12 @@ export default function InstructorsPage() {
   useEffect(() => {
     const ac = new AbortController();
     setSelected({});
-    const p = filterParams(); p.set("page", String(page));
+    const p = filterParams(); p.set("page", String(page)); p.set("per", String(per));
     api.get(`/instructors?${p}`, { signal: ac.signal })
       .then((r) => { setData(r); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load instructors"); });
     return () => ac.abort();
-  }, [dq, status, campus, managerId, dMin, page, reloadKey]);
+  }, [dq, status, campus, managerId, dMin, page, per, reloadKey]);
 
   const scopeNote = user!.role === "CAPABILITY_MANAGER" ? "Showing only your assigned instructors." : user!.role === "INSTRUCTOR" ? "Showing your own profile." : "Showing all instructors across NIAT campuses.";
 
@@ -211,15 +213,7 @@ export default function InstructorsPage() {
         </div>
       </div>
 
-      {data && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Showing {data.total === 0 ? 0 : (data.page - 1) * data.per + 1}–{Math.min(data.page * data.per, data.total)} of {data.total}</span>
-          <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn btn-ghost btn-sm disabled:opacity-40">← Prev</button>
-            <button disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)} className="btn btn-ghost btn-sm disabled:opacity-40">Next →</button>
-          </div>
-        </div>
-      )}
+      {data && <Pagination page={data.page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {adding && <AddInstructorModal cms={cms} onClose={() => setAdding(false)} onDone={() => { setAdding(false); loadList(); }} />}
       {editing && <EditInstructorModal inst={editing} cms={cms} onClose={() => setEditing(null)} onDone={() => { setEditing(null); loadList(); }} />}

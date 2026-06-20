@@ -27,8 +27,10 @@ export default function InstructorProfilePage() {
   const [editField, setEditField] = useState<any>(null);
   const [statusOpen, setStatusOpen] = useState(false);
 
-  const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
-  const canRequest = user!.role === "CAPABILITY_MANAGER";
+  // Capability Managers can now edit their own reportees' details directly (server enforces scope).
+  const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER" || user!.role === "CAPABILITY_MANAGER";
+  const canRequest = false; // approval workflow dropped for CMs — they edit directly
+  const canAudit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER"; // per-instructor audit tab stays Ops/SM
   const isOps = user!.role === "OPS_ADMIN";
 
   function load() { api.get(`/instructors/${id}`).then(setP).catch((e) => setErr(e.message)); }
@@ -48,7 +50,7 @@ export default function InstructorProfilePage() {
   if (!p) return <Loading />;
 
   const moduleTabs = MODULE_ORDER.filter((m) => p.byModule[m]?.length);
-  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit ? ["AUDIT"] : [])];
+  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
   const inst = p.instructor;
   const label = (t: string) => MODULE_LABEL[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t];
@@ -82,7 +84,7 @@ export default function InstructorProfilePage() {
           {moduleTabs.includes(active) && (
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
-              <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+              <dl className="grid grid-cols-1 gap-y-3">
                 {p.byModule[active].map((f: any) => (
                   <div key={f.key} className="group flex flex-col">
                     <dt className="flex flex-wrap items-center gap-1 text-xs text-slate-400">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
@@ -250,7 +252,7 @@ function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
             <div className="sm:col-span-2 flex justify-end"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">Save exit details</button></div>
           </div>
         ) : (
-          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
+          <dl className="grid grid-cols-1 gap-y-3"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
         )}
       </div>
       <div className="card p-6">

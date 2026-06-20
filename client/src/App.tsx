@@ -11,6 +11,9 @@ import InstructorProfilePage from "./pages/InstructorProfilePage";
 import MyStatsPage from "./pages/MyStatsPage";
 import TrainingPage from "./pages/TrainingPage";
 import TrainingColumnsPage from "./pages/TrainingColumnsPage";
+import ContributionPage from "./pages/ContributionPage";
+import CampuswisePage from "./pages/CampuswisePage";
+import ManagerDistributionPage from "./pages/ManagerDistributionPage";
 import UsersPage from "./pages/UsersPage";
 import FieldsPage from "./pages/FieldsPage";
 import MappingPage from "./pages/MappingPage";
@@ -52,6 +55,10 @@ export default function App() {
                 <Route path="instructors" element={<RequireRole roles={STAFF}><InstructorsPage /></RequireRole>} />
                 <Route path="instructors/:id" element={<InstructorProfilePage />} />
                 <Route path="training" element={<RequireRole roles={STAFF}><TrainingPage /></RequireRole>} />
+                <Route path="contribution" element={<Navigate to="/app/contribution/distribution" replace />} />
+                <Route path="contribution/distribution" element={<RequireRole roles={STAFF}><ContributionPage /></RequireRole>} />
+                <Route path="contribution/campuswise" element={<RequireRole roles={STAFF}><CampuswisePage /></RequireRole>} />
+                <Route path="contribution/managers" element={<RequireRole roles={STAFF}><ManagerDistributionPage /></RequireRole>} />
                 <Route path="users" element={<RequireRole roles={["OPS_ADMIN"]}><UsersPage /></RequireRole>} />
                 <Route path="fields" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><FieldsPage /></RequireRole>} />
                 <Route path="fields/training/:track" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><TrainingColumnsPage /></RequireRole>} />

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { FieldDefinition, Instructor, User } from "../models";
 import { Module, FieldType, Visibility, FieldScope, Role } from "../enums";
-import { canManageSchema, canEditDirectly, canAccessInstructor } from "../lib/rbac";
+import { canManageSchema, canEditDetails, canAccessInstructor } from "../lib/rbac";
 import { writeAudit, notify, applyFieldChange, validateValue } from "../lib/services";
 import { keyFromLabel } from "../lib/text";
 import { requireUser } from "../middleware";
@@ -103,7 +103,7 @@ router.post("/:id/archive", schemaGuard, async (req, res) => {
 
 // Edit an instructor's value for a field (direct edit — Ops/SM).
 router.post("/value", async (req, res) => {
-  if (!canEditDirectly(req.user!)) return res.status(403).json({ error: "Not allowed to edit directly" });
+  if (!canEditDetails(req.user!)) return res.status(403).json({ error: "Not allowed to edit directly" });
   const { instructorId, fieldKey, fieldLabel = "", oldValue = "", newValue = "", reason = "" } = req.body || {};
   if (!String(reason).trim()) return res.status(400).json({ error: "A reason note is required." });
   if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });

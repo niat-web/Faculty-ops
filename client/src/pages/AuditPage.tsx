@@ -3,6 +3,7 @@ import { Search, Download } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
+import Pagination from "../components/Pagination";
 
 const ACTIONS = ["FIELD_EDIT", "FIELD_ADD", "FIELD_ARCHIVE", "MAPPING_CHANGE", "LIFECYCLE_CHANGE", "NOTE_ADD", "REQUEST_DECISION", "INSTRUCTOR_CREATE", "INSTRUCTOR_DELETE", "USER_CREATE", "USER_UPDATE", "USER_DELETE"];
 
@@ -11,16 +12,17 @@ export default function AuditPage() {
   const dq = useDebouncedValue(q, 300);
   const [action, setAction] = useState("");
   const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
-    const p = new URLSearchParams({ page: String(page) });
+    const p = new URLSearchParams({ page: String(page), per: String(per) });
     if (dq) p.set("q", dq); if (action) p.set("action", action);
     api.get(`/audit?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
-  }, [dq, action, page]);
+  }, [dq, action, page, per]);
 
   function exportCsv() {
     const p = new URLSearchParams();
@@ -77,15 +79,7 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {data && data.pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>Page {data.page} of {data.pages}</span>
-          <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="btn btn-ghost btn-sm disabled:opacity-40">← Prev</button>
-            <button disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)} className="btn btn-ghost btn-sm disabled:opacity-40">Next →</button>
-          </div>
-        </div>
-      )}
+      {data && <Pagination page={data.page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import multer from "multer";
 import Papa from "papaparse";
 import { Instructor, User, AuditLog, LoginEvent, EditRequest, FieldDefinition } from "../models";
 import { Role, LifecycleStatus, LIFECYCLE_LABEL } from "../enums";
-import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canDeleteInstructor } from "../lib/rbac";
+import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canEditDetails, canDeleteInstructor } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
 import { getProfileForViewer } from "../lib/profile";
 import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
@@ -14,6 +14,13 @@ import { requireUser } from "../middleware";
 const router = Router();
 router.use(requireUser());
 const editGuard = (req: any, res: any, next: any) => (canEditDirectly(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
+// Per-instructor detail edits: Ops/SM (anyone) or a Capability Manager — but a CM is limited to
+// their OWN reportees via canAccessInstructor (route must carry an :id param).
+const detailGuard = async (req: any, res: any, next: any) => {
+  if (!canEditDetails(req.user)) return res.status(403).json({ error: "Forbidden" });
+  if (!(await canAccessInstructor(req.user, req.params.id))) return res.status(403).json({ error: "Out of scope" });
+  next();
+};
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31,7 +38,8 @@ router.get("/", async (req, res) => {
   const managerId = String(req.query.managerId || "").trim();
   const minTraining = parseInt(String(req.query.minTraining || ""), 10);
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
-  const PER = 25;
+  const reqPer = parseInt(String(req.query.per || ""), 10);
+  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
 
   const filter: any = { ...instructorScopeFilter(user) };
   if (status) filter.status = status;
@@ -320,7 +328,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // Change lifecycle status (Ops/SM).
-router.post("/:id/lifecycle", editGuard, async (req, res) => {
+router.post("/:id/lifecycle", detailGuard, async (req, res) => {
   const status = String(req.body?.status || "");
   const note = String(req.body?.note || "").trim();
   if (!Object.values(LifecycleStatus).includes(status as any)) return res.status(400).json({ error: "Bad status" });
@@ -335,7 +343,7 @@ router.post("/:id/lifecycle", editGuard, async (req, res) => {
 });
 
 // Re-hire (EXITED → REHIRED).
-router.post("/:id/rehire", editGuard, async (req, res) => {
+router.post("/:id/rehire", detailGuard, async (req, res) => {
   const inst: any = await Instructor.findById(req.params.id);
   if (!inst) return res.status(404).json({ error: "Not found" });
   const note = String(req.body?.note || "").trim() || "Re-hired";
@@ -347,7 +355,7 @@ router.post("/:id/rehire", editGuard, async (req, res) => {
 });
 
 // Toggle a training skill (Ops/SM).
-router.post("/:id/skills", editGuard, async (req, res) => {
+router.post("/:id/skills", detailGuard, async (req, res) => {
   const { key, done } = req.body || {};
   if (!key) return res.status(400).json({ error: "key required" });
   const inst: any = await Instructor.findById(req.params.id);
@@ -358,7 +366,7 @@ router.post("/:id/skills", editGuard, async (req, res) => {
 });
 
 // Update exit / offboarding (Ops/SM).
-router.post("/:id/exit", editGuard, async (req, res) => {
+router.post("/:id/exit", detailGuard, async (req, res) => {
   const { lastWorkingDay, typeOfExit, reason, detailedReason, items } = req.body || {};
   const inst: any = await Instructor.findById(req.params.id);
   if (!inst) return res.status(404).json({ error: "Not found" });
@@ -414,7 +422,7 @@ router.delete("/:id/notes/:noteId", async (req, res) => {
 });
 
 // Documents: upload (Ops/SM), download, delete — stored in GridFS.
-router.post("/:id/documents", editGuard, upload.single("file"), async (req, res) => {
+router.post("/:id/documents", detailGuard, upload.single("file"), async (req, res) => {
   const file = (req as any).file;
   if (!file) return res.status(400).json({ error: "No file uploaded" });
   const inst: any = await Instructor.findById(req.params.id);
@@ -438,7 +446,7 @@ router.get("/:id/documents/:docId", async (req, res) => {
   downloadStream(doc.path).on("error", () => res.status(404).end()).pipe(res);
 });
 
-router.delete("/:id/documents/:docId", editGuard, async (req, res) => {
+router.delete("/:id/documents/:docId", detailGuard, async (req, res) => {
   const inst: any = await Instructor.findById(req.params.id);
   if (!inst) return res.status(404).json({ error: "Not found" });
   const doc = inst.documents.id(req.params.docId);
