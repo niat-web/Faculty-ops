@@ -1,0 +1,43 @@
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
+
+type Kind = "success" | "error" | "info";
+interface Toast { id: number; kind: Kind; text: string }
+interface ToastCtx { show: (text: string, kind?: Kind) => void; success: (t: string) => void; error: (t: string) => void; info: (t: string) => void }
+
+const Ctx = createContext<ToastCtx>(null as any);
+let seq = 1;
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const remove = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const show = useCallback((text: string, kind: Kind = "info") => {
+    const id = seq++;
+    setToasts((t) => [...t, { id, kind, text }]);
+    setTimeout(() => remove(id), 4500);
+  }, [remove]);
+  const value: ToastCtx = { show, success: (t) => show(t, "success"), error: (t) => show(t, "error"), info: (t) => show(t, "info") };
+
+  const Icon = { success: CheckCircle2, error: AlertCircle, info: Info };
+  const tone: Record<Kind, string> = { success: "border-emerald-200 bg-emerald-50 text-emerald-800", error: "border-rose-200 bg-rose-50 text-rose-800", info: "border-brand-200 bg-brand-50 text-brand-800" };
+
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
+        {toasts.map((t) => {
+          const I = Icon[t.kind];
+          return (
+            <div key={t.id} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-card ${tone[t.kind]}`}>
+              <I className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="flex-1">{t.text}</span>
+              <button onClick={() => remove(t.id)} className="shrink-0 opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          );
+        })}
+      </div>
+    </Ctx.Provider>
+  );
+}
+
+export const useToast = () => useContext(Ctx);

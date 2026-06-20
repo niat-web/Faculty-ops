@@ -1,0 +1,398 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Pencil, Trash2, RefreshCw, Upload, FileText, Download, Printer, Loader2 } from "lucide-react";
+import { api, API_BASE } from "../api";
+import { useAuth, LIFECYCLE_LABEL } from "../auth";
+import { useToast } from "../toast";
+import Modal from "../components/Modal";
+import Loading from "../components/Loading";
+
+const MODULE_LABEL: Record<string, string> = {
+  PERSONAL: "Personal Details", HIRING: "Hiring Details", TRAINING: "Training Stats",
+  DEPLOYMENT: "Deployment", PERFORMANCE: "Performance", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding",
+};
+const MODULE_ORDER = ["PERSONAL", "HIRING", "TRAINING", "DEPLOYMENT", "PERFORMANCE"];
+const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
+const EXIT_TYPES = ["Resignation", "Termination", "End of Contract", "Absconding", "Other"];
+const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "chip-necessary", SENSITIVE: "chip-sensitive" };
+
+export default function InstructorProfilePage() {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [p, setP] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<string>("");
+  const [editField, setEditField] = useState<any>(null);
+  const [statusOpen, setStatusOpen] = useState(false);
+
+  const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
+  const canRequest = user!.role === "CAPABILITY_MANAGER";
+  const isOps = user!.role === "OPS_ADMIN";
+
+  function load() { api.get(`/instructors/${id}`).then(setP).catch((e) => setErr(e.message)); }
+  useEffect(() => { setP(null); load(); }, [id]);
+
+  async function remove() {
+    if (!confirm(`Delete ${p.instructor.name}? This cannot be undone.`)) return;
+    try { await api.del(`/instructors/${id}`); toast.success("Instructor deleted."); navigate("/app/instructors"); } catch (e: any) { toast.error(e.message); }
+  }
+  async function rehire() {
+    if (!confirm("Re-hire this instructor?")) return;
+    const note = prompt("Add an optional note for the lifecycle record:") || "";
+    try { await api.post(`/instructors/${id}/rehire`, { note }); toast.success("Re-hired."); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
+  if (!p) return <Loading />;
+
+  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule[m]?.length);
+  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit ? ["AUDIT"] : [])];
+  const active = tab || tabs[0] || "LIFECYCLE";
+  const inst = p.instructor;
+  const label = (t: string) => MODULE_LABEL[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t];
+
+  return (
+    <div className="space-y-5">
+      <Link to="/app/instructors" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> All instructors</Link>
+
+      <div className="card flex flex-wrap items-center gap-4 p-6">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{inst.name.charAt(0)}</div>
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold">{inst.name}</h1>
+          <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip chip-status text-sm">{LIFECYCLE_LABEL[inst.status] || inst.status}</span>
+          <a href={`/print/instructors/${id}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm"><Printer className="h-4 w-4" /> Report card</a>
+          {canEdit && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm"><RefreshCw className="h-4 w-4" /> Change status</button>}
+          {canEdit && inst.status === "EXITED" && <button onClick={rehire} className="btn btn-success btn-sm">Re-hire</button>}
+          {isOps && <button onClick={remove} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /></button>}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <nav className="shrink-0 space-y-1 lg:w-56">
+          {tabs.map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`nav-link w-full text-left ${active === t ? "nav-link-active" : ""}`}>{label(t)}</button>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1 space-y-5">
+          {moduleTabs.includes(active) && (
+            <div className="card p-6">
+              <h2 className="mb-4 font-semibold">{label(active)}</h2>
+              <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                {p.byModule[active].map((f: any) => (
+                  <div key={f.key} className="group flex flex-col">
+                    <dt className="flex flex-wrap items-center gap-1 text-xs text-slate-400">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
+                    <dd className="flex items-center gap-2 text-sm text-slate-800">
+                      <span>{fmt(f.value) || <span className="text-slate-300">—</span>}</span>
+                      {(canEdit || canRequest) && f.type !== "FILE" && (
+                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit"} className="opacity-0 transition group-hover:opacity-100"><Pencil className="h-3.5 w-3.5 text-slate-400 hover:text-brand-600" /></button>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+          {active === "SKILLS" && <SkillsTab skills={p.skills} instructorId={id!} canEdit={canEdit} onChange={load} />}
+          {active === "LIFECYCLE" && (
+            <div className="card p-6">
+              <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
+              <ul className="space-y-3">
+                {inst.lifecycle.length ? inst.lifecycle.map((l: any, i: number) => (
+                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
+                )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
+              </ul>
+            </div>
+          )}
+          {active === "EXIT" && p.exit && <ExitTab exit={p.exit} instructorId={id!} canEdit={canEdit} onChange={load} />}
+          {active === "NOTES" && <NotesTab notes={inst.notes} instructorId={id!} canEdit={canEdit} onChange={load} />}
+          {active === "DOCUMENTS" && p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} canEdit={canEdit} onChange={load} />}
+          {active === "HISTORY" && <HistoryTab instructorId={id!} />}
+          {active === "AUDIT" && <AuditTab instructorId={id!} />}
+        </div>
+      </div>
+
+      {editField && <EditFieldModal field={editField} instructorId={id!} mode={canEdit ? "edit" : "request"} onClose={() => setEditField(null)} onDone={() => { setEditField(null); load(); }} />}
+      {statusOpen && <StatusModal current={inst.status} instructorId={id!} onClose={() => setStatusOpen(false)} onDone={() => { setStatusOpen(false); load(); }} />}
+    </div>
+  );
+}
+
+function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
+
+function Field({ label, value }: { label: string; value: any }) {
+  return <div className="flex flex-col"><dt className="text-xs text-slate-400">{label}</dt><dd className="text-sm text-slate-800">{value || <span className="text-slate-300">—</span>}</dd></div>;
+}
+
+function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
+  const [value, setValue] = useState(field.value ?? "");
+  const [reason, setReason] = useState("");
+  const [proof, setProof] = useState<File | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (!reason.trim()) { setErr("A reason is required."); return; }
+    if (mode === "request" && !proof) { setErr("A proof document (image or PDF) is required."); return; }
+    setBusy(true); setErr(null);
+    try {
+      if (mode === "edit") {
+        await api.post(`/fields/value`, { instructorId, fieldKey: field.key, fieldLabel: field.label, oldValue: String(field.value ?? ""), newValue: String(value), reason });
+      } else {
+        const form = new FormData();
+        form.append("instructorId", instructorId); form.append("fieldKey", field.key);
+        form.append("newValue", String(value)); form.append("reason", reason);
+        if (proof) form.append("proof", proof);
+        await api.upload(`/requests`, form);
+      }
+      onDone();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title={`${mode === "edit" ? "Edit" : "Request change"}: ${field.label}`} onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div>
+          <label className="label">New value</label>
+          {field.type === "DROPDOWN" ? (
+            <select className="input" value={value} onChange={(e) => setValue(e.target.value)}><option value="">— select —</option>{field.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+          ) : field.type === "BOOLEAN" ? (
+            <select className="input" value={String(value)} onChange={(e) => setValue(e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select>
+          ) : (
+            <input type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} className="input" value={value as any}
+              min={field.min ?? undefined} max={field.max ?? undefined} pattern={field.pattern || undefined}
+              onChange={(e) => setValue(e.target.value)} />
+          )}
+          {field.type === "NUMBER" && (field.min != null || field.max != null) && <p className="mt-1 text-xs text-slate-400">Allowed: {field.min ?? "−∞"} to {field.max ?? "∞"}</p>}
+        </div>
+        <div><label className="label">Reason {mode === "request" ? "(sent to your Senior Manager)" : "(for the audit log)"}</label><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        {mode === "request" && <div><label className="label">Proof document (image or PDF) — required</label><input type="file" accept="image/*,application/pdf" className="input" onChange={(e) => setProof(e.target.files?.[0] || null)} /></div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : mode === "edit" ? "Save" : "Submit request"}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function StatusModal({ current, instructorId, onClose, onDone }: any) {
+  const [status, setStatus] = useState(current);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true); setErr(null);
+    try { await api.post(`/instructors/${instructorId}/lifecycle`, { status, note }); onDone(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title="Change lifecycle status" onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div><label className="label">Status</label><select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>{LIFECYCLE_ORDER.map((s) => <option key={s} value={s}>{LIFECYCLE_LABEL[s]}</option>)}</select></div>
+        <div><label className="label">Note (optional)</label><textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></div>
+        <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={go} className="btn btn-primary btn-sm disabled:opacity-50">Save</button></div>
+      </div>
+    </Modal>
+  );
+}
+
+function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
+  const modules = skills.moduleStatus || [];
+  const tone = (s: string) => { const t = (s || "").toLowerCase(); if (t.includes("complete")) return "bg-emerald-50 text-emerald-700"; if (t.includes("progress")) return "bg-amber-50 text-amber-700"; if (t.includes("hold")) return "bg-slate-100 text-slate-600"; if (t.includes("not started")) return "bg-rose-50 text-rose-700"; return "bg-slate-100 text-slate-600"; };
+  async function toggle(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/skills`, { key, done }); onChange(); } catch (e: any) { alert(e.message); } }
+  return (
+    <div className="space-y-5">
+      {skills.list?.length > 0 && (
+        <div className="card p-6">
+          <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{skills.track} · {skills.done}/{skills.list.length}</h2><span className="text-sm font-medium text-slate-500">{Math.round((skills.done / skills.list.length) * 100)}%</span></div>
+          <div className="mb-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${(skills.done / skills.list.length) * 100}%` }} /></div>
+          {!canEdit && <p className="mb-3 text-xs text-amber-600">Read-only — only Senior Managers / Ops Admins can update skills.</p>}
+          <ul className="divide-y divide-slate-100">{skills.list.map((s: any) => (
+            <li key={s.key} className="flex items-center gap-2 py-2 text-sm">
+              <input type="checkbox" disabled={!canEdit} checked={s.done} onChange={(e) => toggle(s.key, e.target.checked)} />
+              <span className={s.done ? "text-slate-700" : "text-slate-500"}>{s.label}</span>
+            </li>
+          ))}</ul>
+        </div>
+      )}
+      {modules.length > 0 && (
+        <div className="card p-6"><h2 className="mb-1 font-semibold">Module progress {skills.track ? `· ${skills.track}` : ""}</h2>
+          <p className="mb-4 text-xs text-slate-400">{modules.filter((m: any) => /complete/i.test(m.status)).length}/{modules.length} completed</p>
+          <ul className="divide-y divide-slate-100">{modules.map((m: any) => <li key={m.name} className="flex items-center justify-between gap-3 py-2.5 text-sm"><span className="text-slate-700">{m.name}</span><span className={`chip ${tone(m.status)}`}>{m.status}</span></li>)}</ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
+  const [f, setF] = useState({ lastWorkingDay: exit.lastWorkingDay || "", typeOfExit: exit.typeOfExit || "", reason: exit.reason || "", detailedReason: exit.detailedReason || "" });
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  async function save() { setBusy(true); try { await api.post(`/instructors/${instructorId}/exit`, f); onChange(); } catch (e: any) { alert(e.message); } finally { setBusy(false); } }
+  async function toggleItem(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/exit`, { items: { [key]: done } }); onChange(); } catch (e: any) { alert(e.message); } }
+  return (
+    <div className="space-y-5">
+      <div className="card p-6">
+        <h2 className="mb-4 font-semibold">Exit / Offboarding</h2>
+        {canEdit ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div><label className="label">Last working day</label><input type="date" className="input" value={f.lastWorkingDay} onChange={(e) => set("lastWorkingDay", e.target.value)} /></div>
+            <div><label className="label">Type of exit</label><select className="input" value={f.typeOfExit} onChange={(e) => set("typeOfExit", e.target.value)}><option value="">— select —</option>{EXIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label className="label">Reason</label><input className="input" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></div>
+            <div className="sm:col-span-2"><label className="label">Detailed reason</label><textarea className="input" rows={2} value={f.detailedReason} onChange={(e) => set("detailedReason", e.target.value)} /></div>
+            <div className="sm:col-span-2 flex justify-end"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">Save exit details</button></div>
+          </div>
+        ) : (
+          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
+        )}
+      </div>
+      <div className="card p-6">
+        <h2 className="mb-3 font-semibold">Offboarding checklist</h2>
+        <ul className="divide-y divide-slate-100">
+          {exit.items.map((it: any) => (
+            <li key={it.key} className="flex items-center gap-2 py-2 text-sm"><input type="checkbox" disabled={!canEdit} checked={it.done} onChange={(e) => toggleItem(it.key, e.target.checked)} /><span className={it.done ? "text-slate-700" : "text-slate-500"}>{it.label}</span></li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  async function add() { if (!body.trim()) return; setBusy(true); try { await api.post(`/instructors/${instructorId}/notes`, { body }); setBody(""); onChange(); } catch (e: any) { alert(e.message); } finally { setBusy(false); } }
+  async function saveEdit(id: string) { try { await api.patch(`/instructors/${instructorId}/notes/${id}`, { body: editText }); setEditId(null); onChange(); } catch (e: any) { alert(e.message); } }
+  async function del(id: string) { if (!confirm("Delete this note?")) return; try { await api.del(`/instructors/${instructorId}/notes/${id}`); onChange(); } catch (e: any) { alert(e.message); } }
+  return (
+    <div className="card p-6">
+      <h2 className="mb-4 font-semibold">Notes</h2>
+      <div className="mb-4 flex gap-2"><input className="input" placeholder="Add a note…" value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} /><button disabled={busy} onClick={add} className="btn btn-primary btn-sm shrink-0">Add</button></div>
+      <ul className="space-y-3">
+        {notes.length ? notes.map((n: any) => (
+          <li key={n.id} className="group flex items-start justify-between gap-2 border-l-2 border-slate-100 pl-3">
+            <div className="min-w-0 flex-1">
+              {editId === n.id ? (
+                <div className="flex gap-2"><input autoFocus className="input" value={editText} onChange={(e) => setEditText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveEdit(n.id)} /><button onClick={() => saveEdit(n.id)} className="btn btn-primary btn-sm shrink-0">Save</button><button onClick={() => setEditId(null)} className="btn btn-ghost btn-sm shrink-0">Cancel</button></div>
+              ) : (
+                <><div className="text-sm text-slate-700">{n.body}</div><div className="text-[11px] text-slate-400">{n.authorName} · {new Date(n.createdAt).toLocaleString()}</div></>
+              )}
+            </div>
+            {canEdit && editId !== n.id && (
+              <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
+                <button onClick={() => { setEditId(n.id); setEditText(n.body); }} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
+                <button onClick={() => del(n.id)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            )}
+          </li>
+        )) : <li className="text-sm text-slate-400">No notes yet.</li>}
+      </ul>
+    </div>
+  );
+}
+
+function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
+  const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState("");
+  async function upload() {
+    if (!file) return;
+    const form = new FormData(); form.append("file", file); form.append("name", docName.trim() || file.name);
+    setBusy(true);
+    try { await api.upload(`/instructors/${instructorId}/documents`, form); setFile(null); setDocName(""); onChange(); } catch (err: any) { alert(err.message); } finally { setBusy(false); }
+  }
+  async function del(docId: string) { if (!confirm("Delete this document?")) return; try { await api.del(`/instructors/${instructorId}/documents/${docId}`); onChange(); } catch (err: any) { alert(err.message); } }
+  return (
+    <div className="card p-6">
+      <h2 className="mb-4 font-semibold">Documents</h2>
+      {canEdit && (
+        <div className="mb-5 flex flex-wrap items-end gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <div className="min-w-[160px] flex-1"><label className="label">Document name</label><input className="input" placeholder="e.g. Degree Certificate" value={docName} onChange={(e) => setDocName(e.target.value)} /></div>
+          <div><label className="label">File (image or PDF)</label><input type="file" accept="image/*,application/pdf" className="input" onChange={(e) => setFile(e.target.files?.[0] || null)} /></div>
+          <button disabled={!file || busy} onClick={upload} className="btn btn-primary btn-sm disabled:opacity-50"><Upload className="h-4 w-4" /> {busy ? "Uploading…" : "Upload"}</button>
+        </div>
+      )}
+      <ul className="divide-y divide-slate-100">
+        {documents.length ? documents.map((d: any) => (
+          <li key={d.id} className="flex items-center gap-3 py-2.5 text-sm">
+            <FileText className="h-4 w-4 text-slate-400" />
+            <div className="min-w-0 flex-1"><div className="truncate font-medium text-slate-700">{d.name}</div><div className="text-[11px] text-slate-400">{d.uploadedByName} · {new Date(d.createdAt).toLocaleString()}</div></div>
+            <a href={`${API_BASE}/api/instructors/${instructorId}/documents/${d.id}`} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Download className="h-4 w-4" /></a>
+            {canEdit && <button onClick={() => del(d.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>}
+          </li>
+        )) : <li className="py-4 text-sm text-slate-400">No documents uploaded.</li>}
+      </ul>
+    </div>
+  );
+}
+
+function AuditTab({ instructorId }: { instructorId: string }) {
+  const [entries, setEntries] = useState<any[] | null>(null);
+  useEffect(() => { api.get(`/instructors/${instructorId}/audit`).then((r) => setEntries(r.entries)).catch(() => setEntries([])); }, [instructorId]);
+  if (!entries) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  return (
+    <div className="card p-6">
+      <h2 className="mb-4 font-semibold">Audit trail</h2>
+      {entries.length ? (
+        <ul className="space-y-3">
+          {entries.map((a) => (
+            <li key={a.id} className="border-l-2 border-slate-100 pl-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="chip chip-gray">{a.action.replace(/_/g, " ").toLowerCase()}</span>
+                {a.fieldName && <span className="font-medium">{a.fieldName}</span>}
+                {(a.oldValue || a.newValue) && <span className="text-xs"><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span>}
+                {a.proofPath && <a href={`${API_BASE}/api/audit/proof/${a.proofPath}`} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">view proof</a>}
+              </div>
+              {a.reason && <div className="text-xs text-slate-500">{a.reason}</div>}
+              <div className="text-[11px] text-slate-400">{a.actorName} · {new Date(a.createdAt).toLocaleString()}</div>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-slate-400">No audit entries for this instructor.</p>}
+    </div>
+  );
+}
+
+function HistoryTab({ instructorId }: { instructorId: string }) {
+  const [h, setH] = useState<any>(null);
+  useEffect(() => { api.get(`/instructors/${instructorId}/history`).then(setH).catch(() => {}); }, [instructorId]);
+  if (!h) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  const stat = (label: string, n: number) => <div className="card flex flex-col p-4"><span className="text-2xl font-bold">{n}</span><span className="text-xs text-slate-500">{label}</span></div>;
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-4">
+        {stat("Manager changes", h.assignments?.length || 0)}
+        {stat("Lifecycle events", h.lifecycle?.length || 0)}
+        {stat("Field changes", h.fieldChanges?.length || 0)}
+        {stat("Sign-ins", h.logins?.length || 0)}
+      </div>
+      <div className="card p-6"><h2 className="mb-3 font-semibold">Manager assignments</h2>
+        <ul className="space-y-2 text-sm">{h.assignments.length ? h.assignments.map((a: any, i: number) => <li key={i} className="flex justify-between"><span className="text-slate-700">{a.manager}</span><span className="text-xs text-slate-400">{new Date(a.startedAt).toLocaleDateString()} → {a.endedAt ? new Date(a.endedAt).toLocaleDateString() : "present"}</span></li>) : <li className="text-slate-400">None.</li>}</ul>
+      </div>
+      {h.lifecycle?.length > 0 && (
+        <div className="card p-6"><h2 className="mb-3 font-semibold">Lifecycle history</h2>
+          <ul className="space-y-2 text-sm">{h.lifecycle.map((l: any, i: number) => <li key={i} className="flex justify-between"><span className="text-slate-700">{LIFECYCLE_LABEL[l.status] || l.status}{l.note ? ` — ${l.note}` : ""}</span><span className="text-xs text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</span></li>)}</ul>
+        </div>
+      )}
+      {h.fieldChanges?.length > 0 && (
+        <div className="card p-6"><h2 className="mb-3 font-semibold">Field changes</h2>
+          <ul className="space-y-2 text-sm">{h.fieldChanges.map((c: any, i: number) => <li key={i}><span className="font-medium">{c.fieldName}:</span> <span className="text-slate-400 line-through">{c.oldValue || "—"}</span> → <span className="text-slate-700">{c.newValue || "—"}</span> <span className="text-[11px] text-slate-400">· {c.actorName} · {new Date(c.createdAt).toLocaleString()}</span></li>)}</ul>
+        </div>
+      )}
+      {h.logins?.length > 0 && (
+        <div className="card p-6"><h2 className="mb-3 font-semibold">Recent logins</h2>
+          <ul className="space-y-1 text-sm">{h.logins.map((l: any, i: number) => <li key={i} className="flex justify-between gap-3 text-slate-600"><span className="truncate">{l.method} · {l.ip || "—"}{l.userAgent ? ` · ${l.userAgent.slice(0, 40)}` : ""}</span><span className="shrink-0 text-xs text-slate-400">{new Date(l.at).toLocaleString()}</span></li>)}</ul>
+        </div>
+      )}
+    </div>
+  );
+}

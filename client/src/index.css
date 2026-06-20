@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+html, body, #root { padding: 0; margin: 0; min-height: 100%; }
+body { font-family: var(--font-sans); color: theme("colors.ink"); -webkit-font-smoothing: antialiased; background: #f8fafc; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition; }
+  .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700 shadow-sm; }
+  .btn-ghost { @apply bg-slate-100 text-slate-700 hover:bg-slate-200; }
+  .btn-success { @apply bg-emerald-600 text-white hover:bg-emerald-700; }
+  .btn-danger { @apply bg-rose-600 text-white hover:bg-rose-700; }
+  .btn-sm { @apply px-3 py-1.5 text-xs; }
+
+  .card { @apply bg-white rounded-xl border border-slate-200 shadow-card; }
+  .input { @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 transition; }
+  .label { @apply block text-xs font-medium text-slate-500 mb-1; }
+
+  .chip { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .chip-public { @apply bg-emerald-50 text-emerald-700; }
+  .chip-necessary { @apply bg-amber-50 text-amber-700; }
+  .chip-sensitive { @apply bg-rose-50 text-rose-700; }
+  .chip-status { @apply bg-brand-50 text-brand-700; }
+  .chip-gray { @apply bg-slate-100 text-slate-600; }
+
+  .nav-link { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition; }
+  .nav-link-active { @apply bg-brand-50 text-brand-700 hover:bg-brand-50 hover:text-brand-700; }
+}
