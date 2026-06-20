@@ -62,9 +62,25 @@ export const TRACK_META = [
   { key: "english", label: "English" },
 ];
 
+// Department is a fixed picklist (editable by Ops via the Training Columns page later).
+export const DEPARTMENT_OPTS = [
+  "Instructors - Artificial Intelligence & Emerging Technologies",
+  "Instructors - Backend Systems",
+  "Instructors - Data Structures & Algorithms",
+  "Instructors - Delivery Support (Ops and Central managers)",
+  "Instructors - English & Communication Studies",
+  "Instructors - Frontend Technologies",
+  "Instructors - Gen AI",
+  "Instructors - Interdisciplinary & Applied Sciences",
+  "Instructors - Mathematical Sciences",
+  "Instructors - Quantitative Aptitude & Logical Reasoning",
+  "NA",
+  "Instructors - AIML",
+];
+
 // Context value-columns shown BEFORE the module columns (stored in Instructor.values).
-const CONTEXT_SEED = [
-  { label: "Department", key: "department", type: "TEXT" },
+const CONTEXT_SEED: { label: string; key: string; type: string; options?: string[] }[] = [
+  { label: "Department", key: "department", type: "DROPDOWN", options: DEPARTMENT_OPTS },
   { label: "Primary Track", key: "primary_track", type: "TEXT" },
   { label: "Secondary Track", key: "secondary_track", type: "TEXT" },
   { label: "Ongoing Track", key: "ongoing_track", type: "TEXT" },
@@ -110,16 +126,18 @@ export async function seedTrainingColumns() {
     const docs: any[] = [];
     for (const tab of TRAINING_TABS) {
       let order = 0;
-      for (const c of CONTEXT_SEED) docs.push({ track: tab.key, group: "Context", label: c.label, key: c.key, storage: "value", type: c.type, options: [], order: order++ });
+      for (const c of CONTEXT_SEED) docs.push({ track: tab.key, group: "Context", label: c.label, key: c.key, storage: "value", type: c.type, options: c.options || [], order: order++ });
       // STATUS columns carry their (editable) option set so admins can rename/add statuses.
       for (const g of tab.groups) for (const m of g.modules) docs.push({ track: tab.key, group: g.name, label: m, key: m, storage: "module", type: "STATUS", options: [...STATUS_OPTIONS], order: order++ });
       for (const s of summaryColumnsFor(tab.key)) docs.push({ track: tab.key, group: s.group, label: s.label, key: s.key, storage: "value", type: s.type, options: s.options, order: order++ });
     }
     if (docs.length) await TrainingColumn.insertMany(docs);
   }
-  // One-time backfill: give any pre-existing STATUS column the default editable options.
+  // One-time backfill: give any pre-existing STATUS column the default editable options,
+  // and promote the Department context column to a DROPDOWN with its fixed picklist.
   if (!_backfilled) {
     await TrainingColumn.updateMany({ type: "STATUS", options: { $size: 0 } }, { $set: { options: [...STATUS_OPTIONS] } });
+    await TrainingColumn.updateMany({ key: "department" }, { $set: { type: "DROPDOWN", options: [...DEPARTMENT_OPTS] } });
     _backfilled = true;
   }
 }

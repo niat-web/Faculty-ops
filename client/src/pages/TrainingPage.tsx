@@ -41,7 +41,8 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         const isStatus = col.type === "STATUS";
         const tone = isStatus ? statusTone(val) : "other";
         const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
-        const ordered = val && baseOpts.includes(val) ? [val, ...baseOpts.filter((o) => o !== val)] : baseOpts;
+        // Always surface the current value first (even legacy values not in the option list) so it displays correctly.
+        const ordered = val ? [val, ...baseOpts.filter((o) => o !== val)] : baseOpts;
         return (
           <td key={col.id} className={`border-b border-l border-slate-100 p-0 ${isStatus ? "text-center" : ""}`}>
             {isEditing ? (

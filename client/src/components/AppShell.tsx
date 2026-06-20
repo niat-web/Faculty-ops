@@ -10,7 +10,7 @@ const NAV: any[] = [
   { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
   { to: "/app/instructors", label: "Instructors", icon: Users2, roles: STAFF },
   { to: "/app/training", label: "Instructors Training Stats", icon: BookOpen, roles: STAFF },
-  { label: "Contribution", icon: Award, roles: STAFF, children: [
+  { label: "Contribution", icon: Award, roles: ["OPS_ADMIN", "SENIOR_MANAGER"], children: [
     { to: "/app/contribution/distribution", label: "Contribution Distribution" },
     { to: "/app/contribution/campuswise", label: "Campuswise Instructors" },
     { to: "/app/contribution/managers", label: "Capability Manager Distribution" },
