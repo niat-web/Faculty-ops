@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   LabelList, RadialBarChart, RadialBar, AreaChart, Area, Legend,
@@ -10,6 +11,9 @@ const TONES: Record<string, string> = {
   brand: "text-brand-600 bg-brand-50", emerald: "text-emerald-600 bg-emerald-50", amber: "text-amber-600 bg-amber-50",
   pink: "text-pink-600 bg-pink-50", cyan: "text-cyan-600 bg-cyan-50", rose: "text-rose-600 bg-rose-50", slate: "text-slate-600 bg-slate-100",
 };
+const TONE_BAR: Record<string, string> = {
+  brand: "bg-brand-500", emerald: "bg-emerald-500", amber: "bg-amber-500", pink: "bg-pink-500", cyan: "bg-cyan-500", rose: "bg-rose-500", slate: "bg-slate-400",
+};
 
 export function StatCard({ label, value, icon: Icon, tone = "brand", hint }: { label: string; value: any; icon: any; tone?: string; hint?: string }) {
   return (
@@ -20,6 +24,54 @@ export function StatCard({ label, value, icon: Icon, tone = "brand", hint }: { l
         <div className="truncate text-xs text-slate-500">{label}</div>
         {hint && <div className="text-[11px] text-slate-400">{hint}</div>}
       </div>
+    </div>
+  );
+}
+
+// Richer SaaS-style KPI tile: icon chip, optional badge, big number, label, optional progress + link.
+export function KpiCard({ label, value, icon: Icon, tone = "brand", sub, subTone, progress, to }: {
+  label: string; value: any; icon: any; tone?: string; sub?: ReactNode; subTone?: string; progress?: number; to?: string;
+}) {
+  const inner = (
+    <div className="card h-full p-5 transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start justify-between gap-2">
+        <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${TONES[tone] || TONES.brand}`}><Icon className="h-5 w-5" /></span>
+        {sub != null && <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subTone || "bg-slate-100 text-slate-500"}`}>{sub}</span>}
+      </div>
+      <div className="mt-4 text-3xl font-bold tracking-tight text-slate-900">{value}</div>
+      <div className="mt-0.5 truncate text-sm text-slate-500">{label}</div>
+      {typeof progress === "number" && (
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div className={`h-full rounded-full ${TONE_BAR[tone] || TONE_BAR.brand}`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+        </div>
+      )}
+    </div>
+  );
+  return to ? <Link to={to} className="block">{inner}</Link> : inner;
+}
+
+// Slim labelled progress bar (used for inline stats).
+export function ProgressBar({ value, tone = "brand" }: { value: number; tone?: string }) {
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div className={`h-full rounded-full ${TONE_BAR[tone] || TONE_BAR.brand}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </div>
+  );
+}
+
+// Time-of-day greeting header with date + optional right-aligned actions.
+export function GreetingHeader({ name, subtitle, actions }: { name: string; subtitle?: string; actions?: ReactNode }) {
+  const h = new Date().getHours();
+  const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{today}</p>
+        <h1 className="mt-0.5 text-2xl font-bold text-slate-900">{greet}, {name} 👋</h1>
+        {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

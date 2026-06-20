@@ -67,6 +67,8 @@ export async function dashboardData(user: SessionUser) {
       User.countDocuments({ role: Role.OPS_ADMIN }), User.countDocuments({ role: Role.SENIOR_MANAGER }), User.countDocuments({ role: Role.CAPABILITY_MANAGER }),
     ]);
     Object.assign(kpis, { ops, sm, cm });
+    // Recently added instructors (docs already sorted createdAt desc) for the "Recently added" widget.
+    payload.recentJoiners = docs.slice(0, 5).map((d) => ({ id: String(d._id), name: d.name, campus: d.campus || null, status: d.status, createdAt: d.createdAt }));
   }
   if (user.role === Role.OPS_ADMIN) {
     const recent = await AuditLog.find().sort({ createdAt: -1 }).limit(6).lean();
@@ -75,7 +77,7 @@ export async function dashboardData(user: SessionUser) {
 
   // ── Capability Manager: reportee progress + upcoming deadlines ──
   if (user.role === Role.CAPABILITY_MANAGER) {
-    charts.reporteeProgress = docs.map((d) => ({ name: d.name, value: num(maybeDecrypt(d.values?.primary_pct)) || 0 })).sort((a, b) => b.value - a.value);
+    charts.reporteeProgress = docs.map((d) => ({ id: String(d._id), name: d.name, status: d.status, value: num(maybeDecrypt(d.values?.primary_pct)) || 0 })).sort((a, b) => b.value - a.value);
     const today = new Date(); const horizon = new Date(today.getTime() + 30 * 24 * 3600 * 1000);
     payload.deadlines = docs
       .map((d) => ({ id: String(d._id), name: d.name, employeeId: d.employeeId, date: maybeDecrypt(d.values?.track_deadline) }))
