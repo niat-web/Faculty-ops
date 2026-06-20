@@ -61,7 +61,7 @@ export default function TrainingColumnsPage() {
 
   return (
     <div className="space-y-5">
-      <Link to="/app/fields" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> Dynamic Fields</Link>
+      <Link to="/app/settings" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> Dynamic Fields</Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold">{label} — Training columns</h1><p className="text-sm text-slate-500">Drag rows to reorder · add, edit and type the columns shown in this track's Training Stats grid.</p></div>
         <button onClick={() => setEditing({})} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add column</button>

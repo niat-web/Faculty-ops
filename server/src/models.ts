@@ -189,7 +189,24 @@ const LoginEventSchema = new Schema({
 });
 LoginEventSchema.index({ userId: 1, at: -1 });
 
+// ---------------------------------------------------------------------------
+// AppSetting — single global document holding admin-configurable system settings.
+// roleAccess gates whether users of a given role may log in / use the portal.
+const AppSettingSchema = new Schema(
+  {
+    key: { type: String, required: true, unique: true, default: "global" },
+    roleAccess: {
+      OPS_ADMIN: { type: Boolean, default: true },
+      SENIOR_MANAGER: { type: Boolean, default: true },
+      CAPABILITY_MANAGER: { type: Boolean, default: true },
+      INSTRUCTOR: { type: Boolean, default: true },
+    },
+  },
+  { timestamps: true }
+);
+
 export const User = compile("User", UserSchema);
+export const AppSetting = compile("AppSetting", AppSettingSchema);
 export const Instructor = compile("Instructor", InstructorSchema);
 export const FieldDefinition = compile("FieldDefinition", FieldDefinitionSchema);
 export const TrainingColumn = compile("TrainingColumn", TrainingColumnSchema);

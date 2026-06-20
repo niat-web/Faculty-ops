@@ -64,7 +64,7 @@ export default function FieldsPage() {
         <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-sm font-semibold text-slate-600"><BookOpen className="h-4 w-4 text-brand-600" /> Training Stats columns</div>
         <div className="grid gap-3 p-4 sm:grid-cols-3">
           {tracks.map((t) => (
-            <Link key={t.key} to={`/app/fields/training/${t.key}`} className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-brand-300 hover:shadow-sm">
+            <Link key={t.key} to={`/app/settings/fields/training/${t.key}`} className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-brand-300 hover:shadow-sm">
               <div>
                 <div className="font-semibold text-slate-800 group-hover:text-brand-700">{t.label}</div>
                 <div className="text-xs text-slate-400">{t.columns} column(s)</div>

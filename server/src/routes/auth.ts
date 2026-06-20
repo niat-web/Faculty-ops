@@ -7,6 +7,7 @@ import { isLocked, recordFailure, clearFailures } from "../lib/throttle";
 import { generateSecret, verifyToken, verifyTokenCounter, otpauthURL } from "../lib/totp";
 import { googleConfigured, buildAuthUrl, exchangeCode, fetchUserInfo } from "../lib/google";
 import { requireUser } from "../middleware";
+import { isRoleEnabled, ROLE_DISABLED_MSG } from "../lib/settings";
 import { config } from "../config";
 import crypto from "crypto";
 
@@ -49,15 +50,17 @@ router.get("/google/callback", async (req, res) => {
   // Access is admin-managed: only sign in if a matching, active user exists.
   const user = await User.findOne({ email });
   if (!user || !user.active) return fail("google_noaccount");
+  if (!(await isRoleEnabled(user.role))) return fail("role_disabled");
   setSessionCookie(res, signSession(user));
   await recordLogin(user, "google", req);
   res.redirect(303, `${config.appUrl}/app`);
 });
 
 // Current user (used by the React app on load).
-router.get("/me", (req, res) => {
+router.get("/me", async (req, res) => {
   if (!req.user) return res.status(401).json({ user: null });
-  res.json({ user: req.user });
+  const enabled = await isRoleEnabled(req.user.role);
+  res.json({ user: req.user, blocked: !enabled, message: enabled ? undefined : ROLE_DISABLED_MSG });
 });
 
 // Email + password login (with lockout + optional TOTP 2FA).
@@ -77,6 +80,12 @@ router.post("/login", async (req, res) => {
   if (!user || !user.active || !(await verifyPassword(password, user.passwordHash))) {
     await recordFailure(key);
     return res.status(401).json({ error: "Invalid email or password." });
+  }
+
+  // Role-level access gate (admin can disable a whole role in Settings → Account Access).
+  if (!(await isRoleEnabled(user.role))) {
+    await clearFailures(key);
+    return res.status(403).json({ error: ROLE_DISABLED_MSG });
   }
 
   if (user.twoFactorEnabled && user.twoFactorSecret) {

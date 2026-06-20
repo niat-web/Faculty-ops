@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { User } from "./models";
 import { SESSION_COOKIE, verifySession } from "./lib/auth";
+import { isRoleEnabled, ROLE_DISABLED_MSG } from "./lib/settings";
 import type { SessionUser } from "./lib/rbac";
 
 // Augment Express Request with the authenticated user.
@@ -24,6 +25,17 @@ export async function resolveUser(req: Request): Promise<SessionUser | null> {
 // Attach req.user if a valid session exists (does not block).
 export async function attachUser(req: Request, _res: Response, next: NextFunction) {
   try { const u = await resolveUser(req); if (u) req.user = u; } catch {}
+  next();
+}
+
+// Block users whose ROLE has been disabled by an admin (Account Access setting).
+// Mounted on /api: lets /auth/* through so the client can detect the block, show
+// the "contact your admin" screen, and still log out. Ops Admin is never blocked.
+export async function enforceRoleAccess(req: Request, res: Response, next: NextFunction) {
+  if (!req.user || req.path.startsWith("/auth/")) return next();
+  if (!(await isRoleEnabled(req.user.role))) {
+    return res.status(403).json({ code: "ROLE_DISABLED", error: ROLE_DISABLED_MSG });
+  }
   next();
 }
 

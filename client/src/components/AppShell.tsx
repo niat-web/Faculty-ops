@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, Users2, Layers, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 
@@ -15,12 +15,13 @@ const NAV: any[] = [
     { to: "/app/contribution/campuswise", label: "Campuswise Instructors" },
     { to: "/app/contribution/managers", label: "Capability Manager Distribution" },
   ] },
-  { to: "/app/fields", label: "Dynamic Fields", icon: Layers, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   { to: "/app/mapping", label: "Assigns", icon: Network, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   { to: "/app/org", label: "Org Chart", icon: GitBranch, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   { to: "/app/requests", label: "Requests", icon: GitPullRequest, roles: STAFF },
   { to: "/app/users", label: "Users", icon: UserCog, roles: ["OPS_ADMIN"] },
   { to: "/app/audit", label: "Audit Log", icon: ScrollText, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
+  // Admin Settings — Ops only, kept LAST in the sidebar. Absorbs the old Dynamic Fields page.
+  { to: "/app/settings", label: "Settings", icon: SettingsIcon, roles: ["OPS_ADMIN"] },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {
@@ -107,7 +108,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {menuOpen && (
             <div className="absolute bottom-0 left-[calc(100%+8px)] z-50 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
               <div className="border-b border-slate-100 px-3 py-2"><div className="truncate text-sm font-medium">{user.name}</div><div className="truncate text-[11px] text-slate-400">{user.email}</div></div>
-              <button onClick={() => go("/app/settings")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><UserCircle className="h-4 w-4 text-slate-400" /> Edit profile</button>
+              <button onClick={() => go("/app/account")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><UserCircle className="h-4 w-4 text-slate-400" /> My Account</button>
               <button onClick={() => go("/app/notifications")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
                 <Bell className="h-4 w-4 text-slate-400" /> <span className="flex-1">Notifications</span>
                 {unread > 0 && <span className="chip chip-status">{unread}</span>}

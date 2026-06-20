@@ -8,7 +8,7 @@ import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 import { config } from "./config";
 import { connectDB, disconnectDB } from "./db";
-import { attachUser } from "./middleware";
+import { attachUser, enforceRoleAccess } from "./middleware";
 
 import authRoutes from "./routes/auth";
 import userRoutes from "./routes/users";
@@ -42,6 +42,8 @@ async function main() {
 
   // Broad rate limit on auth (above the per-account DB lockout) to blunt brute force.
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Please try again later." } });
+  // Block disabled-role sessions on every /api route (lets /auth/* through to recover).
+  app.use("/api", enforceRoleAccess);
   app.use("/api/auth", authLimiter, authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/instructors", instructorRoutes);

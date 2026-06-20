@@ -92,6 +92,24 @@ router.get("/notifications", async (req, res) => {
 router.get("/notifications/count", async (req, res) => res.json({ count: await Notification.countDocuments({ userId: req.user!.id, read: false }) }));
 router.post("/notifications/read", async (req, res) => { await Notification.updateMany({ userId: req.user!.id, read: false }, { $set: { read: true } }); res.json({ ok: true }); });
 
+// --- Account Access (Ops only): enable/disable portal access for whole roles ---
+router.get("/settings/role-access", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getRoleAccess } = await import("../lib/settings");
+  res.json({ roleAccess: await getRoleAccess() });
+});
+router.patch("/settings/role-access", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { role, enabled } = req.body || {};
+  const { ROLES, setRoleAccess } = await import("../lib/settings");
+  if (!(ROLES as readonly string[]).includes(role)) return res.status(400).json({ error: "Unknown role" });
+  if (role === "OPS_ADMIN" && enabled === false) return res.status(400).json({ error: "Ops Admin access can't be disabled." });
+  const roleAccess = await setRoleAccess(role, !!enabled);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "ROLE_ACCESS_CHANGE", fieldName: role, newValue: enabled ? "enabled" : "disabled", reason: "Account Access setting" });
+  res.json({ roleAccess });
+});
+
 // Account overview (read-only profile + email-notification preference).
 router.get("/settings", async (req, res) => {
   const me: any = await User.findById(req.user!.id).lean();

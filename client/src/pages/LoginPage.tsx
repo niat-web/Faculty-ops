@@ -8,6 +8,7 @@ const GOOGLE_ERR: Record<string, string> = {
   google_unconfigured: "Google sign-in isn't configured.",
   google_failed: "Google sign-in failed. Please try again.",
   google_noaccount: "No active account matches that Google address. Ask an admin to add you.",
+  role_disabled: "Access for your role has been disabled by an administrator. Please contact your admin.",
 };
 
 export default function LoginPage() {
