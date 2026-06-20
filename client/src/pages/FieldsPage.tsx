@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { Plus, Pencil, Trash2, Archive, BookOpen, ChevronRight } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import { MODULE_LABEL, MODULE_ORDER } from "../enums";
 import Modal from "../components/Modal";
 
@@ -12,6 +14,8 @@ const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "ch
 
 export default function FieldsPage() {
   const { user } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const isOps = user!.role === "OPS_ADMIN";
   const [data, setData] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
@@ -27,8 +31,8 @@ export default function FieldsPage() {
   useEffect(() => { api.get("/training/tracks").then((r) => setTracks(r.tracks)).catch(() => {}); }, []);
 
   async function del(f: any) {
-    if (!confirm(`Permanently delete "${f.label}" and strip its value from all instructors? This cannot be undone.`)) return;
-    try { await api.del(`/fields/${f.id}`); load(); } catch (e: any) { alert(e.message); }
+    if (!(await confirm({ title: "Delete field?", message: `Permanently delete "${f.label}" and strip its value from all instructors? This cannot be undone.` }))) return;
+    try { await api.del(`/fields/${f.id}`); load(); } catch (e: any) { toast.error(e.message); }
   }
 
   const sx = search.trim().toLowerCase();

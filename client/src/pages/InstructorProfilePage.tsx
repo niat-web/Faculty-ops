@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Pencil, Trash2, RefreshCw, Upload, FileText, Download, Printer, Loader2 } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
+import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
 
@@ -16,16 +17,29 @@ const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "
 const EXIT_TYPES = ["Resignation", "Termination", "End of Contract", "Absconding", "Other"];
 const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "chip-necessary", SENSITIVE: "chip-sensitive" };
 
+// Shared sizing so the value cell stays EXACTLY the same size whether it is being
+// displayed, hovered, or edited — clicking a value must never shift the layout.
+// Every state has a 1px border (transparent when not editing) + identical padding + font.
+const CELL_BASE = "w-full rounded-lg border px-3 py-1.5 text-sm leading-5";
+const CELL_EDIT = `${CELL_BASE} border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
+const CELL_VIEW = `${CELL_BASE} block cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
+const CELL_STATIC = `${CELL_BASE} border-transparent text-slate-800`;
+const EMPTY = <span className="text-slate-400">—</span>;
+
 export default function InstructorProfilePage() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [p, setP] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("");
   const [editField, setEditField] = useState<any>(null);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [editKey, setEditKey] = useState<string | null>(null); // inline-edit: which field key
+  const inlineRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
 
   // Capability Managers can now edit their own reportees' details directly (server enforces scope).
   const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER" || user!.role === "CAPABILITY_MANAGER";
@@ -36,13 +50,30 @@ export default function InstructorProfilePage() {
   function load() { api.get(`/instructors/${id}`).then(setP).catch((e) => setErr(e.message)); }
   useEffect(() => { setP(null); load(); }, [id]);
 
+  // Open the native dropdown/date picker immediately when a cell enters inline-edit.
+  useEffect(() => { if (editKey && inlineRef.current) { try { (inlineRef.current as any).showPicker?.(); } catch { /* not supported */ } } }, [editKey]);
+
+  // Optimistically set a field's value across the loaded profile, then persist (audit-logged).
+  function patchFieldValue(key: string, val: any) {
+    setP((prev: any) => prev ? { ...prev, byModule: Object.fromEntries(Object.entries(prev.byModule).map(([m, arr]: any) => [m, arr.map((f: any) => f.key === key ? { ...f, value: val } : f)])) } : prev);
+  }
+  async function saveInline(f: any, raw: any) {
+    const next = f.type === "BOOLEAN" ? (raw === true || raw === "true") : raw;
+    if (String(f.value ?? "") === String(next ?? "")) { setEditKey(null); return; }
+    const prev = f.value;
+    patchFieldValue(f.key, next);
+    setEditKey(null);
+    try { await api.post(`/fields/value`, { instructorId: id, fieldKey: f.key, fieldLabel: f.label, oldValue: String(prev ?? ""), newValue: String(next), reason: "Inline edit" }); }
+    catch (e: any) { toast.error(e.message || "Save failed — reverted"); patchFieldValue(f.key, prev); }
+  }
+
   async function remove() {
-    if (!confirm(`Delete ${p.instructor.name}? This cannot be undone.`)) return;
+    if (!(await confirm({ title: "Delete instructor?", message: `Delete ${p.instructor.name}? This cannot be undone.` }))) return;
     try { await api.del(`/instructors/${id}`); toast.success("Instructor deleted."); navigate("/app/instructors"); } catch (e: any) { toast.error(e.message); }
   }
   async function rehire() {
-    if (!confirm("Re-hire this instructor?")) return;
-    const note = prompt("Add an optional note for the lifecycle record:") || "";
+    const note = await prompt({ title: "Re-hire instructor", message: "Add an optional note for the lifecycle record:", placeholder: "Optional note…", confirmText: "Re-hire", multiline: true });
+    if (note === null) return; // cancelled
     try { await api.post(`/instructors/${id}/rehire`, { note }); toast.success("Re-hired."); load(); } catch (e: any) { toast.error(e.message); }
   }
 
@@ -84,16 +115,30 @@ export default function InstructorProfilePage() {
           {moduleTabs.includes(active) && (
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
-              <dl className="grid grid-cols-1 gap-y-3">
+              <dl className="divide-y divide-slate-100">
                 {p.byModule[active].map((f: any) => (
-                  <div key={f.key} className="group flex flex-col">
-                    <dt className="flex flex-wrap items-center gap-1 text-xs text-slate-400">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
-                    <dd className="flex items-center gap-2 text-sm text-slate-800">
-                      <span>{fmt(f.value) || <span className="text-slate-300">—</span>}</span>
-                      {(canEdit || canRequest) && f.type !== "FILE" && (
-                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit"} className="opacity-0 transition group-hover:opacity-100"><Pencil className="h-3.5 w-3.5 text-slate-400 hover:text-brand-600" /></button>
+                  <div key={f.key} className="group grid grid-cols-[200px_1fr_auto] items-center gap-3 py-2">
+                    <dt className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-600">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
+                    <dd className="min-w-0">
+                      {editKey === f.key ? (
+                        f.type === "DROPDOWN" ? (
+                          <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="">— select —</option>{(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+                        ) : f.type === "BOOLEAN" ? (
+                          <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "false")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="false">No</option><option value="true">Yes</option></select>
+                        ) : (
+                          <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : f.type === "DATE" ? "date" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
+                        )
+                      ) : (canEdit && f.type !== "FILE") ? (
+                        <button onClick={() => setEditKey(f.key)} title="Click to edit" className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
+                      ) : (
+                        <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
                       )}
                     </dd>
+                    <div className="flex w-5 justify-end">
+                      {(canEdit || canRequest) && f.type !== "FILE" && (
+                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} className="opacity-0 transition group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </dl>
@@ -127,7 +172,7 @@ export default function InstructorProfilePage() {
 function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
 
 function Field({ label, value }: { label: string; value: any }) {
-  return <div className="flex flex-col"><dt className="text-xs text-slate-400">{label}</dt><dd className="text-sm text-slate-800">{value || <span className="text-slate-300">—</span>}</dd></div>;
+  return <div className="grid grid-cols-[200px_1fr] items-center gap-3 py-2"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
 }
 
 function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
@@ -205,9 +250,10 @@ function StatusModal({ current, instructorId, onClose, onDone }: any) {
 }
 
 function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
+  const toast = useToast();
   const modules = skills.moduleStatus || [];
   const tone = (s: string) => { const t = (s || "").toLowerCase(); if (t.includes("complete")) return "bg-emerald-50 text-emerald-700"; if (t.includes("progress")) return "bg-amber-50 text-amber-700"; if (t.includes("hold")) return "bg-slate-100 text-slate-600"; if (t.includes("not started")) return "bg-rose-50 text-rose-700"; return "bg-slate-100 text-slate-600"; };
-  async function toggle(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/skills`, { key, done }); onChange(); } catch (e: any) { alert(e.message); } }
+  async function toggle(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/skills`, { key, done }); onChange(); } catch (e: any) { toast.error(e.message); } }
   return (
     <div className="space-y-5">
       {skills.list?.length > 0 && (
@@ -234,11 +280,12 @@ function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
 }
 
 function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
+  const toast = useToast();
   const [f, setF] = useState({ lastWorkingDay: exit.lastWorkingDay || "", typeOfExit: exit.typeOfExit || "", reason: exit.reason || "", detailedReason: exit.detailedReason || "" });
   const [busy, setBusy] = useState(false);
   const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
-  async function save() { setBusy(true); try { await api.post(`/instructors/${instructorId}/exit`, f); onChange(); } catch (e: any) { alert(e.message); } finally { setBusy(false); } }
-  async function toggleItem(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/exit`, { items: { [key]: done } }); onChange(); } catch (e: any) { alert(e.message); } }
+  async function save() { setBusy(true); try { await api.post(`/instructors/${instructorId}/exit`, f); onChange(); } catch (e: any) { toast.error(e.message); } finally { setBusy(false); } }
+  async function toggleItem(key: string, done: boolean) { try { await api.post(`/instructors/${instructorId}/exit`, { items: { [key]: done } }); onChange(); } catch (e: any) { toast.error(e.message); } }
   return (
     <div className="space-y-5">
       <div className="card p-6">
@@ -252,7 +299,7 @@ function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
             <div className="sm:col-span-2 flex justify-end"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">Save exit details</button></div>
           </div>
         ) : (
-          <dl className="grid grid-cols-1 gap-y-3"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
+          <dl className="divide-y divide-slate-100"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
         )}
       </div>
       <div className="card p-6">
@@ -268,13 +315,15 @@ function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
 }
 
 function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  async function add() { if (!body.trim()) return; setBusy(true); try { await api.post(`/instructors/${instructorId}/notes`, { body }); setBody(""); onChange(); } catch (e: any) { alert(e.message); } finally { setBusy(false); } }
-  async function saveEdit(id: string) { try { await api.patch(`/instructors/${instructorId}/notes/${id}`, { body: editText }); setEditId(null); onChange(); } catch (e: any) { alert(e.message); } }
-  async function del(id: string) { if (!confirm("Delete this note?")) return; try { await api.del(`/instructors/${instructorId}/notes/${id}`); onChange(); } catch (e: any) { alert(e.message); } }
+  async function add() { if (!body.trim()) return; setBusy(true); try { await api.post(`/instructors/${instructorId}/notes`, { body }); setBody(""); onChange(); } catch (e: any) { toast.error(e.message); } finally { setBusy(false); } }
+  async function saveEdit(id: string) { try { await api.patch(`/instructors/${instructorId}/notes/${id}`, { body: editText }); setEditId(null); onChange(); } catch (e: any) { toast.error(e.message); } }
+  async function del(id: string) { if (!(await confirm({ title: "Delete note?", message: "Delete this note?" }))) return; try { await api.del(`/instructors/${instructorId}/notes/${id}`); onChange(); } catch (e: any) { toast.error(e.message); } }
   return (
     <div className="card p-6">
       <h2 className="mb-4 font-semibold">Notes</h2>
@@ -303,6 +352,8 @@ function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
 }
 
 function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [docName, setDocName] = useState("");
@@ -310,9 +361,9 @@ function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
     if (!file) return;
     const form = new FormData(); form.append("file", file); form.append("name", docName.trim() || file.name);
     setBusy(true);
-    try { await api.upload(`/instructors/${instructorId}/documents`, form); setFile(null); setDocName(""); onChange(); } catch (err: any) { alert(err.message); } finally { setBusy(false); }
+    try { await api.upload(`/instructors/${instructorId}/documents`, form); setFile(null); setDocName(""); onChange(); } catch (err: any) { toast.error(err.message); } finally { setBusy(false); }
   }
-  async function del(docId: string) { if (!confirm("Delete this document?")) return; try { await api.del(`/instructors/${instructorId}/documents/${docId}`); onChange(); } catch (err: any) { alert(err.message); } }
+  async function del(docId: string) { if (!(await confirm({ title: "Delete document?", message: "Delete this document?" }))) return; try { await api.del(`/instructors/${instructorId}/documents/${docId}`); onChange(); } catch (err: any) { toast.error(err.message); } }
   return (
     <div className="card p-6">
       <h2 className="mb-4 font-semibold">Documents</h2>

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, RotateCcw, X } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import Loading from "../components/Loading";
 import Modal from "../components/Modal";
 import { STATUS_OPTIONS, TONE, SHORT } from "../training";
@@ -17,6 +18,7 @@ const TYPE_HINT: Record<string, string> = {
 export default function TrainingColumnsPage() {
   const { track } = useParams();
   const toast = useToast();
+  const confirm = useConfirm();
   const [label, setLabel] = useState("");
   const [cols, setCols] = useState<any[]>([]);
   const [archived, setArchived] = useState<any[]>([]);
@@ -29,7 +31,7 @@ export default function TrainingColumnsPage() {
 
   async function del(c: any) {
     const used = c.inUse ? ` ${c.inUse} instructor(s) have data in this column —` : "";
-    if (!confirm(`Hide column "${c.label}"?${used} their values are preserved and the column can be restored.`)) return;
+    if (!(await confirm({ title: "Hide column?", message: `Hide column "${c.label}"?${used} their values are preserved and the column can be restored.`, confirmText: "Hide" }))) return;
     try { await api.del(`/training/columns/${c.id}`); toast.success("Column hidden."); load(); } catch (e: any) { toast.error(e.message); }
   }
   async function restore(c: any) {

@@ -6,6 +6,7 @@ import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
+import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 
@@ -14,6 +15,8 @@ export default function InstructorsPage() {
   const isOps = user!.role === "OPS_ADMIN";
   const canManage = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
   const toast = useToast();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
   const [searchParams] = useSearchParams();
   const [q, setQ] = useState(searchParams.get("q") || "");
   const dq = useDebouncedValue(q, 300);
@@ -81,7 +84,8 @@ export default function InstructorsPage() {
     setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setManagerId(p.get("managerId") || ""); setPage(1);
   }
   async function saveView() {
-    const name = prompt("Name this view:"); if (!name) return;
+    const name = await prompt({ title: "Save view", message: "Name this view:", placeholder: "e.g. In-training at Aurora", confirmText: "Save", required: true });
+    if (!name) return;
     const p = filterParams();
     try { await api.post("/settings/views", { name, query: p.toString() }); toast.success("View saved."); loadViews(); } catch (e: any) { toast.error(e.message); }
   }
@@ -89,16 +93,16 @@ export default function InstructorsPage() {
 
   async function bulkReassign() {
     if (!ids.length) return;
-    if (!confirm(`Reassign ${ids.length} instructor(s)?`)) return;
+    if (!(await confirm({ title: "Reassign instructors?", message: `Reassign ${ids.length} instructor(s)?`, confirmText: "Reassign", danger: false }))) return;
     try { const r = await api.post("/mapping/reassign", { instructorIds: ids, managerId: bulkTarget || null }); toast.success(`Reassigned ${r.changed} instructor(s).`); setSelected({}); loadList(); } catch (e: any) { toast.error(e.message); }
   }
   async function bulkSetStatus() {
     if (!ids.length || !bulkStatus) return;
-    if (!confirm(`Set ${ids.length} instructor(s) to ${LIFECYCLE_LABEL[bulkStatus]}?`)) return;
+    if (!(await confirm({ title: "Change status?", message: `Set ${ids.length} instructor(s) to ${LIFECYCLE_LABEL[bulkStatus]}?`, confirmText: "Update", danger: false }))) return;
     try { const r = await api.post("/instructors/bulk", { instructorIds: ids, status: bulkStatus }); toast.success(`Updated ${r.changed} instructor(s).`); setSelected({}); loadList(); } catch (e: any) { toast.error(e.message); }
   }
   async function removeInstructor(i: any) {
-    if (!confirm(`Delete ${i.name} (${i.employeeId})? This cannot be undone.`)) return;
+    if (!(await confirm({ title: "Delete instructor?", message: `Delete ${i.name} (${i.employeeId})? This cannot be undone.` }))) return;
     try { await api.del(`/instructors/${i.id}`); toast.success("Instructor deleted."); loadList(); } catch (e: any) { toast.error(e.message); }
   }
 

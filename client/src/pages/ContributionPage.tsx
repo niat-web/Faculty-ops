@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Pencil, Trash2, Award } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import Loading from "../components/Loading";
 import Modal from "../components/Modal";
 
 export default function ContributionPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -22,7 +24,7 @@ export default function ContributionPage() {
   }, [items, q]);
 
   async function del(it: any) {
-    if (!confirm(`Clear contribution "${it.value}" from ${it.count} instructor(s)? Their other data stays.`)) return;
+    if (!(await confirm({ title: "Clear contribution?", message: `Clear contribution "${it.value}" from ${it.count} instructor(s)? Their other data stays.`, confirmText: "Clear" }))) return;
     try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); load(); } catch (e: any) { toast.error(e.message); }
   }
 

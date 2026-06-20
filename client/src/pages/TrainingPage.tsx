@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Search, GraduationCap } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
@@ -10,6 +10,60 @@ import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
 const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
 
 const ID_W = 116, NAME_W = 200;
+
+function cellValue(row: any, col: any) { return (col.storage === "module" ? row.moduleStatus?.[col.key] : row.values?.[col.key]) ?? ""; }
+
+// One grid row, memoised so editing a cell only re-renders THIS row (keeps the dropdown instant).
+const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, onSave, onCancel, editRef }: {
+  r: any; cols: any[]; editingColKey: string | null;
+  onEdit: (id: string, colKey: string) => void;
+  onSave: (row: any, col: any, value: string) => void;
+  onCancel: () => void;
+  editRef: React.MutableRefObject<HTMLSelectElement | HTMLInputElement | null>;
+}) {
+  // Recomputed only when this row re-renders → %, Health, Predicted stay live.
+  const summary = computeSummary(r.values, r.moduleStatus, r.tab);
+  return (
+    <tr className="group">
+      <td className="sticky z-20 border-b border-slate-100 bg-white px-3 py-3 font-mono text-[11px] text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W }}>{r.employeeId}</td>
+      <td className="sticky z-20 whitespace-nowrap border-b border-slate-100 bg-white px-3 py-3 font-medium text-slate-800" style={{ left: ID_W, minWidth: NAME_W }}>{r.name}</td>
+      {cols.map((col) => {
+        if (COMPUTED.has(col.key)) {
+          const { text, tone: ctone } = summaryCell(col.key, summary);
+          return (
+            <td key={col.id} className="border-b border-l border-slate-100 p-0 text-center">
+              <div className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${ctone ? TONE[ctone] : "text-slate-600"}`} title="Calculated automatically">{text}</div>
+            </td>
+          );
+        }
+        const val = cellValue(r, col);
+        const isEditing = editingColKey === col.key;
+        const isStatus = col.type === "STATUS";
+        const tone = isStatus ? statusTone(val) : "other";
+        const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
+        const ordered = val && baseOpts.includes(val) ? [val, ...baseOpts.filter((o) => o !== val)] : baseOpts;
+        return (
+          <td key={col.id} className={`border-b border-l border-slate-100 p-0 ${isStatus ? "text-center" : ""}`}>
+            {isEditing ? (
+              col.type === "STATUS" || col.type === "DROPDOWN" ? (
+                <select ref={editRef as any} autoFocus defaultValue={val || ""} onBlur={onCancel} onChange={(e) => onSave(r, col, e.target.value)} className="w-full bg-white px-1 py-3 text-xs outline-none ring-2 ring-brand-400">
+                  {ordered.map((s: string) => <option key={s} value={s}>{s}</option>)}
+                  <option value="">— clear —</option>
+                </select>
+              ) : (
+                <input ref={editRef as any} autoFocus type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
+              )
+            ) : isStatus ? (
+              <button onClick={() => onEdit(r.id, col.key)} className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${TONE[tone]} hover:opacity-80`}>{SHORT[tone] || val || "—"}</button>
+            ) : (
+              <button onClick={() => onEdit(r.id, col.key)} className="block w-full whitespace-nowrap px-3 py-3 text-left text-[11px] text-slate-600 hover:bg-slate-50">{val || "—"}</button>
+            )}
+          </td>
+        );
+      })}
+    </tr>
+  );
+});
 
 export default function TrainingPage() {
   const toast = useToast();
@@ -59,9 +113,9 @@ export default function TrainingPage() {
   const safePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
 
-  function cellValue(row: any, col: any) { return (col.storage === "module" ? row.moduleStatus?.[col.key] : row.values?.[col.key]) ?? ""; }
-
-  async function save(row: any, col: any, value: string) {
+  const onEdit = useCallback((id: string, colKey: string) => setEdit({ id, colKey }), []);
+  const onCancel = useCallback(() => setEdit(null), []);
+  const onSave = useCallback(async (row: any, col: any, value: string) => {
     const prev = cellValue(row, col);
     if (String(prev) === String(value)) { setEdit(null); return; }
     setData((d) => d.map((r) => r.id !== row.id ? r : col.storage === "module"
@@ -73,7 +127,7 @@ export default function TrainingPage() {
       toast.error("Save failed — reverted");
       setData((d) => d.map((r) => r.id !== row.id ? r : col.storage === "module" ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: prev || undefined } } : { ...r, values: { ...r.values, [col.key]: prev } }));
     }
-  }
+  }, [tabKey, toast]);
 
   // Group consecutive columns sharing the same `group` for the two-row header.
   const segs = useMemo(() => {
@@ -133,52 +187,11 @@ export default function TrainingPage() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => {
-              // Recomputed every render → %, Health and Predicted update instantly when a dropdown changes.
-              const summary = computeSummary(r.values, r.moduleStatus, r.tab);
-              return (
-              <tr key={r.id} className="group">
-                <td className="sticky z-20 border-b border-slate-100 bg-white px-3 py-3 font-mono text-[11px] text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W }}>{r.employeeId}</td>
-                <td className="sticky z-20 whitespace-nowrap border-b border-slate-100 bg-white px-3 py-3 font-medium text-slate-800" style={{ left: ID_W, minWidth: NAME_W }}>{r.name}</td>
-                {cols.map((col) => {
-                  // Computed (read-only) summary cells.
-                  if (COMPUTED.has(col.key)) {
-                    const { text, tone: ctone } = summaryCell(col.key, summary);
-                    return (
-                      <td key={col.id} className="border-b border-l border-slate-100 p-0 text-center">
-                        <div className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${ctone ? TONE[ctone] : "text-slate-600"}`} title="Calculated automatically">{text}</div>
-                      </td>
-                    );
-                  }
-                  const val = cellValue(r, col);
-                  const isEditing = edit && edit.id === r.id && edit.colKey === col.key;
-                  const isStatus = col.type === "STATUS";
-                  const tone = isStatus ? statusTone(val) : "other";
-                  // Put the current value first in the dropdown, then the rest.
-                  const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
-                  const ordered = val && baseOpts.includes(val) ? [val, ...baseOpts.filter((o) => o !== val)] : baseOpts;
-                  return (
-                    <td key={col.id} className={`border-b border-l border-slate-100 p-0 ${isStatus ? "text-center" : ""}`}>
-                      {isEditing ? (
-                        col.type === "STATUS" || col.type === "DROPDOWN" ? (
-                          <select ref={editRef as any} autoFocus defaultValue={val || ""} onBlur={() => setEdit(null)} onChange={(e) => save(r, col, e.target.value)} className="w-full bg-white px-1 py-3 text-xs outline-none ring-2 ring-brand-400">
-                            {ordered.map((s: string) => <option key={s} value={s}>{s}</option>)}
-                            <option value="">— clear —</option>
-                          </select>
-                        ) : (
-                          <input ref={editRef as any} autoFocus type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => save(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
-                        )
-                      ) : isStatus ? (
-                        <button onClick={() => setEdit({ id: r.id, colKey: col.key })} className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${TONE[tone]} hover:opacity-80`}>{SHORT[tone] || val || "—"}</button>
-                      ) : (
-                        <button onClick={() => setEdit({ id: r.id, colKey: col.key })} className="block w-full whitespace-nowrap px-3 py-3 text-left text-[11px] text-slate-600 hover:bg-slate-50">{val || "—"}</button>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-              );
-            })}
+            {shown.map((r) => (
+              <TrainingRow key={r.id} r={r} cols={cols}
+                editingColKey={edit && edit.id === r.id ? edit.colKey : null}
+                onEdit={onEdit} onSave={onSave} onCancel={onCancel} editRef={editRef} />
+            ))}
             {!shown.length && <tr><td colSpan={2 + cols.length} className="px-5 py-8 text-center text-slate-400">No instructors in this track.</td></tr>}
           </tbody>
         </table>

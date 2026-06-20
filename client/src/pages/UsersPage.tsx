@@ -4,6 +4,7 @@ import { api } from "../api";
 import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 
@@ -11,6 +12,7 @@ const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"
 
 export default function UsersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [q, setQ] = useState("");
   const dq = useDebouncedValue(q, 300);
   const [role, setRole] = useState("");
@@ -34,14 +36,14 @@ export default function UsersPage() {
   }, [dq, role, page, per, reloadKey]);
 
   async function remove(u: any) {
-    if (!confirm(`Delete ${u.name}? This cannot be undone.`)) return;
+    if (!(await confirm({ title: "Delete user?", message: `Delete ${u.name}? This cannot be undone.` }))) return;
     try { await api.del(`/users/${u.id}`); toast.success("User deleted."); load(); } catch (e: any) { toast.error(e.message); }
   }
   async function sendInvite(u: any) {
     try { const r = await api.post(`/users/${u.id}/invite`); setInvite({ link: r.link, email: r.email, delivered: r.delivered }); } catch (e: any) { toast.error(e.message); }
   }
   async function bulkInvite(scope: "pending" | "all") {
-    if (!confirm(`Send set-password invites to ${scope === "all" ? "all active users" : "users who haven't set a password"}?`)) return;
+    if (!(await confirm({ title: "Send invites?", message: `Send set-password invites to ${scope === "all" ? "all active users" : "users who haven't set a password"}?`, confirmText: "Send", danger: false }))) return;
     setBusy(true);
     try { const r = await api.post(`/users/invite/bulk`, { scope }); setMsg(`Invited ${r.count} user(s), ${r.delivered} email(s) delivered.`); } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
   }

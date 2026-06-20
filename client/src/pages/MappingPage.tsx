@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, History, Users2 } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import Loading from "../components/Loading";
 
 export default function MappingPage() {
@@ -76,6 +77,7 @@ export default function MappingPage() {
 }
 
 function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
+  const confirm = useConfirm();
   const [bulkFrom, setBulkFrom] = useState("");
   const [bulkTo, setBulkTo] = useState("");
   const [q, setQ] = useState("");
@@ -103,10 +105,10 @@ function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
             <select className="input w-48" value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}><option value="">Choose…</option>{cms.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </div>
           <button className="btn btn-primary btn-sm" disabled={busy || !bulkFrom || !bulkTo || bulkFrom === bulkTo}
-            onClick={() => {
+            onClick={async () => {
               const ids = instructors.filter((i: any) => i.managerId === bulkFrom).map((i: any) => i.id);
               if (!ids.length) { toast.error("That manager has no reportees."); return; }
-              if (confirm(`Move ${ids.length} reportee(s) to ${cmName(bulkTo)}?`)) reassign(ids, bulkTo);
+              if (await confirm({ title: "Move reportees?", message: `Move ${ids.length} reportee(s) to ${cmName(bulkTo)}?`, confirmText: "Move", danger: false })) reassign(ids, bulkTo);
             }}>Move all reportees</button>
         </div>
       </div>

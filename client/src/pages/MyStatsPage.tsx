@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import { api } from "../api";
 import { LIFECYCLE_LABEL } from "../auth";
+import { useToast } from "../toast";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
 
@@ -131,9 +132,10 @@ function EditMyFieldModal({ field, onClose, onDone }: any) {
 }
 
 function MySkillsTab({ skills, onChange }: any) {
+  const toast = useToast();
   const modules = skills.moduleStatus || [];
   const tone = (s: string) => { const t = (s || "").toLowerCase(); if (t.includes("complete")) return "bg-emerald-50 text-emerald-700"; if (t.includes("progress")) return "bg-amber-50 text-amber-700"; if (t.includes("hold")) return "bg-slate-100 text-slate-600"; if (t.includes("not started")) return "bg-rose-50 text-rose-700"; return "bg-slate-100 text-slate-600"; };
-  async function toggle(key: string, done: boolean) { try { await api.post(`/instructors/me/skills`, { key, done }); onChange(); } catch (e: any) { alert(e.message); } }
+  async function toggle(key: string, done: boolean) { try { await api.post(`/instructors/me/skills`, { key, done }); onChange(); } catch (e: any) { toast.error(e.message); } }
   return (
     <div className="space-y-5">
       {skills.list?.length > 0 && (
