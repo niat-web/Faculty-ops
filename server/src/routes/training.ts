@@ -44,6 +44,9 @@ function cleanOptions(type: string, options: any): string[] {
 
 // Grid data — scoped: Ops/SM see all, a Capability Manager sees only their reportees.
 router.get("/", staffGuard, async (req, res) => {
+  // Optional ?track= → build (and return) ROWS for only that track. Counts for all tracks are still
+  // computed (cheap) so the tabs show totals, but the big rows payload is just the requested track.
+  const wantTrack = String(req.query.track || "").trim();
   const cols = await loadColumns();
   const live = liveTrackKeys(cols as any[]);
   const sensitiveKeys = new Set((await FieldDefinition.find({ visibility: "SENSITIVE", archivedAt: null }).select("key").lean()).map((f: any) => f.key));
@@ -62,6 +65,7 @@ router.get("/", staffGuard, async (req, res) => {
     const tab = tabForInstructor(values, moduleStatus, live);
     if (!tab) continue;
     trackCount[tab] = (trackCount[tab] || 0) + 1;
+    if (wantTrack && tab !== wantTrack) continue; // only build rows for the requested track
     const vals: Record<string, string> = {};
     for (const k of valueKeys) vals[k] = (sensitiveKeys.has(k) ? maybeDecrypt(values[k]) : values[k]) ?? "";
     // Summary cells are always computed live from the dropdowns — never trust stale stored numbers.

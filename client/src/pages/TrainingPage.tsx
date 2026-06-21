@@ -1,13 +1,21 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Search, GraduationCap, SlidersHorizontal, X } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import Papa from "papaparse";
+import { Search, GraduationCap, SlidersHorizontal, X, Download } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { useCachedGet } from "../hooks";
 import Loading from "../components/Loading";
 import Pagination from "../components/Pagination";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
 import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
 
 const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
+
+// Each track is its own URL so only that track's rows are fetched (smaller payload, faster load).
+export const TRACK_SLUG: Record<string, string> = { tech: "tech-stats", math_aptitude: "mathematics-aptitude-stats", english: "english-stats" };
+const SLUG_TRACK: Record<string, string> = { "tech-stats": "tech", "mathematics-aptitude-stats": "math_aptitude", "english-stats": "english" };
+const EMPTY_FILTERS = { department: "", primary_track: "", secondary_track: "", ongoing_track: "", startFrom: "", startTo: "", deadlineFrom: "", deadlineTo: "", primaryMin: "", primaryMax: "", secondaryMin: "", secondaryMax: "" };
 
 const ID_W = 116, NAME_W = 200;
 
@@ -68,16 +76,14 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
 
 export default function TrainingPage() {
   const toast = useToast();
-  const [data, setData] = useState<any[]>([]);
-  const [columns, setColumns] = useState<Record<string, any[]>>({});
-  const [tracks, setTracks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [tabKey, setTabKey] = useState("tech");
+  const navigate = useNavigate();
+  const { slug } = useParams();
+  const tabKey = SLUG_TRACK[slug || ""] || "tech";
+  // Per-track fetch (cached): only this track's rows load → faster initial load, instant tab revisits.
+  const { data: resp, setData: setResp, loading, error: err } = useCachedGet<any>(`/training?track=${tabKey}`);
   const [q, setQ] = useState("");
   const [cmFilter, setCmFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  const EMPTY_FILTERS = { department: "", primary_track: "", secondary_track: "", ongoing_track: "", startFrom: "", startTo: "", deadlineFrom: "", deadlineTo: "", primaryMin: "", primaryMax: "", secondaryMin: "", secondaryMax: "" };
   const [filters, setFilters] = useState<Record<string, string>>(EMPTY_FILTERS);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
@@ -87,18 +93,19 @@ export default function TrainingPage() {
   const headRow1Ref = useRef<HTMLTableRowElement | null>(null);
   const [headRow1H, setHeadRow1H] = useState(34);
 
+  const data: any[] = resp?.rows || [];
+  const columns: Record<string, any[]> = resp?.columns || {};
+  const tracks: any[] = resp?.tracks || [];
+
+  // Reset view state when the track (route) changes.
+  useEffect(() => { setPage(0); setEdit(null); setFilters(EMPTY_FILTERS); setCmFilter(""); }, [tabKey]);
+
   // When a cell enters edit mode, open its native dropdown/picker immediately (single click).
   useEffect(() => {
     if (!edit || !editRef.current) return;
     const el = editRef.current as any;
     try { el.showPicker?.(); } catch { /* not supported — autoFocus still applies */ }
   }, [edit]);
-
-  useEffect(() => {
-    api.get("/training")
-      .then((r) => { setData(r.rows); setColumns(r.columns); setTracks(r.tracks); const first = r.tracks.find((t: any) => t.count) || r.tracks[0]; if (first) setTabKey(first.key); })
-      .catch((e) => setErr(e.message)).finally(() => setLoading(false));
-  }, []);
 
   // Keep the 2nd header row pinned exactly below the 1st (height varies with content/zoom).
   useLayoutEffect(() => {
@@ -115,6 +122,7 @@ export default function TrainingPage() {
   const activeFilterCount = Object.values(filters).filter(Boolean).length + (cmFilter ? 1 : 0);
   const setF = (k: string, v: string) => { setFilters((p) => ({ ...p, [k]: v })); setPage(0); };
   const clearFilters = () => { setFilters(EMPTY_FILTERS); setCmFilter(""); setPage(0); };
+  const goTrack = (key: string) => navigate(`/app/training/${TRACK_SLUG[key] || key}`);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -154,16 +162,17 @@ export default function TrainingPage() {
   const onSave = useCallback(async (row: any, col: any, value: string) => {
     const prev = cellValue(row, col);
     if (String(prev) === String(value)) { setEdit(null); return; }
-    setData((d) => d.map((r) => r.id !== row.id ? r : col.storage === "module"
-      ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: value || undefined } }
-      : { ...r, values: { ...r.values, [col.key]: value } }));
+    const apply = (rows: any[], v: string) => rows.map((r) => r.id !== row.id ? r : col.storage === "module"
+      ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: v || undefined } }
+      : { ...r, values: { ...r.values, [col.key]: v } });
+    setResp((d: any) => d ? { ...d, rows: apply(d.rows, value) } : d);
     setEdit(null);
     try { await api.post("/training", { instructorId: row.id, track: row.tab, target: col.storage, key: col.key, value }); }
-    catch (e: any) {
+    catch {
       toast.error("Save failed — reverted");
-      setData((d) => d.map((r) => r.id !== row.id ? r : col.storage === "module" ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: prev || undefined } } : { ...r, values: { ...r.values, [col.key]: prev } }));
+      setResp((d: any) => d ? { ...d, rows: apply(d.rows, prev) } : d);
     }
-  }, [tabKey, toast]);
+  }, [setResp, toast]);
 
   // Group consecutive columns sharing the same `group` for the two-row header.
   const segs = useMemo(() => {
@@ -172,8 +181,22 @@ export default function TrainingPage() {
     return out;
   }, [cols]);
 
-  if (loading) return <Loading />;
-  if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
+  // Export the CURRENT (filtered) table for this track as CSV — columns mirror what's on screen.
+  function exportCsv() {
+    const header = ["Employee ID", "Name", ...cols.map((c: any) => c.label)];
+    const out = filtered.map((r: any) => {
+      const sum = computeSummary(r.values, r.moduleStatus || {}, r.tab);
+      return [r.employeeId, r.name, ...cols.map((c: any) => (COMPUTED.has(c.key) ? summaryCell(c.key, sum).text : (cellValue(r, c) || "")))];
+    });
+    const csv = Papa.unparse([header, ...out]);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    a.download = `training-${tabKey}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  }
+
+  if (!resp && loading) return <Loading />;
+  if (err && !resp) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
 
   const head = "sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-slate-600";
   const frozenHead = "sticky top-0 z-30 border-b border-slate-200 bg-slate-50 text-slate-600";
@@ -194,6 +217,8 @@ export default function TrainingPage() {
             <option value="">All managers</option>
             {managers.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
+          <button onClick={exportCsv} className="btn btn-ghost btn-sm" title="Export the current table as CSV"><Download className="h-4 w-4" /> Export CSV</button>
+          {activeFilterCount > 0 && <button onClick={clearFilters} className="btn btn-ghost btn-sm text-rose-600 hover:text-rose-700">Clear all ({activeFilterCount})</button>}
           <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm">
             <SlidersHorizontal className="h-4 w-4" /> Filter
             {activeFilterCount > 0 && <span className="ml-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{activeFilterCount}</span>}
@@ -204,7 +229,7 @@ export default function TrainingPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           {tracks.map((t) => (
-            <button key={t.key} onClick={() => { setTabKey(t.key); setPage(0); setEdit(null); }} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${tabKey === t.key ? "bg-brand-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>
+            <button key={t.key} onClick={() => goTrack(t.key)} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${tabKey === t.key ? "bg-brand-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>
               {t.label} <span className="opacity-70">({t.count})</span>
             </button>
           ))}
@@ -257,7 +282,7 @@ export default function TrainingPage() {
             <div className="flex-1 space-y-4 overflow-y-auto p-5">
               <div>
                 <label className="label">Track</label>
-                <select value={tabKey} onChange={(e) => { setTabKey(e.target.value); setPage(0); setEdit(null); }} className="input w-full">
+                <select value={tabKey} onChange={(e) => { goTrack(e.target.value); setFilterOpen(false); }} className="input w-full">
                   {tracks.map((t) => <option key={t.key} value={t.key}>{t.label} ({t.count})</option>)}
                 </select>
                 <p className="mt-1 text-[11px] text-slate-400">Track-specific options below update with this selection.</p>
