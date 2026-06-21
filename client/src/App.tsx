@@ -16,6 +16,7 @@ const InstructorProfilePage = lazy(() => import("./pages/InstructorProfilePage")
 const MyStatsPage = lazy(() => import("./pages/MyStatsPage"));
 const TrainingPage = lazy(() => import("./pages/TrainingPage"));
 const TrainingColumnsPage = lazy(() => import("./pages/TrainingColumnsPage"));
+const MasterColumnsPage = lazy(() => import("./pages/MasterColumnsPage"));
 const ContributionPage = lazy(() => import("./pages/ContributionPage"));
 const CampuswisePage = lazy(() => import("./pages/CampuswisePage"));
 const ManagerDistributionPage = lazy(() => import("./pages/ManagerDistributionPage"));
@@ -131,6 +132,7 @@ export default function App() {
                   <Route path="data" element={<DataSettingsPage />} />
                 </Route>
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
+                <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />
                 <Route path="*" element={<Navigate to="/app" replace />} />
               </Routes>
               </Suspense>

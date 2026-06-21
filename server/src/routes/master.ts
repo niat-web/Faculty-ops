@@ -1,12 +1,12 @@
 import { Router } from "express";
 import Papa from "papaparse";
-import { Instructor, User, FieldDefinition } from "../models";
+import { Instructor, User, FieldDefinition, MasterColumn } from "../models";
 import { Role } from "../enums";
 import { instructorScopeFilter, canAccessInstructor, canEditDetails } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
 import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
-import { MASTER_COLUMNS, MASTER_COLUMN_BY_KEY, MASTER_VALUE_KEYS, ensureMasterFields } from "../lib/master";
+import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -14,13 +14,16 @@ router.use(requireUser());
 
 // Master is a manager/admin view — Ops, SM and CM (CM scoped to own reportees). Instructors blocked.
 const guard = (req: any, res: any, next: any) => (canEditDetails(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
+// Column management is Ops-only (changes the grid for everyone).
+const opsGuard = (req: any, res: any, next: any) => (req.user?.role === Role.OPS_ADMIN ? next() : res.status(403).json({ error: "Forbidden" }));
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
+const COL_TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
 
-// Column defs + dropdown filter option lists + the Capability Manager picker list.
+// Column defs (from the editable MasterColumn docs) + dropdown filter lists + the CM picker list.
 router.get("/meta", guard, async (req, res) => {
-  await ensureMasterFields();
+  const columns = await getActiveMasterColumns();
   const scope = instructorScopeFilter(req.user!);
   const [managers, departments, payrolls, regions, campuses] = await Promise.all([
     User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name").sort({ name: 1 }).lean(),
@@ -30,7 +33,7 @@ router.get("/meta", guard, async (req, res) => {
     Instructor.distinct("campus", scope),
   ]);
   res.json({
-    columns: MASTER_COLUMNS,
+    columns,
     managers: managers.map((m: any) => ({ id: String(m._id), name: m.name })),
     filters: {
       departments: (departments as string[]).filter(Boolean).sort(),
@@ -79,6 +82,7 @@ router.get("/", guard, async (req, res) => {
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
 
+  const valueKeys = (await getActiveMasterColumns()).filter((c) => c.source === "value").map((c) => c.key);
   const instructors = rows.map((r: any) => {
     const row: Record<string, any> = {
       id: String(r._id),
@@ -86,7 +90,7 @@ router.get("/", guard, async (req, res) => {
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
       managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "",
     };
-    for (const key of MASTER_VALUE_KEYS) row[key] = maybeDecrypt(r.values?.[key] ?? "") ?? "";
+    for (const key of valueKeys) row[key] = maybeDecrypt(r.values?.[key] ?? "") ?? "";
     return row;
   });
   res.json({ total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)), counts: { all: cAll, active: cAll - cExited, exited: cExited }, instructors });
@@ -111,9 +115,10 @@ router.get("/export.csv", guard, async (req, res) => {
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
 
+  const cols = await getActiveMasterColumns();
   const data = rows.map((r: any) => {
     const out: Record<string, any> = {};
-    for (const c of MASTER_COLUMNS) {
+    for (const c of cols) {
       if (c.source === "core") out[c.label] = c.key === "employeeId" ? r.employeeId : c.key === "name" ? r.name : c.key === "email" ? (r.email || "") : c.key === "campus" ? (r.campus || "") : c.key === "uid" ? (r.uid || "") : "";
       else if (c.source === "manager") out[c.label] = r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "";
       else out[c.label] = maybeDecrypt(r.values?.[c.key] ?? "") ?? "";
@@ -128,7 +133,7 @@ router.get("/export.csv", guard, async (req, res) => {
 // Edit a single master cell.
 router.post("/cell", guard, async (req, res) => {
   const { instructorId, key, value } = req.body || {};
-  const col = MASTER_COLUMN_BY_KEY[String(key)];
+  const col = (await getActiveMasterColumns()).find((c) => c.key === String(key));
   if (!col || !col.editable) return res.status(400).json({ error: "Unknown or read-only column" });
   if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
   const val = value == null ? "" : String(value);
@@ -183,6 +188,100 @@ router.post("/cell", guard, async (req, res) => {
   }
   await inst.save();
   await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: col.label, oldValue, newValue: val, reason: "Master edit" });
+  res.json({ ok: true });
+});
+
+// ─── Admin: manage Instructor Master columns (Ops only) ────────────────────
+const colAudit = (req: any, action: string, name: string, val = "") =>
+  writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action, fieldName: name, newValue: val, reason: "Master column" });
+
+// All columns (active + hidden) with an in-use count.
+router.get("/columns", opsGuard, async (_req, res) => {
+  await seedMasterColumns();
+  const all = await MasterColumn.find().sort({ order: 1 }).lean();
+  const total = await Instructor.estimatedDocumentCount();
+  const counts = await Promise.all((all as any[]).map((c) =>
+    c.source === "value" ? Instructor.countDocuments({ [`values.${c.key}`]: { $exists: true, $nin: ["", null] } })
+      : c.source === "manager" ? Instructor.countDocuments({ currentManagerId: { $ne: null } })
+        : Promise.resolve(total)
+  ));
+  const active: any[] = [], archived: any[] = [];
+  (all as any[]).forEach((c, i) => {
+    const row = { id: String(c._id), key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [], locked: !!c.locked, inUse: counts[i] };
+    (c.archivedAt ? archived : active).push(row);
+  });
+  res.json({ columns: active, archived });
+});
+
+// Add a new (value-backed) column — surfaces an existing dynamic field or creates one.
+router.post("/columns", opsGuard, async (req, res) => {
+  await seedMasterColumns();
+  const label = String(req.body?.label || "").trim();
+  const type = String(req.body?.type || "TEXT").toUpperCase();
+  const options = Array.isArray(req.body?.options) ? req.body.options.map((s: any) => String(s).trim()).filter(Boolean) : [];
+  if (!label) return res.status(400).json({ error: "Label is required." });
+  if (!COL_TYPES.includes(type)) return res.status(400).json({ error: "Unsupported column type." });
+  if (type === "DROPDOWN" && !options.length) return res.status(400).json({ error: "Add at least one dropdown option." });
+  const key = keyFromLabel(label);
+  if (!key) return res.status(400).json({ error: "Label must contain letters or numbers." });
+  if (await MasterColumn.findOne({ key, archivedAt: null }).select("_id").lean()) return res.status(409).json({ error: "A column with that name already exists." });
+
+  // Reuse an existing global field of that key, else create one. (No duplicate dynamic fields.)
+  const def: any = await FieldDefinition.findOne({ key, scope: "GLOBAL" }).lean();
+  if (!def) await FieldDefinition.create({ key, label, module: "DEPLOYMENT", type, visibility: "NECESSARY", scope: "GLOBAL", options, selfEditable: false });
+  else if (type === "DROPDOWN" && def.type !== "DROPDOWN") await FieldDefinition.updateOne({ _id: def._id }, { $set: { type, options } });
+
+  const last: any = await MasterColumn.findOne().sort({ order: -1 }).select("order").lean();
+  const col = await MasterColumn.create({ key, label, source: "value", type, options, order: (last?.order ?? 0) + 1 });
+  await colAudit(req, "FIELD_ADD", `Master column: ${label}`, type);
+  res.json({ ok: true, id: String(col._id) });
+});
+
+// Edit a column (label always; type/options only for value columns — reflected onto the field).
+router.patch("/columns/:id", opsGuard, async (req, res) => {
+  const col: any = await MasterColumn.findById(req.params.id);
+  if (!col) return res.status(404).json({ error: "Not found" });
+  const label = req.body?.label != null ? String(req.body.label).trim() : col.label;
+  if (!label) return res.status(400).json({ error: "Label is required." });
+  col.label = label;
+  if (col.source === "value") {
+    if (req.body?.type) { const t = String(req.body.type).toUpperCase(); if (COL_TYPES.includes(t)) col.type = t; }
+    if (Array.isArray(req.body?.options)) col.options = req.body.options.map((s: any) => String(s).trim()).filter(Boolean);
+    if (col.type === "DROPDOWN" && !col.options.length) return res.status(400).json({ error: "Add at least one dropdown option." });
+    // Keep the underlying field in sync so the profile/other screens match this type.
+    await FieldDefinition.updateOne({ key: col.key, scope: "GLOBAL" }, { $set: { type: col.type, options: col.options } });
+  }
+  await col.save();
+  await colAudit(req, "FIELD_EDIT", `Master column: ${label}`, col.type);
+  res.json({ ok: true });
+});
+
+// Hide (soft-archive) a column — values are preserved; essential columns can't be hidden.
+router.delete("/columns/:id", opsGuard, async (req, res) => {
+  const col: any = await MasterColumn.findById(req.params.id);
+  if (!col) return res.status(404).json({ error: "Not found" });
+  if (col.locked) return res.status(400).json({ error: "This is an essential column and can't be removed." });
+  col.archivedAt = new Date();
+  await col.save();
+  await colAudit(req, "FIELD_ARCHIVE", `Master column: ${col.label}`, "hidden");
+  res.json({ ok: true });
+});
+
+router.post("/columns/:id/restore", opsGuard, async (req, res) => {
+  const col: any = await MasterColumn.findById(req.params.id);
+  if (!col) return res.status(404).json({ error: "Not found" });
+  if (await MasterColumn.findOne({ key: col.key, archivedAt: null, _id: { $ne: col._id } }).select("_id").lean())
+    return res.status(409).json({ error: "An active column with that key already exists." });
+  col.archivedAt = null;
+  await col.save();
+  res.json({ ok: true });
+});
+
+// Persist a new order (array of column ids in display order).
+router.post("/columns/reorder", opsGuard, async (req, res) => {
+  const ids: string[] = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
+  if (!ids.length) return res.status(400).json({ error: "No order provided." });
+  await MasterColumn.bulkWrite(ids.map((id, i) => ({ updateOne: { filter: { _id: id }, update: { $set: { order: i } } } })));
   res.json({ ok: true });
 });
 

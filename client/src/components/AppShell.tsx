@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
+import Logo from "./Logo";
 
 const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 const NAV: any[] = [
@@ -73,7 +74,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4">
         <Link to="/app" className="mb-6 flex items-center gap-2 px-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white"><GraduationCap className="h-5 w-5" /></span>
+          <Logo size={38} className="shrink-0 drop-shadow-sm" />
           <span><span className="block text-sm font-bold leading-tight">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
         </Link>
         <nav className="flex-1 space-y-1 overflow-y-auto">

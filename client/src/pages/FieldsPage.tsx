@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, Archive, BookOpen, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Archive, BookOpen, ChevronRight, Table2 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useToast } from "../toast";
@@ -59,6 +59,10 @@ export default function FieldsPage() {
           <div className="card p-2">
             <button onClick={() => setSelected("__training__")} className={navItem(selected === "__training__")}>
               <span className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-brand-600" /> Training Stats columns</span>
+            </button>
+            <button onClick={() => navigate("/app/settings/fields/master")} className={navItem(false)}>
+              <span className="flex items-center gap-2"><Table2 className="h-4 w-4 text-brand-600" /> Instructor Master columns</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
             </button>
             <div className="my-1 border-t border-slate-100" />
             {modules.map((m) => (

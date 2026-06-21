@@ -137,6 +137,26 @@ TrainingColumnSchema.index({ track: 1, order: 1 });
 TrainingColumnSchema.index({ track: 1, key: 1 }, { unique: true, partialFilterExpression: { archivedAt: null } });
 
 // ---------------------------------------------------------------------------
+// MasterColumn — admin-configurable columns of the Instructor Master grid.
+// source: "core" (Instructor doc field) | "manager" (currentManagerId) | "value" (dynamic field key).
+// `locked` columns (Employee ID, Name, Capability Manager) can't be deleted/reordered out.
+const MasterColumnSchema = new Schema(
+  {
+    key: { type: String, required: true },              // core field | "managerId" | dynamic field key
+    label: { type: String, required: true },            // header shown in the grid
+    source: { type: String, default: "value" },         // core | manager | value
+    type: { type: String, default: "TEXT" },            // TEXT | NUMBER | DATE | DROPDOWN | MANAGER
+    options: { type: [String], default: [] },           // for DROPDOWN
+    order: { type: Number, default: 0 },
+    locked: { type: Boolean, default: false },          // essential column (can't delete)
+    archivedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+MasterColumnSchema.index({ order: 1 });
+MasterColumnSchema.index({ key: 1 }, { unique: true, partialFilterExpression: { archivedAt: null } });
+
+// ---------------------------------------------------------------------------
 // EditRequest
 const EditRequestSchema = new Schema(
   {
@@ -238,6 +258,7 @@ export const FieldModule = compile("FieldModule", FieldModuleSchema);
 export const Instructor = compile("Instructor", InstructorSchema);
 export const FieldDefinition = compile("FieldDefinition", FieldDefinitionSchema);
 export const TrainingColumn = compile("TrainingColumn", TrainingColumnSchema);
+export const MasterColumn = compile("MasterColumn", MasterColumnSchema);
 // InstructorMail — log of lifecycle emails sent to an instructor (for the Mails menu: status + resend).
 const InstructorMailSchema = new Schema(
   {

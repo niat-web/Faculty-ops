@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, Link, useSearchParams } from "react-router-dom";
-import { GraduationCap, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../auth";
+import Logo from "../components/Logo";
 import { api, API_BASE } from "../api";
 
 const GOOGLE_ERR: Record<string, string> = {
@@ -47,7 +48,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center gap-2">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white"><GraduationCap className="h-6 w-6" /></span>
+          <Logo size={44} className="shrink-0 drop-shadow-sm" />
           <span><span className="block text-lg font-bold leading-tight">FacultyOps</span><span className="block text-xs uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
         </div>
         <h1 className="text-2xl font-bold">Sign in</h1>

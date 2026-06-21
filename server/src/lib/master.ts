@@ -1,17 +1,18 @@
 // Instructor Master — a flat, spreadsheet-style view of every instructor with all the
 // "master sheet" columns, inline-editable. Each column maps to either a CORE Instructor
 // field, the manager relationship, or a dynamic FieldDefinition value (stored in values).
-import { FieldDefinition } from "../models";
+import { FieldDefinition, MasterColumn } from "../models";
 import { DEPARTMENT_OPTS } from "./training";
 
 export type MasterSource = "core" | "manager" | "value";
-export type MasterColumn = {
+export type MasterColumnDef = {
   key: string;            // core field name | "managerId" | dynamic field key
   label: string;          // header shown in the grid
   source: MasterSource;
   type: string;           // TEXT | NUMBER | DATE | DROPDOWN | MANAGER
   options?: string[];     // for DROPDOWN
   editable: boolean;
+  locked?: boolean;       // essential column — can't be deleted/reordered out
 };
 
 // ── Option sets (mirror the master spreadsheet's data-validation dropdowns) ──
@@ -34,12 +35,12 @@ const ROLE_OPTS = [
   "Training Incharge", "Training Manager", "Training Ops", "Zonal Incharge", "Capability Manager", "Other",
 ];
 
-// The master grid columns, in spreadsheet order.
-export const MASTER_COLUMNS: MasterColumn[] = [
-  { key: "employeeId", label: "Employee ID", source: "core", type: "TEXT", editable: false },
-  { key: "name", label: "Name", source: "core", type: "TEXT", editable: true },
+// The master grid columns, in spreadsheet order. (Seeds the editable MasterColumn docs on first use.)
+export const MASTER_COLUMNS: MasterColumnDef[] = [
+  { key: "employeeId", label: "Employee ID", source: "core", type: "TEXT", editable: false, locked: true },
+  { key: "name", label: "Name", source: "core", type: "TEXT", editable: true, locked: true },
   { key: "department", label: "Department", source: "value", type: "DROPDOWN", options: DEPARTMENT_OPTS, editable: true },
-  { key: "managerId", label: "Capability Manager", source: "manager", type: "MANAGER", editable: true },
+  { key: "managerId", label: "Capability Manager", source: "manager", type: "MANAGER", editable: true, locked: true },
   { key: "campus", label: "Work Location", source: "core", type: "TEXT", editable: true },
   { key: "contribution", label: "Contribution", source: "value", type: "TEXT", editable: true },
   { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
@@ -66,10 +67,8 @@ export const MASTER_COLUMNS: MasterColumn[] = [
   { key: "emp_city", label: "City", source: "value", type: "TEXT", editable: true },
 ];
 
-// Quick lookups for the cell-edit route.
-export const MASTER_COLUMN_BY_KEY: Record<string, MasterColumn> = Object.fromEntries(MASTER_COLUMNS.map((c) => [c.key, c]));
-// The dynamic-field value keys the master grid reads/writes.
-export const MASTER_VALUE_KEYS = MASTER_COLUMNS.filter((c) => c.source === "value").map((c) => c.key);
+// Quick lookups (seed defaults — runtime reads come from the DB via getActiveMasterColumns).
+export const MASTER_COLUMN_BY_KEY: Record<string, MasterColumnDef> = Object.fromEntries(MASTER_COLUMNS.map((c) => [c.key, c]));
 
 // Dynamic fields that don't exist yet but the master sheet needs (created on first use).
 const NEW_FIELDS: { key: string; label: string; module: string; type: string; visibility: string }[] = [
@@ -103,4 +102,31 @@ export async function ensureMasterFields() {
     );
   }
   _ensured = true;
+}
+
+// label → safe field key (for admin-created master columns).
+export const keyFromLabel = (label: string) =>
+  String(label).toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+
+let _seeded = false;
+// Materialise MASTER_COLUMNS into editable MasterColumn docs on first use (idempotent).
+export async function seedMasterColumns() {
+  if (_seeded) return;
+  await ensureMasterFields();
+  if ((await MasterColumn.countDocuments()) === 0) {
+    await MasterColumn.insertMany(MASTER_COLUMNS.map((c, i) => ({
+      key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [], order: i, locked: !!c.locked,
+    })));
+  }
+  _seeded = true;
+}
+
+// Active (non-archived) master columns in display order. `editable` is derived (only Employee ID is read-only).
+export async function getActiveMasterColumns(): Promise<any[]> {
+  await seedMasterColumns();
+  const cols = await MasterColumn.find({ archivedAt: null }).sort({ order: 1 }).lean();
+  return (cols as any[]).map((c) => ({
+    key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [],
+    locked: !!c.locked, editable: c.key !== "employeeId",
+  }));
 }
