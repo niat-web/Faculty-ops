@@ -41,6 +41,8 @@ router.get("/meta", guard, async (req, res) => {
   });
 });
 
+const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // the lifecycle states the "Active" tab hides
+
 // Paginated, scoped, filtered master rows.
 router.get("/", guard, async (req, res) => {
   const q = String(req.query.q || "").trim();
@@ -49,21 +51,29 @@ router.get("/", guard, async (req, res) => {
   const payroll = String(req.query.payroll || "").trim();
   const region = String(req.query.region || "").trim();
   const campus = String(req.query.campus || "").trim();
+  const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
   const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
 
-  const filter: any = { ...instructorScopeFilter(req.user!) };
-  if (managerId) filter.currentManagerId = managerId;
-  if (department) filter["values.department"] = department;
-  if (payroll) filter["values.payroll_entity"] = payroll;
-  if (region) filter["values.contribution_region"] = region;
-  if (campus) filter.campus = campus;
-  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
+  // base = everything except the lifecycle/scope condition (used for the bucket counts).
+  const base: any = { ...instructorScopeFilter(req.user!) };
+  if (managerId) base.currentManagerId = managerId;
+  if (department) base["values.department"] = department;
+  if (payroll) base["values.payroll_entity"] = payroll;
+  if (region) base["values.contribution_region"] = region;
+  if (campus) base.campus = campus;
+  if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
 
-  const [total, rows] = await Promise.all([
+  const filter: any = { ...base };
+  if (scope === "active") filter.status = { $nin: EXIT_STATES };
+  else if (scope === "exited") filter.status = { $in: EXIT_STATES };
+
+  const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
     Instructor.find(filter).sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.countDocuments(base),
+    Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
@@ -79,7 +89,7 @@ router.get("/", guard, async (req, res) => {
     for (const key of MASTER_VALUE_KEYS) row[key] = maybeDecrypt(r.values?.[key] ?? "") ?? "";
     return row;
   });
-  res.json({ total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)), instructors });
+  res.json({ total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)), counts: { all: cAll, active: cAll - cExited, exited: cExited }, instructors });
 });
 
 // CSV export — all master columns, mirrors the active list filters (capped to bound memory).
@@ -92,6 +102,9 @@ router.get("/export.csv", guard, async (req, res) => {
   if (req.query.region) filter["values.contribution_region"] = String(req.query.region);
   if (req.query.campus) filter.campus = String(req.query.campus);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
+  const scope = String(req.query.scope || "active").trim();
+  if (scope === "active") filter.status = { $nin: EXIT_STATES };
+  else if (scope === "exited") filter.status = { $in: EXIT_STATES };
 
   const rows = await Instructor.find(filter).sort({ employeeId: 1 }).limit(20000).lean();
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];

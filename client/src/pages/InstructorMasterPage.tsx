@@ -24,6 +24,8 @@ export default function InstructorMasterPage() {
   const [applied, setApplied] = useState<Filters>(EMPTY);
   const [draft, setDraft] = useState<Filters>(EMPTY);
   const [drawer, setDrawer] = useState(false);
+  const [scope, setScope] = useState<"active" | "all" | "exited">("active");
+  const [counts, setCounts] = useState<{ all: number; active: number; exited: number }>({ all: 0, active: 0, exited: 0 });
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
   const [reloadKey, setReloadKey] = useState(0);
@@ -41,15 +43,16 @@ export default function InstructorMasterPage() {
     if (applied.payroll) p.set("payroll", applied.payroll);
     if (applied.region) p.set("region", applied.region);
     if (applied.campus) p.set("campus", applied.campus);
+    p.set("scope", scope);
     return p;
-  }, [dq, applied]);
+  }, [dq, applied, scope]);
 
   useEffect(() => {
     const ac = new AbortController();
     const p = new URLSearchParams(query);
     p.set("page", String(page)); p.set("per", String(per));
     api.get(`/master?${p}`, { signal: ac.signal })
-      .then((r) => { setRows(r.instructors); setTotal(r.total); setErr(null); })
+      .then((r) => { setRows(r.instructors); setTotal(r.total); setCounts(r.counts || { all: 0, active: 0, exited: 0 }); setErr(null); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
   }, [query, page, per, reloadKey]);
@@ -107,7 +110,20 @@ export default function InstructorMasterPage() {
       {err &&<div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => setReloadKey((k) => k + 1)} className="btn btn-ghost btn-sm">Retry</button></div>}
 
       <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{total} instructor(s)</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <span className="text-sm font-medium text-slate-500">{total} instructor(s)</span>
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
+            {([["active", "Active", counts.active], ["all", "All", counts.all], ["exited", "Exited", counts.exited]] as const).map(([key, label, n]) => (
+              <button
+                key={key}
+                onClick={() => { setScope(key); setPage(1); }}
+                className={`rounded-md px-3 py-1 font-medium transition ${scope === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+              >
+                {label} <span className={scope === key ? "text-brand-500" : "text-slate-400"}>{n}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
