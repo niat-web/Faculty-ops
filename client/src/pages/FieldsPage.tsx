@@ -26,8 +26,8 @@ export default function FieldsPage() {
   const [visF, setVisF] = useState("");
   const [tracks, setTracks] = useState<any[]>([]);
 
-  function load() { api.get("/fields").then(setData).catch(() => {}); }
-  useEffect(load, []);
+  function load() { api.get("/fields").then(setData).catch((e) => toast.error(e.message || "Failed to load fields")); }
+  useEffect(() => { load(); }, []);
   useEffect(() => { api.get("/training/tracks").then((r) => setTracks(r.tracks)).catch(() => {}); }, []);
 
   async function del(f: any) {

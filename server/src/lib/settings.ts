@@ -8,16 +8,19 @@ export const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INST
 export type AppRole = (typeof ROLES)[number];
 
 let cache: any = null;
+let cacheAt = 0;
+const TTL_MS = 30_000; // short TTL so a role-access change made on one instance converges quickly across all. (Bug B4)
 
 export async function getSettings() {
-  if (cache) return cache;
+  if (cache && Date.now() - cacheAt < TTL_MS) return cache;
   let doc = await AppSetting.findOne({ key: KEY });
   if (!doc) doc = await AppSetting.create({ key: KEY });
   cache = doc.toObject();
+  cacheAt = Date.now();
   return cache;
 }
 
-export function invalidateSettingsCache() { cache = null; }
+export function invalidateSettingsCache() { cache = null; cacheAt = 0; }
 
 // Normalised role-access map (defaults every role to enabled if unset).
 export async function getRoleAccess(): Promise<Record<string, boolean>> {
@@ -39,5 +42,6 @@ export async function setRoleAccess(role: AppRole, enabled: boolean) {
     { new: true, upsert: true }
   );
   cache = doc.toObject();
+  cacheAt = Date.now();
   return getRoleAccess();
 }

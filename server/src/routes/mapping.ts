@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { Instructor, User } from "../models";
+import { Instructor, User, AuditLog } from "../models";
 import { Role } from "../enums";
 import { canManageMapping } from "../lib/rbac";
-import { notify, writeAudit } from "../lib/services";
+import { notify } from "../lib/services";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -33,22 +33,27 @@ router.post("/reassign", guard, async (req, res) => {
   if (!ids.length) return res.status(400).json({ error: "No instructors selected" });
   if (managerId) { const cm = await User.findOne({ _id: managerId, role: Role.CAPABILITY_MANAGER, active: true }).lean(); if (!cm) return res.status(400).json({ error: "Invalid or inactive Capability Manager" }); }
 
-  let changed = 0;
-  for (const id of ids) {
-    const inst: any = await Instructor.findById(id);
-    if (!inst) continue;
-    const prev = inst.currentManagerId ? String(inst.currentManagerId) : null;
-    if (prev === (managerId || null)) continue;
-    // close current assignment, open a new one
-    const open = inst.assignments.find((a: any) => !a.endedAt);
-    if (open) open.endedAt = new Date();
-    inst.currentManagerId = managerId || null;
-    if (managerId) inst.assignments.push({ managerId, assignedById: req.user!.id });
-    await inst.save();
-    changed++;
-    await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "MAPPING_CHANGE", fieldName: "Capability Manager", oldValue: prev || "—", newValue: managerId || "— unassigned —", reason: "Reassignment" });
+  // Batched: close open assignments, set the new manager + push the new assignment, audit — in a few
+  // queries instead of N sequential saves (a CM with hundreds of reportees would otherwise time out). (Improvement)
+  const docs = await Instructor.find({ _id: { $in: ids } }).select("currentManagerId name").lean();
+  const changedDocs = docs.filter((d: any) => (d.currentManagerId ? String(d.currentManagerId) : null) !== (managerId || null));
+  if (changedDocs.length) {
+    const now = new Date();
+    const changedIds = changedDocs.map((d: any) => d._id);
+    // 1) close any open assignment (separate update so it doesn't conflict with the $push below)
+    await Instructor.updateMany({ _id: { $in: changedIds } }, { $set: { "assignments.$[o].endedAt": now } }, { arrayFilters: [{ "o.endedAt": null }] });
+    // 2) set the new manager and (if assigning) open a new assignment
+    await Instructor.updateMany(
+      { _id: { $in: changedIds } },
+      { $set: { currentManagerId: managerId || null }, ...(managerId ? { $push: { assignments: { managerId, assignedById: req.user!.id, startedAt: now } } } : {}) }
+    );
+    await AuditLog.insertMany(changedDocs.map((d: any) => ({
+      instructorId: d._id, instructorName: d.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
+      action: "MAPPING_CHANGE", fieldName: "Capability Manager", oldValue: d.currentManagerId ? String(d.currentManagerId) : "—", newValue: managerId || "— unassigned —", reason: "Reassignment", createdAt: now,
+    })));
   }
-  if (managerId) await notify(managerId, { type: "REASSIGNED", title: "Instructors assigned to you", body: `${changed} instructor(s) reassigned by ${req.user!.name}`, link: "/app/instructors" });
+  const changed = changedDocs.length;
+  if (managerId && changed) await notify(managerId, { type: "REASSIGNED", title: "Instructors assigned to you", body: `${changed} instructor(s) reassigned by ${req.user!.name}`, link: "/app/instructors" });
   res.json({ ok: true, changed });
 });
 

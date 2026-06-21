@@ -10,7 +10,17 @@ import { requireUser } from "../middleware";
 
 const router = Router();
 router.use(requireUser());
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Proof files must be an image or PDF — reject anything else (esp. HTML/SVG → stored XSS). (Bug B3)
+const ALLOWED_PROOF = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "application/pdf"]);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, ALLOWED_PROOF.has(String(file.mimetype || "").toLowerCase())),
+});
+// Run multer and turn an oversize/other multer error into a clean 400 instead of a 500.
+function uploadProof(req: any, res: any, next: any) {
+  upload.single("proof")(req, res, (err: any) => (err ? res.status(400).json({ error: err.message || "Upload failed" }) : next()));
+}
 
 // List requests relevant to the viewer.
 router.get("/", async (req, res) => {
@@ -34,7 +44,7 @@ router.get("/", async (req, res) => {
 });
 
 // Capability Manager submits a change request (with a mandatory proof file) → routed to their Senior Manager.
-router.post("/", upload.single("proof"), async (req, res) => {
+router.post("/", uploadProof, async (req, res) => {
   const u = req.user!;
   if (u.role !== Role.CAPABILITY_MANAGER && u.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only Capability Managers raise requests" });
   const { instructorId, fieldKey, newValue, reason } = req.body || {};
@@ -74,7 +84,11 @@ router.get("/:id/proof", async (req, res) => {
   const u = req.user!;
   const allowed = u.role === Role.OPS_ADMIN || String(r.approverId) === u.id || String(r.requesterId) === u.id;
   if (!allowed) return res.status(403).json({ error: "Forbidden" });
-  downloadStream(r.proofPath).on("error", () => res.status(404).end()).pipe(res);
+  // Force download with a neutral type so an HTML/SVG proof can't render/execute in the browser. (Bug B3)
+  res.setHeader("Content-Disposition", "attachment");
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  downloadStream(r.proofPath).on("error", () => { if (!res.headersSent) res.status(404).end(); else res.destroy(); }).pipe(res);
 });
 
 // Senior Manager approves / rejects (the Ops Admin can decide any request as a super-user).

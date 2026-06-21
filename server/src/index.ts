@@ -40,11 +40,13 @@ async function main() {
     res.status(up ? 200 : 503).json({ ok: up, db: up ? "connected" : "down" });
   });
 
-  // Broad rate limit on auth (above the per-account DB lockout) to blunt brute force.
+  // Rate limit ONLY the sensitive auth actions (above the per-account DB lockout) to blunt brute force.
+  // NOT the whole /api/auth — /auth/me and /auth/google/status are polled/idempotent and must stay unlimited.
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Please try again later." } });
   // Block disabled-role sessions on every /api route (lets /auth/* through to recover).
   app.use("/api", enforceRoleAccess);
-  app.use("/api/auth", authLimiter, authRoutes);
+  app.use(["/api/auth/login", "/api/auth/forgot", "/api/auth/reset"], authLimiter);
+  app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/instructors", instructorRoutes);
   app.use("/api/fields", fieldRoutes);

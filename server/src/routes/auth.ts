@@ -71,20 +71,22 @@ router.post("/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
 
   const ip = req.ip || "?";
-  const key = `pw:${email}|${ip}`;       // password-stage lockout
+  const key = `pw:${email}|${ip}`;       // password-stage lockout (per IP)
+  const acctKey = `pw:acct:${email}`;     // account-wide lockout (defeats IP rotation)
   const otpKey = `2fa:${email}|${ip}`;    // separate OTP-stage lockout
-  const lockedFor = await isLocked(key);
+  const lockedFor = Math.max(await isLocked(key), await isLocked(acctKey));
   if (lockedFor) return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(lockedFor / 60)} min.` });
 
   const user = await User.findOne({ email });
   if (!user || !user.active || !(await verifyPassword(password, user.passwordHash))) {
     await recordFailure(key);
+    await recordFailure(acctKey, 20); // higher account-wide threshold to avoid easy lockout DoS
     return res.status(401).json({ error: "Invalid email or password." });
   }
 
   // Role-level access gate (admin can disable a whole role in Settings → Account Access).
   if (!(await isRoleEnabled(user.role))) {
-    await clearFailures(key);
+    await clearFailures(key); await clearFailures(acctKey);
     return res.status(403).json({ error: ROLE_DISABLED_MSG });
   }
 
@@ -102,7 +104,7 @@ router.post("/login", async (req, res) => {
     await clearFailures(otpKey);
   }
 
-  await clearFailures(key);
+  await clearFailures(key); await clearFailures(acctKey);
   setSessionCookie(res, signSession(user));
   await recordLogin(user, user.twoFactorEnabled ? "password+2fa" : "password", req);
   res.json({ ok: true, user: { id: String(user._id), email: user.email, name: user.name, role: user.role } });
@@ -165,7 +167,8 @@ router.post("/forgot", async (req, res) => {
     await user.save();
     const { buildSetPasswordLink, sendSetPasswordEmail } = await import("../lib/invites");
     const { config } = await import("../config");
-    await sendSetPasswordEmail(user, buildSetPasswordLink(config.appUrl, token, email));
+    // Fire-and-forget so a valid vs. unknown email respond in ~the same time (no enumeration). (Security)
+    void sendSetPasswordEmail(user, buildSetPasswordLink(config.appUrl, token, email)).catch((e) => console.error("[forgot] email failed:", e?.message));
   }
   res.json({ ok: true });
 });
@@ -185,6 +188,7 @@ router.post("/reset", async (req, res) => {
   user.resetTokenHash = null;
   user.resetTokenExp = null;
   user.mustSetPassword = false;
+  user.passwordChangedAt = new Date(); // invalidate any sessions issued before the reset (Security)
   await user.save();
   res.json({ ok: true });
 });

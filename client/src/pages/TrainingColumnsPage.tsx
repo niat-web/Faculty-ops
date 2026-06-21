@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, RotateCcw, X } from "lucide-react";
 import { api } from "../api";
@@ -25,6 +25,7 @@ export default function TrainingColumnsPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null); // {} for new, col for edit
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const dragIdxRef = useRef<number | null>(null); // synchronous source index (state lags on fast drags)
 
   function load() { api.get(`/training/columns?track=${track}`).then((r) => { setCols(r.columns); setArchived(r.archived || []); setLabel(r.label); }).catch((e) => toast.error(e.message)).finally(() => setLoading(false)); }
   useEffect(() => { setLoading(true); load(); }, [track]);
@@ -47,13 +48,14 @@ export default function TrainingColumnsPage() {
   }
   // Drag-and-drop reorder — items shift live as you drag, persisted on drop.
   function onDragEnter(i: number) {
-    if (dragIdx === null || dragIdx === i) return;
-    setCols((prev) => { const next = [...prev]; const [m] = next.splice(dragIdx, 1); next.splice(i, 0, m); return next; });
-    setDragIdx(i);
+    const from = dragIdxRef.current;
+    if (from === null || from === i) return;
+    setCols((prev) => { const next = [...prev]; const [m] = next.splice(from, 1); next.splice(i, 0, m); return next; });
+    dragIdxRef.current = i; setDragIdx(i);
   }
   function onDragEnd() {
-    if (dragIdx === null) return;
-    setDragIdx(null);
+    if (dragIdxRef.current === null) return;
+    dragIdxRef.current = null; setDragIdx(null);
     setCols((cur) => { persistOrder(cur); return cur; });
   }
 
@@ -79,7 +81,7 @@ export default function TrainingColumnsPage() {
               <tr
                 key={c.id}
                 draggable
-                onDragStart={() => setDragIdx(i)}
+                onDragStart={() => { dragIdxRef.current = i; setDragIdx(i); }}
                 onDragEnter={() => onDragEnter(i)}
                 onDragOver={(e) => e.preventDefault()}
                 onDragEnd={onDragEnd}

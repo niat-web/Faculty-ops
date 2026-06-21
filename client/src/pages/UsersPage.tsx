@@ -23,7 +23,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<any>(null); // user object or {} for new
   const [busy, setBusy] = useState(false);
   const [invite, setInvite] = useState<{ link: string; email: string; delivered: boolean } | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   function load() { setReloadKey((k) => k + 1); }
@@ -45,7 +45,7 @@ export default function UsersPage() {
   async function bulkInvite(scope: "pending" | "all") {
     if (!(await confirm({ title: "Send invites?", message: `Send set-password invites to ${scope === "all" ? "all active users" : "users who haven't set a password"}?`, confirmText: "Send", danger: false }))) return;
     setBusy(true);
-    try { const r = await api.post(`/users/invite/bulk`, { scope }); setMsg(`Invited ${r.count} user(s), ${r.delivered} email(s) delivered.`); } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
+    try { const r = await api.post(`/users/invite/bulk`, { scope }); setMsg({ text: `Invited ${r.count} user(s), ${r.delivered} email(s) delivered.`, ok: true }); } catch (e: any) { setMsg({ text: e.message, ok: false }); } finally { setBusy(false); }
   }
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
@@ -60,7 +60,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {msg && <div className="card border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-700">{msg}</div>}
+      {msg && <div className={`card px-4 py-2 text-sm ${msg.ok ? "border-brand-200 bg-brand-50 text-brand-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
       <div className="card flex flex-wrap items-end gap-3 p-4">
@@ -105,7 +105,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {data && <Pagination page={data.page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
+      {data && <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {editing && <UserModal user={editing} seniors={data?.seniors || []} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
       {invite && (
@@ -113,7 +113,7 @@ export default function UsersPage() {
           <p className="text-sm text-slate-600">{invite.delivered ? `An email was sent to ${invite.email}.` : `Could not email automatically — share this link with the user:`}</p>
           <div className="mt-3 flex gap-2">
             <input readOnly className="input font-mono text-xs" value={invite.link} onFocus={(e) => e.target.select()} />
-            <button onClick={() => navigator.clipboard.writeText(invite.link)} className="btn btn-ghost btn-sm shrink-0"><Copy className="h-4 w-4" /></button>
+            <button onClick={() => { if (navigator.clipboard) navigator.clipboard.writeText(invite.link).then(() => toast.success("Link copied.")).catch(() => toast.error("Couldn't copy — select and copy manually.")); else toast.error("Copy not available — select and copy manually."); }} className="btn btn-ghost btn-sm shrink-0"><Copy className="h-4 w-4" /></button>
           </div>
         </Modal>
       )}

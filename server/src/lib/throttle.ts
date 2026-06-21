@@ -11,7 +11,8 @@ export async function isLocked(key: string): Promise<number> {
 }
 
 // Atomic increment + lock decision so concurrent attempts can't race past the limit.
-export async function recordFailure(key: string): Promise<void> {
+// `max` lets callers set a higher account-wide threshold than the default per-IP one.
+export async function recordFailure(key: string, max: number = MAX): Promise<void> {
   const now = new Date();
   // If the window has elapsed since the first failure, start a fresh window.
   const fresh = await LoginAttempt.findOneAndUpdate(
@@ -26,7 +27,7 @@ export async function recordFailure(key: string): Promise<void> {
     { $inc: { count: 1 }, $set: { updatedAt: now }, $setOnInsert: { first: now } },
     { upsert: true, new: true }
   );
-  if (row.count >= MAX && (!row.lockedUntil || new Date(row.lockedUntil) <= now)) {
+  if (row.count >= max && (!row.lockedUntil || new Date(row.lockedUntil) <= now)) {
     await LoginAttempt.updateOne({ key }, { $set: { lockedUntil: new Date(now.getTime() + WINDOW_MS) } });
   }
 }

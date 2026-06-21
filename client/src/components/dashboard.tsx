@@ -131,7 +131,7 @@ export function LegendList({ items, total, onItem }: { items: { name: string; va
             <span className="w-9 text-right text-[11px] text-slate-400">{pct}%</span>
           </div>
         );
-        return <li key={i}>{onItem ? <button onClick={() => onItem(it)} className="w-full rounded-lg px-1 py-0.5 text-left hover:bg-slate-50">{Row}</button> : Row}</li>;
+        return <li key={(it as any).key ?? it.name ?? i}>{onItem ? <button onClick={() => onItem(it)} className="w-full rounded-lg px-1 py-0.5 text-left hover:bg-slate-50">{Row}</button> : Row}</li>;
       })}
     </ul>
   );
@@ -153,7 +153,7 @@ export function Leaderboard({ items, color = "#6366f1", unit = "", to }: { items
             </div>
           </div>
         );
-        return <li key={i}>{to ? <Link to={to(it)} className="block rounded-lg px-1 py-0.5 hover:bg-slate-50">{body}</Link> : body}</li>;
+        return <li key={(it as any).id ?? it.name ?? i}>{to ? <Link to={to(it)} className="block rounded-lg px-1 py-0.5 hover:bg-slate-50">{body}</Link> : body}</li>;
       })}
     </ul>
   );

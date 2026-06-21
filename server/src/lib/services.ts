@@ -1,8 +1,9 @@
 import type { Request } from "express";
-import { AuditLog, Notification, Instructor, User, LoginEvent } from "../models";
+import { AuditLog, Notification, Instructor, User, LoginEvent, FieldDefinition } from "../models";
 import { sendEmail } from "./email";
-import { encrypt, maybeDecrypt } from "./crypto";
+import { encrypt, maybeDecrypt, isEncrypted } from "./crypto";
 import { escapeHtml } from "./text";
+import { SUMMARY_INPUT_KEYS, recomputeInstructorSummary } from "./training";
 import { config } from "../config";
 import type { SessionUser } from "./rbac";
 
@@ -29,14 +30,25 @@ export async function notify(userId: string, { type, title, body, link, email = 
   }
 }
 
-export async function applyFieldChange({ actor, instructorId, fieldKey, fieldLabel, oldValue, newValue, reason, proofPath, sensitive = false, action = "FIELD_EDIT" }: {
+export async function applyFieldChange({ actor, instructorId, fieldKey, fieldLabel, oldValue, newValue, reason, proofPath, sensitive, action = "FIELD_EDIT" }: {
   actor: SessionUser; instructorId: string; fieldKey: string; fieldLabel?: string; oldValue?: string; newValue?: string; reason?: string; proofPath?: string; sensitive?: boolean; action?: string;
 }) {
   const inst = await Instructor.findById(instructorId);
   if (!inst) throw new Error("Instructor not found");
-  // Record the ACTUAL current value as oldValue (don't trust the client-supplied one).
-  const actualOld = maybeDecrypt(inst.values.get(fieldKey)) ?? (oldValue ?? null);
+  // Resolve sensitivity from the field definition unless the caller forced it — so EVERY edit path
+  // (direct, approved request, self-edit) encrypts/​masks consistently. (Bug B2)
+  if (sensitive == null) {
+    const def: any = await FieldDefinition.findOne({ key: fieldKey, archivedAt: null }).select("visibility").lean();
+    sensitive = def?.visibility === "SENSITIVE";
+  }
+  // Record the ACTUAL current value as oldValue (never the client-supplied one). If the stored value
+  // is encrypted but can't be decrypted (rotated key), mark it explicitly rather than faking it. (Bug B5)
+  const rawOld = inst.values.get(fieldKey);
+  const decOld = maybeDecrypt(rawOld);
+  const actualOld = rawOld == null ? null : (isEncrypted(rawOld) && decOld === null ? "[unable to decrypt]" : decOld);
   inst.values.set(fieldKey, sensitive ? encrypt(newValue ?? "") : (newValue ?? ""));
+  // Keep the live training summary in sync when a summary input (track/dates) changed. (Bug B1)
+  if (SUMMARY_INPUT_KEYS.includes(fieldKey)) { try { await recomputeInstructorSummary(inst); } catch (e: any) { console.error("[summary] recompute failed:", e?.message); } }
   await inst.save();
   await writeAudit({
     instructorId, instructorName: inst.name, actorId: actor.id, actorName: actor.name, actorRole: actor.role,

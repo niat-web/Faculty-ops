@@ -21,8 +21,19 @@ const detailGuard = async (req: any, res: any, next: any) => {
   if (!(await canAccessInstructor(req.user, req.params.id))) return res.status(403).json({ error: "Out of scope" });
   next();
 };
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Block browser-renderable/executable types (HTML/SVG/XML) as defense-in-depth; downloads already
+// force Content-Disposition: attachment. (Bug B3)
+const BLOCKED_UPLOAD = new Set(["text/html", "image/svg+xml", "application/xhtml+xml", "text/xml", "application/xml", "text/javascript", "application/javascript"]);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, !BLOCKED_UPLOAD.has(String(file.mimetype || "").toLowerCase())),
+});
+function uploadFile(req: any, res: any, next: any) {
+  upload.single("file")(req, res, (err: any) => (err ? res.status(400).json({ error: err.message || "Upload failed" }) : next()));
+}
 
+const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // the lifecycle states the "Active" scope hides
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
 async function emailConflict(email: string, excludeId?: any) {
@@ -41,16 +52,25 @@ router.get("/", async (req, res) => {
   const reqPer = parseInt(String(req.query.per || ""), 10);
   const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
 
-  const filter: any = { ...instructorScopeFilter(user) };
-  if (status) filter.status = status;
-  if (campus) filter.campus = campus;
-  if (managerId) filter.currentManagerId = managerId;
-  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
-  if (!isNaN(minTraining)) filter.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
+  // Scope-independent base (everything except the status/scope condition) — used for the bucket counts.
+  const scope = String(req.query.scope || "").trim();
+  const base: any = { ...instructorScopeFilter(user) };
+  if (campus) base.campus = campus;
+  if (managerId) base.currentManagerId = managerId;
+  if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
+  if (!isNaN(minTraining)) base.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
 
-  const [total, rows] = await Promise.all([
+  // A specific status overrides the scope; otherwise "active" excludes (and "exited" shows only) the exit states.
+  const filter: any = { ...base };
+  if (status) filter.status = status;
+  else if (scope === "active") filter.status = { $nin: EXIT_STATES };
+  else if (scope === "exited") filter.status = { $in: EXIT_STATES };
+
+  const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
     Instructor.find(filter).select("employeeId name email campus status currentManagerId values.primary_pct").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.countDocuments(base),
+    Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
@@ -58,6 +78,7 @@ router.get("/", async (req, res) => {
 
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
+    counts: { all: cAll, exited: cExited, active: cAll - cExited },
     instructors: rows.map((r: any) => ({
       id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus, status: r.status,
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
@@ -80,18 +101,21 @@ router.post("/bulk", editGuard, async (req, res) => {
   const note = String(req.body?.note || "").trim();
   if (!ids.length) return res.status(400).json({ error: "No instructors selected" });
   if (!Object.values(LifecycleStatus).includes(status as any)) return res.status(400).json({ error: "Bad status" });
-  let changed = 0;
-  for (const id of ids) {
-    const inst: any = await Instructor.findById(id);
-    if (!inst || inst.status === status) continue;
-    const old = inst.status;
-    inst.status = status;
-    inst.lifecycle.push({ status, note: note || "Bulk update", actorId: req.user!.id, actorName: req.user!.name });
-    await inst.save();
-    changed++;
-    await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "LIFECYCLE_CHANGE", fieldName: "Status", oldValue: old, newValue: status, reason: note || "Bulk status change" });
+  // Batched: one updateMany + one insertMany instead of N sequential saves. (Improvement)
+  const docs = await Instructor.find({ _id: { $in: ids } }).select("status name").lean();
+  const changedDocs = docs.filter((d: any) => d.status !== status);
+  if (changedDocs.length) {
+    const now = new Date();
+    await Instructor.updateMany(
+      { _id: { $in: changedDocs.map((d: any) => d._id) } },
+      { $set: { status }, $push: { lifecycle: { status, note: note || "Bulk update", actorId: req.user!.id, actorName: req.user!.name, createdAt: now } } }
+    );
+    await AuditLog.insertMany(changedDocs.map((d: any) => ({
+      instructorId: d._id, instructorName: d.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
+      action: "LIFECYCLE_CHANGE", fieldName: "Status", oldValue: d.status, newValue: status, reason: note || "Bulk status change", createdAt: now,
+    })));
   }
-  res.json({ ok: true, changed });
+  res.json({ ok: true, changed: changedDocs.length });
 });
 
 // CSV export (scoped). Core columns + all non-sensitive global field values. Honors ?ids= for a selected subset.
@@ -108,13 +132,16 @@ router.get("/export.csv", async (req, res) => {
     const campus = String(req.query.campus || "").trim();
     const managerId = String(req.query.managerId || "").trim();
     const minTraining = parseInt(String(req.query.minTraining || ""), 10);
+    const scope = String(req.query.scope || "").trim();
     if (status) baseFilter.status = status;
+    else if (scope === "active") baseFilter.status = { $nin: EXIT_STATES };
+    else if (scope === "exited") baseFilter.status = { $in: EXIT_STATES };
     if (campus) baseFilter.campus = campus;
     if (managerId) baseFilter.currentManagerId = managerId;
     if (q) { const rx = new RegExp(escapeRegex(q), "i"); baseFilter.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
     if (!isNaN(minTraining)) baseFilter.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
   }
-  const rows = await Instructor.find(baseFilter).sort({ employeeId: 1 }).lean();
+  const rows = await Instructor.find(baseFilter).sort({ employeeId: 1 }).limit(20000).lean(); // cap to bound memory (Improvement)
   const defs = await FieldDefinition.find({ archivedAt: null, scope: "GLOBAL", visibility: { $ne: "SENSITIVE" } }).sort({ module: 1, createdAt: 1 }).lean();
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
@@ -177,12 +204,19 @@ router.post("/import", async (req, res) => {
     if (row.email !== undefined) inst.email = email;
     if (row.campus !== undefined) inst.campus = String(row.campus || "").trim() || null;
     if (normStatus(row.status)) inst.status = status;
-    // Manager assignment by name (preserves history).
-    const mgrName = String(row.manager || row.Manager || row["Capability Manager"] || "").trim().toLowerCase();
-    if (mgrName && cmByName[mgrName] && String(inst.currentManagerId || "") !== cmByName[mgrName]) {
-      const open = inst.assignments.find((a: any) => !a.endedAt); if (open) open.endedAt = new Date();
-      inst.currentManagerId = cmByName[mgrName];
-      inst.assignments.push({ managerId: cmByName[mgrName], assignedById: req.user!.id });
+    // Manager assignment by name (preserves history). Surface unresolved names instead of silently ignoring. (Medium bug)
+    const mgrRaw = String(row.manager || row.Manager || row["Capability Manager"] || "").trim();
+    const mgrName = mgrRaw.toLowerCase();
+    if (mgrName) {
+      if (cmByName[mgrName]) {
+        if (String(inst.currentManagerId || "") !== cmByName[mgrName]) {
+          const open = inst.assignments.find((a: any) => !a.endedAt); if (open) open.endedAt = new Date();
+          inst.currentManagerId = cmByName[mgrName];
+          inst.assignments.push({ managerId: cmByName[mgrName], assignedById: req.user!.id });
+        }
+      } else {
+        errors.push({ row: i + 1, error: `Unknown/inactive manager "${mgrRaw}" — manager not set (other fields saved)` });
+      }
     }
     for (const [k, v] of Object.entries(row)) {
       const def = byKey[k] || byLabel[String(k).toLowerCase()];
@@ -422,7 +456,7 @@ router.delete("/:id/notes/:noteId", async (req, res) => {
 });
 
 // Documents: upload (Ops/SM), download, delete — stored in GridFS.
-router.post("/:id/documents", detailGuard, upload.single("file"), async (req, res) => {
+router.post("/:id/documents", detailGuard, uploadFile, async (req, res) => {
   const file = (req as any).file;
   if (!file) return res.status(400).json({ error: "No file uploaded" });
   const inst: any = await Instructor.findById(req.params.id);

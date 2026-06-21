@@ -80,10 +80,10 @@ export default function InstructorProfilePage() {
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!p) return <Loading />;
 
-  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule[m]?.length);
+  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule?.[m]?.length);
   const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
-  const inst = p.instructor;
+  const inst = p.instructor || {};
   const label = (t: string) => MODULE_LABEL[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t];
 
   return (
@@ -91,7 +91,7 @@ export default function InstructorProfilePage() {
       <Link to="/app/instructors" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> All instructors</Link>
 
       <div className="card flex flex-wrap items-center gap-4 p-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{inst.name.charAt(0)}</div>
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{(inst.name || "?").charAt(0)}</div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{inst.name}</h1>
           <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
@@ -116,7 +116,7 @@ export default function InstructorProfilePage() {
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
               <dl className="divide-y divide-slate-100">
-                {p.byModule[active].map((f: any) => (
+                {(p.byModule?.[active] || []).map((f: any) => (
                   <div key={f.key} className="group grid grid-cols-[200px_1fr_auto] items-center gap-3 py-2">
                     <dt className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-600">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
                     <dd className="min-w-0">
@@ -136,7 +136,7 @@ export default function InstructorProfilePage() {
                     </dd>
                     <div className="flex w-5 justify-end">
                       {(canEdit || canRequest) && f.type !== "FILE" && (
-                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} className="opacity-0 transition group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} aria-label={`Edit ${f.label}`} className="opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                       )}
                     </div>
                   </div>
@@ -149,7 +149,7 @@ export default function InstructorProfilePage() {
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
               <ul className="space-y-3">
-                {inst.lifecycle.length ? inst.lifecycle.map((l: any, i: number) => (
+                {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
                   <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
                 )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
               </ul>
@@ -403,7 +403,7 @@ function AuditTab({ instructorId }: { instructorId: string }) {
                 <span className="chip chip-gray">{a.action.replace(/_/g, " ").toLowerCase()}</span>
                 {a.fieldName && <span className="font-medium">{a.fieldName}</span>}
                 {(a.oldValue || a.newValue) && <span className="text-xs"><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span>}
-                {a.proofPath && <a href={`${API_BASE}/api/audit/proof/${a.proofPath}`} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">view proof</a>}
+                {a.proofPath && <a href={`${API_BASE}/api/audit/proof/${encodeURIComponent(a.proofPath)}`} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">view proof</a>}
               </div>
               {a.reason && <div className="text-xs text-slate-500">{a.reason}</div>}
               <div className="text-[11px] text-slate-400">{a.actorName} · {new Date(a.createdAt).toLocaleString()}</div>

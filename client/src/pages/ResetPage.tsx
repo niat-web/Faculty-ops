@@ -18,7 +18,10 @@ export default function ResetPage() {
     catch (e: any) { setErr(e.message); }
   }
   async function forgot(e: React.FormEvent) {
-    e.preventDefault(); await api.post("/auth/forgot", { email }); setSent(true);
+    e.preventDefault(); setErr(null);
+    // Always show the same neutral confirmation (no enumeration), even on a transient failure.
+    try { await api.post("/auth/forgot", { email }); } catch { /* ignore — still confirm below */ }
+    setSent(true);
   }
 
   return (

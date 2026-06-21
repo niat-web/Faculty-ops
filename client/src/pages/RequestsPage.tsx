@@ -18,7 +18,7 @@ export default function RequestsPage() {
   function load() {
     api.get(`/requests`).then((r) => { setData(r); setErr(null); }).catch((e) => setErr(e.message));
   }
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const all: any[] = data?.requests || [];
   const pending = all.filter((r) => r.status === "PENDING");
@@ -52,7 +52,7 @@ export default function RequestsPage() {
                 <div className="mt-1 text-[11px] text-slate-400">Requested by {r.requesterName} · {new Date(r.createdAt).toLocaleString()}</div>
                 {r.comments?.length > 0 && (
                   <ul className="mt-2 space-y-1 border-l-2 border-slate-100 pl-3">
-                    {r.comments.map((c: any, i: number) => <li key={i} className="text-xs text-slate-500"><span className="font-medium text-slate-600">{c.authorName}:</span> {c.body} <span className="text-slate-300">· {new Date(c.createdAt).toLocaleString()}</span></li>)}
+                    {r.comments.map((c: any, i: number) => <li key={c.createdAt ? `${c.createdAt}-${i}` : i} className="text-xs text-slate-500"><span className="font-medium text-slate-600">{c.authorName}:</span> {c.body} <span className="text-slate-300">· {new Date(c.createdAt).toLocaleString()}</span></li>)}
                   </ul>
                 )}
               </div>

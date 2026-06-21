@@ -17,7 +17,7 @@ export function passwordIssue(pw: string): string | null {
 export function signSession(user: { _id: any; role: string }) {
   return jwt.sign({ sub: String(user._id), role: user.role }, config.jwtSecret, { expiresIn: "12h" });
 }
-export function verifySession(token: string): { sub: string; role: string } | null {
+export function verifySession(token: string): { sub: string; role: string; iat?: number } | null {
   try { return jwt.verify(token, config.jwtSecret) as any; } catch { return null; }
 }
 

@@ -25,6 +25,8 @@ export default function InstructorsPage() {
   const [q, setQ] = useState(searchParams.get("q") || "");
   const dq = useDebouncedValue(q, 300);
   const [status, setStatus] = useState(searchParams.get("status") || "");
+  // Lifecycle scope quick-filter: "active" (default — excludes Exited + Exit in Progress), "all", "exited".
+  const [scope, setScope] = useState<"active" | "all" | "exited">(searchParams.get("status") ? "all" : "active");
   const [campus, setCampus] = useState(searchParams.get("campus") || "");
   const [managerId, setManagerId] = useState(searchParams.get("managerId") || "");
   const [minTraining, setMinTraining] = useState("");
@@ -48,6 +50,8 @@ export default function InstructorsPage() {
   function filterParams() {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq); if (status) p.set("status", status); if (campus) p.set("campus", campus); if (managerId) p.set("managerId", managerId); if (dMin) p.set("minTraining", dMin);
+    // A specific status overrides the scope; otherwise apply the active/exited scope.
+    if (!status && scope !== "all") p.set("scope", scope);
     return p;
   }
   function loadList() { setReloadKey((k) => k + 1); }
@@ -65,7 +69,7 @@ export default function InstructorsPage() {
       .then((r) => { setData(r); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load instructors"); });
     return () => ac.abort();
-  }, [dq, status, campus, managerId, dMin, page, per, reloadKey]);
+  }, [dq, status, scope, campus, managerId, dMin, page, per, reloadKey]);
 
   const scopeNote = user!.role === "CAPABILITY_MANAGER" ? "Showing only your assigned instructors." : user!.role === "INSTRUCTOR" ? "Showing your own profile." : "Showing all instructors across NIAT campuses.";
 
@@ -85,7 +89,7 @@ export default function InstructorsPage() {
   }
   function applyView(query: string) {
     const p = new URLSearchParams(query);
-    setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setManagerId(p.get("managerId") || ""); setPage(1);
+    setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setManagerId(p.get("managerId") || ""); setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
   }
   async function saveView() {
     const name = await prompt({ title: "Save view", message: "Name this view:", placeholder: "e.g. In-training at Aurora", confirmText: "Save", required: true });
@@ -143,7 +147,7 @@ export default function InstructorsPage() {
           <input className="input pl-9" placeholder="Name, ID, campus…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
         </div>
         <div><label className="label">Status</label>
-          <select className="input w-40" value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); }}>
+          <select className="input w-40" value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); if (e.target.value) setScope("all"); }}>
             <option value="">All</option>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
@@ -198,7 +202,20 @@ export default function InstructorsPage() {
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={loadList} className="btn btn-ghost btn-sm">Retry</button></div>}
 
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{data?.total ?? "…"} instructor(s)</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <span className="text-sm font-medium text-slate-500">{data?.total ?? "…"} instructor(s)</span>
+          {/* Quick lifecycle scope — defaults to Active (excludes Exited + Exit in Progress). */}
+          {!status && (
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
+              {([["active", "Active", data?.counts?.active], ["all", "All", data?.counts?.all], ["exited", "Exited", data?.counts?.exited]] as const).map(([key, label, count]) => (
+                <button key={key} onClick={() => { setScope(key); setPage(1); }}
+                  className={`rounded-md px-2.5 py-1 transition ${scope === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+                  {label}{count != null && <span className="ml-1 opacity-60">{count}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
@@ -240,7 +257,7 @@ export default function InstructorsPage() {
         </div>
       </div>
 
-      {data && <Pagination page={data.page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
+      {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {adding && <AddInstructorModal cms={cms} onClose={() => setAdding(false)} onDone={() => { setAdding(false); loadList(); }} />}
       {editing && <EditInstructorModal inst={editing} cms={cms} onClose={() => setEditing(null)} onDone={() => { setEditing(null); loadList(); }} />}

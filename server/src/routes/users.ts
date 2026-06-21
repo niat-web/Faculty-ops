@@ -96,7 +96,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
     if (role === Role.CAPABILITY_MANAGER) { const mgr = managerId || (target.managerId ? String(target.managerId) : null); if (!mgr) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager." }); target.managerId = mgr; }
     else target.managerId = null;
   } else if (managerId !== undefined && target.role === Role.CAPABILITY_MANAGER) target.managerId = managerId || null;
-  if (newPassword) { const i = passwordIssue(newPassword); if (i) return res.status(400).json({ error: i }); target.passwordHash = await hashPassword(newPassword); target.mustSetPassword = false; target.resetTokenHash = null; target.resetTokenExp = null; }
+  if (newPassword) { const i = passwordIssue(newPassword); if (i) return res.status(400).json({ error: i }); target.passwordHash = await hashPassword(newPassword); target.mustSetPassword = false; target.resetTokenHash = null; target.resetTokenExp = null; target.passwordChangedAt = new Date(); }
 
   await target.save();
   await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "USER_UPDATE", fieldName: "User updated", newValue: `${target.name} (${target.role})`, reason: newPassword ? "Updated (incl. password)" : "Updated" });

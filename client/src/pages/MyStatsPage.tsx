@@ -19,13 +19,14 @@ export default function MyStatsPage() {
   const [editField, setEditField] = useState<any>(null);
 
   function load() { api.get("/instructors/me").then(setP).catch((e) => setErr(e.message)); }
-  useEffect(load, []);
+  // Initial fetch with an unmount guard (avoid setState after unmount). (Bug)
+  useEffect(() => { let on = true; api.get("/instructors/me").then((r) => on && setP(r)).catch((e) => on && setErr(e.message)); return () => { on = false; }; }, []);
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!p) return <Loading />;
 
-  const inst = p.instructor;
-  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule[m]?.length);
+  const inst = p.instructor || {};
+  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule?.[m]?.length);
   const hasSkills = p.skills?.list?.length || p.skills?.moduleStatus?.length;
   const tabs = [...moduleTabs, ...(hasSkills ? ["SKILLS"] : []), "LIFECYCLE"];
   const active = tab || tabs[0] || "LIFECYCLE";
@@ -37,7 +38,7 @@ export default function MyStatsPage() {
       <div><h1 className="text-2xl font-bold">My Stats</h1><p className="text-sm text-slate-500">Review and keep your own details up to date.</p></div>
 
       <div className="card flex flex-wrap items-center gap-4 p-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{inst.name.charAt(0)}</div>
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{(inst.name || "?").charAt(0)}</div>
         <div className="flex-1">
           <h2 className="text-xl font-bold">{inst.name}</h2>
           <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
@@ -57,7 +58,7 @@ export default function MyStatsPage() {
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
               <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-                {p.byModule[active].map((f: any) => (
+                {(p.byModule?.[active] || []).map((f: any) => (
                   <div key={f.key} className="group flex flex-col">
                     <dt className="text-xs text-slate-400">{f.label}</dt>
                     <dd className="flex items-center gap-2 text-sm text-slate-800">
@@ -79,7 +80,7 @@ export default function MyStatsPage() {
             <div className="card p-6">
               <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
               <ul className="space-y-3">
-                {inst.lifecycle.length ? inst.lifecycle.map((l: any, i: number) => (
+                {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
                   <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
                 )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
               </ul>

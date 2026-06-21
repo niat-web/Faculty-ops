@@ -1,5 +1,6 @@
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { Lock } from "lucide-react";
+import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
@@ -30,6 +31,24 @@ import GeneralSettingsPage from "./pages/settings/GeneralSettingsPage";
 import SecuritySettingsPage from "./pages/settings/SecuritySettingsPage";
 import DataSettingsPage from "./pages/settings/DataSettingsPage";
 import AccountAccessPage from "./pages/settings/AccountAccessPage";
+
+// Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
+// instead of a blank white screen. (Bug B7)
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error("[ui] render error:", error, info); }
+  render() {
+    if (this.state.error) return (
+      <div className="m-6 card p-6">
+        <div className="mb-1 flex items-center gap-2 text-rose-600"><AlertTriangle className="h-5 w-5" /><h2 className="text-lg font-bold">Something went wrong</h2></div>
+        <p className="text-sm text-slate-600">This page hit an unexpected error. Try reloading — if it persists, contact your admin.</p>
+        <button onClick={() => location.reload()} className="btn btn-primary btn-sm mt-4">Reload</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading, blocked, blockedMessage, logout } = useAuth();
@@ -74,6 +93,7 @@ export default function App() {
         element={
           <Protected>
             <AppShell>
+              <ErrorBoundary>
               <Routes>
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
@@ -106,6 +126,7 @@ export default function App() {
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="*" element={<Navigate to="/app" replace />} />
               </Routes>
+              </ErrorBoundary>
             </AppShell>
           </Protected>
         }

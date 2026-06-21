@@ -19,6 +19,8 @@ export async function resolveUser(req: Request): Promise<SessionUser | null> {
   if (!payload) return null;
   const u = await User.findById(payload.sub).lean();
   if (!u || !u.active) return null;
+  // Reject sessions issued before the user's last password change (logout-on-reset). (Security)
+  if (u.passwordChangedAt && payload.iat && payload.iat * 1000 < new Date(u.passwordChangedAt).getTime()) return null;
   return { id: String(u._id), email: u.email, name: u.name, role: u.role, managerId: u.managerId ? String(u.managerId) : null };
 }
 

@@ -15,7 +15,7 @@ export default function ContributionPage() {
   const [editing, setEditing] = useState<any>(null);
 
   function load() { api.get("/contribution").then(setData).catch((e) => toast.error(e.message)).finally(() => setLoading(false)); }
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const items: any[] = data?.items || [];
   const filtered = useMemo(() => {

@@ -37,7 +37,9 @@ function MiniStat({ label, value, tone = "slate" }: { label: string; value: any;
   return <div className={`rounded-xl px-3 py-2 ${tones[tone]}`}><div className="text-lg font-bold leading-none">{value}</div><div className="mt-1 text-[11px] opacity-80">{label}</div></div>;
 }
 function relTime(t: any) {
-  const s = Math.floor((Date.now() - new Date(t).getTime()) / 1000);
+  const ms = new Date(t).getTime();
+  if (!t || isNaN(ms)) return "";
+  const s = Math.floor((Date.now() - ms) / 1000);
   if (s < 60) return "just now"; if (s < 3600) return `${Math.floor(s / 60)}m ago`; if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
@@ -64,7 +66,7 @@ function AdminDash({ d, first }: any) {
   const items = statusItems(c.byStatus);
   const spark = (c.joins || []).map((j: any) => j.value);
   const active = k.total - (k.exiting || 0);
-  const attrition = k.total ? Math.round((k.exited / k.total) * 100) : 0;
+  const attrition = k.total ? Math.round(((k.exited || 0) / k.total) * 100) : 0;
   const staff = (k.ops || 0) + (k.sm || 0) + (k.cm || 0) || 1;
   const wf = [{ name: "Ops Admins", value: k.ops || 0, color: "#6366f1" }, { name: "Senior Managers", value: k.sm || 0, color: "#06b6d4" }, { name: "Capability Managers", value: k.cm || 0, color: "#22c55e" }];
 

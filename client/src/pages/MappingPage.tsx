@@ -16,7 +16,7 @@ export default function MappingPage() {
   const [busy, setBusy] = useState(false);
 
   function load() { api.get("/mapping").then(setData).catch((e) => toast.error(e.message)); }
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const cms: any[] = data?.cms || [];
   const instructors: any[] = data?.instructors || [];

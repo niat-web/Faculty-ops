@@ -1,7 +1,13 @@
-import { Instructor, FieldDefinition, User } from "../models";
+import { Instructor, FieldDefinition, User, TrainingColumn } from "../models";
 import { filterVisibleFields, type SessionUser } from "./rbac";
-import { maybeDecrypt } from "./crypto";
+import { maybeDecrypt, isEncrypted } from "./crypto";
+import { tabForInstructor } from "./training";
+import { computeSummary, summaryStored, COMPUTED_KEYS } from "./trainingScore";
 import { Role } from "../enums";
+
+const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
+// Decrypt for display; a present-but-undecryptable value shows a sentinel rather than a fake blank. (Bug B5)
+const forDisplay = (raw: any) => { if (raw == null) return null; const v = maybeDecrypt(raw); return isEncrypted(raw) && v === null ? "[unable to decrypt]" : v; };
 
 const TRACK_SKILLS: Record<string, string[]> = {
   "Frontend Development": ["Static Web", "Responsive Design", "Modern Responsive UI", "JavaScript Sprint", "JavaScript Essentials", "React JS", "Frontend Projects"],
@@ -28,9 +34,21 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
   const visible = filterVisibleFields(viewer, defs as any[]);
   const values = inst.values || {};
 
+  // Compute the training summary LIVE so Health/%/Predicted never go stale on the profile. (Bug B1)
+  let liveSummary: Record<string, string> = {};
+  try {
+    const moduleCols = await TrainingColumn.find({ archivedAt: null, storage: "module" }).select("track key").lean();
+    const live: Record<string, string[]> = {};
+    for (const c of moduleCols as any[]) (live[c.track] ||= []).push(c.key);
+    const ms = inst.moduleStatus || {};
+    const tab = tabForInstructor(values, ms, live);
+    if (tab) liveSummary = summaryStored(computeSummary(values, ms, tab));
+  } catch { /* fall back to stored values */ }
+
   const byModule: Record<string, any[]> = {};
   for (const d of visible as any[]) {
-    (byModule[d.module] ||= []).push({ key: d.key, label: d.label, type: d.type, visibility: d.visibility, scope: d.scope, options: d.options || [], min: d.min ?? null, max: d.max ?? null, pattern: d.pattern || null, selfEditable: d.selfEditable !== false, value: maybeDecrypt(values[d.key] ?? d.defaultValue ?? null) });
+    const value = COMPUTED.has(d.key) ? (liveSummary[d.key] ?? "") : forDisplay(values[d.key] ?? d.defaultValue ?? null);
+    (byModule[d.module] ||= []).push({ key: d.key, label: d.label, type: d.type, visibility: d.visibility, scope: d.scope, options: d.options || [], min: d.min ?? null, max: d.max ?? null, pattern: d.pattern || null, selfEditable: d.selfEditable !== false, value });
   }
 
   let managerName = "— unassigned —";

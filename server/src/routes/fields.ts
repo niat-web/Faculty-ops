@@ -3,6 +3,7 @@ import { FieldDefinition, Instructor, User } from "../models";
 import { Module, FieldType, Visibility, FieldScope, Role } from "../enums";
 import { canManageSchema, canEditDetails, canAccessInstructor } from "../lib/rbac";
 import { writeAudit, notify, applyFieldChange, validateValue } from "../lib/services";
+import { maybeDecrypt } from "../lib/crypto";
 import { keyFromLabel } from "../lib/text";
 import { requireUser } from "../middleware";
 
@@ -66,6 +67,7 @@ router.patch("/:id", opsGuard, async (req, res) => {
   const { label, module, type, visibility, options, min, max, pattern, selfEditable } = req.body || {};
   const def: any = await FieldDefinition.findById(req.params.id);
   if (!def) return res.status(404).json({ error: "Field not found" });
+  const prevType = def.type;
   if (typeof selfEditable === "boolean") def.selfEditable = selfEditable;
   if (typeof label === "string" && label.trim()) def.label = label.trim();
   if (module) { if (!Object.values(Module).includes(module)) return res.status(400).json({ error: "Bad module" }); def.module = module; }
@@ -74,6 +76,20 @@ router.patch("/:id", opsGuard, async (req, res) => {
   if (options !== undefined) def.options = def.type === "DROPDOWN" ? String(options || "").split(",").map((s: string) => s.trim()).filter(Boolean) : [];
   if (def.type === "NUMBER") { def.min = min !== undefined && min !== "" && min !== null ? Number(min) : null; def.max = max !== undefined && max !== "" && max !== null ? Number(max) : null; } else { def.min = null; def.max = null; }
   if (def.type === "TEXT" && pattern) { try { new RegExp(pattern); } catch { return res.status(400).json({ error: "Invalid regex pattern." }); } def.pattern = pattern; } else if (pattern !== undefined) def.pattern = null;
+
+  // Changing the type must not strand existing values that are invalid for the new type. (Medium bug)
+  if (type && type !== prevType) {
+    const scopeFilter = def.scope === "INSTANCE" && def.instructorId ? { _id: def.instructorId } : {};
+    const holders = await Instructor.find({ ...scopeFilter, [`values.${def.key}`]: { $exists: true, $nin: [null, ""] } }).select(`values.${def.key}`).lean();
+    let bad = 0;
+    for (const h of holders as any[]) {
+      const val = maybeDecrypt((h.values || {})[def.key]);
+      if (val == null || val === "") continue;
+      const err = def.type === "DROPDOWN" ? (def.options.includes(String(val)) ? null : "x") : validateValue(def.type, val, { min: def.min, max: def.max, pattern: def.pattern });
+      if (err) bad++;
+    }
+    if (bad) return res.status(400).json({ error: `Can't switch to ${def.type}: ${bad} instructor(s) hold values that aren't valid. Fix or clear them first.` });
+  }
   await def.save();
   await writeAudit({ instructorId: def.instructorId || null, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: def.label, newValue: `${def.type}/${def.visibility}/${def.module}`, reason: "Field definition edited" });
   res.json({ ok: true });
@@ -111,6 +127,13 @@ router.post("/value", async (req, res) => {
   if (!def) return res.status(404).json({ error: "Unknown field" });
   const verr = validateValue(def.type, newValue, { min: def.min, max: def.max, pattern: def.pattern });
   if (verr) return res.status(400).json({ error: verr });
+  // Optimistic concurrency: refuse if the value changed since the client loaded it. (Improvement)
+  if (req.body?.oldValue !== undefined) {
+    const cur: any = await Instructor.findById(instructorId).select("values").lean();
+    const actual = cur ? maybeDecrypt((cur.values || {})[fieldKey]) : null;
+    const norm = (v: any) => String(v ?? "").trim();
+    if (norm(actual) !== norm(oldValue)) return res.status(409).json({ error: "This value changed since you loaded it — reload and try again." });
+  }
   await applyFieldChange({ actor: req.user!, instructorId, fieldKey, fieldLabel, oldValue, newValue, reason, sensitive: def.visibility === "SENSITIVE" });
   res.json({ ok: true });
 });

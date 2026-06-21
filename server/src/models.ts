@@ -21,6 +21,8 @@ const UserSchema = new Schema(
     twoFactorEnabled: { type: Boolean, default: false },
     twoFactorSecret: { type: String, default: null },
     twoFactorLastCounter: { type: Number, default: 0 },
+    passwordChangedAt: { type: Date, default: null }, // sessions issued before this are rejected
+
     savedViews: { type: [new Schema({ name: String, query: String }, { _id: true })], default: [] },
   },
   { timestamps: true }
@@ -79,7 +81,9 @@ const InstructorSchema = new Schema(
   { timestamps: true }
 );
 InstructorSchema.index({ currentManagerId: 1 });
-InstructorSchema.index({ email: 1 });
+// Unique per real email (nulls allowed) so two instructors can't share an email (breaks /me). (Bug B6)
+// Partial filter skips null/missing emails; build failure (pre-existing dupes) is caught in db.ts and logged.
+InstructorSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } });
 InstructorSchema.index({ status: 1 });
 InstructorSchema.index({ name: "text", employeeId: "text", campus: "text" });
 

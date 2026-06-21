@@ -52,7 +52,7 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
                   <option value="">— clear —</option>
                 </select>
               ) : (
-                <input ref={editRef as any} autoFocus type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
+                <input ref={editRef as any} autoFocus aria-label={col.label} type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
               )
             ) : isStatus ? (
               <button onClick={() => onEdit(r.id, col.key)} className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${TONE[tone]} hover:opacity-80`}>{SHORT[tone] || val || "—"}</button>
@@ -123,7 +123,7 @@ export default function TrainingPage() {
       ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: value || undefined } }
       : { ...r, values: { ...r.values, [col.key]: value } }));
     setEdit(null);
-    try { await api.post("/training", { instructorId: row.id, track: tabKey, target: col.storage, key: col.key, value }); }
+    try { await api.post("/training", { instructorId: row.id, track: row.tab, target: col.storage, key: col.key, value }); }
     catch (e: any) {
       toast.error("Save failed — reverted");
       setData((d) => d.map((r) => r.id !== row.id ? r : col.storage === "module" ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: prev || undefined } } : { ...r, values: { ...r.values, [col.key]: prev } }));

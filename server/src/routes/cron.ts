@@ -47,6 +47,17 @@ router.post("/digest", async (_req, res) => {
   res.json({ ok: true, sent });
 });
 
+// Recompute every instructor's training summary (%, Health, Predicted) so time-derived
+// values (e.g. a deadline that just passed) don't go stale between cell edits. (Bug B1)
+router.post("/recompute-summaries", async (_req, res) => {
+  const { recomputeInstructorSummary, liveTrackKeysFromDB } = await import("../lib/training");
+  const live = await liveTrackKeysFromDB();
+  const docs = await Instructor.find().select("values moduleStatus");
+  let updated = 0;
+  for (const inst of docs as any[]) { if (await recomputeInstructorSummary(inst, live)) { await inst.save(); updated++; } }
+  res.json({ ok: true, scanned: docs.length, updated });
+});
+
 // Retention: prune audit + login history older than RETENTION_DAYS (0 = keep forever).
 router.post("/prune", async (_req, res) => {
   const days = config.retentionDays;

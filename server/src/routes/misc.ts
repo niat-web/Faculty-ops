@@ -77,7 +77,10 @@ router.get("/audit/proof/:fileId", async (req, res) => {
   const exists = await AuditLog.exists({ proofPath: req.params.fileId });
   if (!exists) return res.status(404).json({ error: "Not found" });
   const { downloadStream } = await import("../lib/storage");
-  res.setHeader("Content-Disposition", "inline");
+  // Force a download with a neutral type so an uploaded HTML/SVG can't render/execute in the browser. (Bug B3)
+  res.setHeader("Content-Disposition", "attachment");
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   downloadStream(req.params.fileId).on("error", () => { if (!res.headersSent) res.status(404).end(); else res.destroy(); }).pipe(res);
 });
 
@@ -134,8 +137,11 @@ router.patch("/settings/profile", async (req, res) => {
     }
     const i = passwordIssue(newPassword); if (i) return res.status(400).json({ error: i });
     me.passwordHash = await hashPassword(newPassword); me.mustSetPassword = false;
+    me.passwordChangedAt = new Date(); // invalidate other sessions (Security)
   }
   await me.save();
+  // Re-issue THIS session's cookie so the user who just changed their own password stays signed in.
+  if (newPassword) { const { signSession, setSessionCookie } = await import("../lib/auth"); setSessionCookie(res, signSession(me)); }
   res.json({ ok: true });
 });
 

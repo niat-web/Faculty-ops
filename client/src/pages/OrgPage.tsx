@@ -34,8 +34,9 @@ export default function OrgPage() {
   if (!raw) return <Loading />;
 
   const instructorsUnder = (s: any) => (s.capabilityManagers || []).reduce((n: number, c: any) => n + (c.reportees || 0), 0);
-  // Active selection — fall back to the first SM in the (possibly filtered) list.
-  const selected = filtered.find((s) => s.id === selectedId) || filtered[0] || null;
+  // Active selection. Only auto-pick the first SM when nothing is chosen yet — don't silently
+  // swap to a different manager when the chosen one is filtered out by search. (Medium bug)
+  const selected = selectedId == null ? (filtered[0] || null) : (filtered.find((s) => s.id === selectedId) || null);
   const selectedCms: any[] = selected?.capabilityManagers || [];
 
   return (

@@ -70,7 +70,7 @@ export default function AuditPage() {
                   <td className="px-5 py-3 text-slate-600">{a.fieldName || "—"}</td>
                   <td className="px-5 py-3 text-xs">{a.oldValue || a.newValue ? <span><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span> : "—"}</td>
                   <td className="px-5 py-3 text-xs text-slate-500">{a.reason || "—"}</td>
-                  <td className="px-5 py-3 text-xs">{a.proofPath ? <a href={`${API_BASE}/api/audit/proof/${a.proofPath}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">view</a> : "—"}</td>
+                  <td className="px-5 py-3 text-xs">{a.proofPath ? <a href={`${API_BASE}/api/audit/proof/${encodeURIComponent(a.proofPath)}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">view</a> : "—"}</td>
                 </tr>
               ))}
               {data && !data.entries.length && <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">No audit entries match.</td></tr>}
@@ -79,7 +79,7 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {data && <Pagination page={data.page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
+      {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
     </div>
   );
 }

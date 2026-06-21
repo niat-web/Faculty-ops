@@ -25,7 +25,7 @@ const NAV: any[] = [
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
@@ -36,7 +36,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     let on = true;
-    const tick = () => api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {});
+    const tick = () => {
+      api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {});
+      refresh(); // re-check session/role each tick so a disabled role is blocked within ~30s (Bug B4)
+    };
     tick();
     const t = setInterval(tick, 30000);
     return () => { on = false; clearInterval(t); };

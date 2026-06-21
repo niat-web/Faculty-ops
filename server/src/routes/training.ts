@@ -191,11 +191,15 @@ router.post("/", staffGuard, async (req, res) => {
   const col: any = await TrainingColumn.findOne({ key, storage: target, archivedAt: null, ...(track ? { track } : {}) }).lean();
   if (!col) return res.status(400).json({ error: "Unknown training column" });
   const clean = String(value ?? "").trim();
-  const verr = validateCell(col.type, col.options || [], clean);
-  if (verr) return res.status(400).json({ error: verr });
-
   const inst: any = await Instructor.findById(instructorId);
   if (!inst) return res.status(404).json({ error: "Not found" });
+  // Grandfather the row's existing value: a legacy value not in the current option set (e.g. an old
+  // Department) stays selectable/saveable; only NEW values must match the options. (Medium bug)
+  const current = target === "module" ? inst.moduleStatus.get(key) : maybeDecrypt(inst.values.get(key));
+  if (!(clean && String(clean) === String(current ?? ""))) {
+    const verr = validateCell(col.type, col.options || [], clean);
+    if (verr) return res.status(400).json({ error: verr });
+  }
 
   let auditField = col.label;
   let auditValue = clean || "(cleared)";
