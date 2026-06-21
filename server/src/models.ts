@@ -209,8 +209,20 @@ const AppSettingSchema = new Schema(
   { timestamps: true }
 );
 
+// FieldModule — admin-definable sections that group dynamic fields (Personal Details, etc.).
+const FieldModuleSchema = new Schema(
+  {
+    key: { type: String, required: true, unique: true },
+    label: { type: String, required: true },
+    order: { type: Number, default: 0 },
+    builtin: { type: Boolean, default: false }, // the original 7 — can't be deleted
+  },
+  { timestamps: true }
+);
+
 export const User = compile("User", UserSchema);
 export const AppSetting = compile("AppSetting", AppSettingSchema);
+export const FieldModule = compile("FieldModule", FieldModuleSchema);
 export const Instructor = compile("Instructor", InstructorSchema);
 export const FieldDefinition = compile("FieldDefinition", FieldDefinitionSchema);
 export const TrainingColumn = compile("TrainingColumn", TrainingColumnSchema);

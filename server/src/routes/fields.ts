@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { FieldDefinition, Instructor, User } from "../models";
-import { Module, FieldType, Visibility, FieldScope, Role } from "../enums";
+import { FieldDefinition, Instructor, User, FieldModule } from "../models";
+import { FieldType, Visibility, FieldScope, Role } from "../enums";
 import { canManageSchema, canEditDetails, canAccessInstructor } from "../lib/rbac";
 import { writeAudit, notify, applyFieldChange, validateValue } from "../lib/services";
+import { listModules, moduleExists, moduleKeyFromLabel } from "../lib/modules";
 import { maybeDecrypt } from "../lib/crypto";
 import { keyFromLabel } from "../lib/text";
 import { requireUser } from "../middleware";
@@ -28,15 +29,29 @@ router.get("/", schemaGuard, async (_req, res) => {
       valueCount: counts[f.key] || 0,
       archivedAt: f.archivedAt ? new Date(f.archivedAt).toISOString() : null, archiveReason: f.archiveReason || null,
     })),
+    modules: await listModules(),
     instructors: instructors.map((i: any) => ({ id: String(i._id), name: i.name, employeeId: i.employeeId })),
   });
+});
+
+// Create a new module/section (Ops). Fields can then be defined under it.
+router.post("/modules", opsGuard, async (req, res) => {
+  const label = String(req.body?.label || "").trim();
+  if (!label) return res.status(400).json({ error: "Module name is required" });
+  const key = moduleKeyFromLabel(label);
+  if (!key) return res.status(400).json({ error: "Enter a valid module name (letters/numbers)." });
+  if (await FieldModule.findOne({ key }).lean()) return res.status(409).json({ error: "A module with that name already exists." });
+  const last = await FieldModule.findOne().sort({ order: -1 }).select("order").lean();
+  const mod = await FieldModule.create({ key, label, order: ((last as any)?.order ?? -1) + 1, builtin: false });
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_ADD", fieldName: "Module", newValue: label, reason: "Module created" });
+  res.json({ ok: true, module: { key: mod.key, label: mod.label, order: mod.order, builtin: false } });
 });
 
 // Define a new field.
 router.post("/", schemaGuard, async (req, res) => {
   const { label, module, type, visibility, scope = "GLOBAL", instructorId = null, options = "", min, max, pattern, selfEditable = true } = req.body || {};
   if (!String(label || "").trim()) return res.status(400).json({ error: "Label required" });
-  if (!Object.values(Module).includes(module)) return res.status(400).json({ error: "Bad module" });
+  if (!(await moduleExists(module))) return res.status(400).json({ error: "Bad module" });
   if (!Object.values(FieldType).includes(type)) return res.status(400).json({ error: "Bad type" });
   if (!Object.values(Visibility).includes(visibility)) return res.status(400).json({ error: "Visibility is required" });
   if (!Object.values(FieldScope).includes(scope)) return res.status(400).json({ error: "Bad scope" });
@@ -70,7 +85,7 @@ router.patch("/:id", opsGuard, async (req, res) => {
   const prevType = def.type;
   if (typeof selfEditable === "boolean") def.selfEditable = selfEditable;
   if (typeof label === "string" && label.trim()) def.label = label.trim();
-  if (module) { if (!Object.values(Module).includes(module)) return res.status(400).json({ error: "Bad module" }); def.module = module; }
+  if (module) { if (!(await moduleExists(module))) return res.status(400).json({ error: "Bad module" }); def.module = module; }
   if (type) { if (!Object.values(FieldType).includes(type)) return res.status(400).json({ error: "Bad type" }); def.type = type; }
   if (visibility) { if (!Object.values(Visibility).includes(visibility)) return res.status(400).json({ error: "Bad visibility" }); def.visibility = visibility; }
   if (options !== undefined) def.options = def.type === "DROPDOWN" ? String(options || "").split(",").map((s: string) => s.trim()).filter(Boolean) : [];

@@ -3,6 +3,7 @@ import { filterVisibleFields, type SessionUser } from "./rbac";
 import { maybeDecrypt, isEncrypted } from "./crypto";
 import { tabForInstructor } from "./training";
 import { computeSummary, summaryStored, COMPUTED_KEYS } from "./trainingScore";
+import { listModules } from "./modules";
 import { Role } from "../enums";
 
 const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
@@ -67,6 +68,7 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
 
   return {
     skills, exit, documents,
+    modules: await listModules(), // section order + labels (incl. admin-created ones)
     instructor: {
       id: String(inst._id), employeeId: inst.employeeId, name: inst.name, email: inst.email, campus: inst.campus, status: inst.status, managerName,
       notes: (inst.notes || []).map((n: any) => ({ id: String(n._id), body: n.body, authorName: n.authorName, createdAt: n.createdAt })).reverse(),

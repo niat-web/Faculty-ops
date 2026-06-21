@@ -23,7 +23,13 @@ export default function NotificationBell() {
   function load() {
     api.get("/notifications?limit=7").then((r) => { setItems(r.items || []); setCount(r.unread || 0); }).catch(() => {});
   }
-  useEffect(() => { load(); const t = setInterval(load, 45000); return () => clearInterval(t); }, []);
+  // Load on mount and when the user returns to the tab — no constant background polling.
+  useEffect(() => {
+    load();
+    const onFocus = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // Close on outside click / Escape.
   useEffect(() => {

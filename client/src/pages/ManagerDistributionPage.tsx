@@ -1,17 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Users2 } from "lucide-react";
-import { api } from "../api";
-import { useToast } from "../toast";
+import { useCachedGet } from "../hooks";
 import Loading from "../components/Loading";
 
 export default function ManagerDistributionPage() {
-  const toast = useToast();
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading } = useCachedGet<any>("/contribution/managers"); // cached for instant revisits
   const [q, setQ] = useState("");
-
-  useEffect(() => { api.get("/contribution/managers").then(setData).catch((e) => toast.error(e.message)).finally(() => setLoading(false)); }, []);
 
   const items: any[] = data?.items || [];
   const filtered = useMemo(() => {

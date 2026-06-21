@@ -1,17 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Building2, Users2, UserCog, ArrowRight } from "lucide-react";
-import { api } from "../api";
+import { useCachedGet } from "../hooks";
 import Loading from "../components/Loading";
 
 export default function OrgPage() {
-  const [raw, setRaw] = useState<any>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const { data: raw, error: err } = useCachedGet<any>("/org"); // cached for instant revisits
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const navigate = useNavigate();
-
-  useEffect(() => { let on = true; api.get("/org").then((r) => { if (on) { setRaw(r); setErr(null); } }).catch((e) => on && setErr(e.message)); return () => { on = false; }; }, []);
 
   const seniors: any[] = raw?.seniors || [];
   const unassigned: any[] = raw?.unassignedCMs || [];
@@ -30,7 +27,7 @@ export default function OrgPage() {
       .filter(Boolean) as any[];
   }, [seniors, needle]);
 
-  if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
+  if (err && !raw) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!raw) return <Loading />;
 
   const instructorsUnder = (s: any) => (s.capabilityManagers || []).reduce((n: number, c: any) => n + (c.reportees || 0), 0);

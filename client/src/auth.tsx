@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
+import { clearGetCache } from "./hooks";
 
 export interface SessionUser { id: string; email: string; name: string; role: string; managerId?: string | null; }
 
@@ -35,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (r.user) { setUser(r.user); setBlocked(false); }
     return {};
   }
-  async function logout() { await api.post("/auth/logout"); setUser(null); setBlocked(false); }
+  async function logout() { await api.post("/auth/logout"); clearGetCache(); setUser(null); setBlocked(false); }
 
   return <Ctx.Provider value={{ user, loading, blocked, blockedMessage, login, logout, refresh }}>{children}</Ctx.Provider>;
 }

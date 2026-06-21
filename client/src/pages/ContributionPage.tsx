@@ -1,21 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search, Pencil, Trash2, Award } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
+import { useCachedGet } from "../hooks";
 import Loading from "../components/Loading";
 import Modal from "../components/Modal";
 
 export default function ContributionPage() {
   const toast = useToast();
   const confirm = useConfirm();
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, reload } = useCachedGet<any>("/contribution"); // cached + revalidated; reload() after edits
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<any>(null);
-
-  function load() { api.get("/contribution").then(setData).catch((e) => toast.error(e.message)).finally(() => setLoading(false)); }
-  useEffect(() => { load(); }, []);
 
   const items: any[] = data?.items || [];
   const filtered = useMemo(() => {
@@ -25,7 +22,7 @@ export default function ContributionPage() {
 
   async function del(it: any) {
     if (!(await confirm({ title: "Clear contribution?", message: `Clear contribution "${it.value}" from ${it.count} instructor(s)? Their other data stays.`, confirmText: "Clear" }))) return;
-    try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); load(); } catch (e: any) { toast.error(e.message); }
+    try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); reload(); } catch (e: any) { toast.error(e.message); }
   }
 
   if (loading) return <Loading />;
@@ -75,7 +72,7 @@ export default function ContributionPage() {
         </div>
       </div>
 
-      {editing && <EditContributionModal item={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />}
+      {editing && <EditContributionModal item={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
     </div>
   );
 }

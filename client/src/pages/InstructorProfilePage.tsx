@@ -8,11 +8,7 @@ import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
 
-const MODULE_LABEL: Record<string, string> = {
-  PERSONAL: "Personal Details", HIRING: "Hiring Details", TRAINING: "Training Stats",
-  DEPLOYMENT: "Deployment", PERFORMANCE: "Performance", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding",
-};
-const MODULE_ORDER = ["PERSONAL", "HIRING", "TRAINING", "DEPLOYMENT", "PERFORMANCE"];
+// Module labels/order now come dynamically from the profile payload (p.modules).
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
 const EXIT_TYPES = ["Resignation", "Termination", "End of Contract", "Absconding", "Other"];
 const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "chip-necessary", SENSITIVE: "chip-sensitive" };
@@ -80,11 +76,14 @@ export default function InstructorProfilePage() {
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!p) return <Loading />;
 
-  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule?.[m]?.length);
+  // Field-table tabs come from the (dynamic) module list — incl. admin-created modules — excluding the
+  // ones rendered with special UI (Lifecycle timeline / Exit form).
+  const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
+  const moduleTabs = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
   const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
   const inst = p.instructor || {};
-  const label = (t: string) => MODULE_LABEL[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t];
+  const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t] || t;
 
   return (
     <div className="space-y-5">

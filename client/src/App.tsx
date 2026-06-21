@@ -1,36 +1,38 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, lazy, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
+// Login/Reset stay eager (entry points); everything else is code-split so each page
+// loads its own chunk on demand → much smaller initial bundle + faster first paint.
 import LoginPage from "./pages/LoginPage";
 import ResetPage from "./pages/ResetPage";
-import PrintProfilePage from "./pages/PrintProfilePage";
-import DashboardPage from "./pages/DashboardPage";
-import InstructorsPage from "./pages/InstructorsPage";
-import InstructorProfilePage from "./pages/InstructorProfilePage";
-import MyStatsPage from "./pages/MyStatsPage";
-import TrainingPage from "./pages/TrainingPage";
-import TrainingColumnsPage from "./pages/TrainingColumnsPage";
-import ContributionPage from "./pages/ContributionPage";
-import CampuswisePage from "./pages/CampuswisePage";
-import ManagerDistributionPage from "./pages/ManagerDistributionPage";
-import UsersPage from "./pages/UsersPage";
-import FieldsPage from "./pages/FieldsPage";
-import MappingPage from "./pages/MappingPage";
-import OrgPage from "./pages/OrgPage";
-import RequestsPage from "./pages/RequestsPage";
-import AuditPage from "./pages/AuditPage";
-import NotificationsPage from "./pages/NotificationsPage";
-import SettingsPage from "./pages/SettingsPage";
-import SettingsLayout from "./pages/settings/SettingsLayout";
-import NotificationsSettingsPage from "./pages/settings/NotificationsSettingsPage";
-import EmailsSettingsPage from "./pages/settings/EmailsSettingsPage";
-import GeneralSettingsPage from "./pages/settings/GeneralSettingsPage";
-import SecuritySettingsPage from "./pages/settings/SecuritySettingsPage";
-import DataSettingsPage from "./pages/settings/DataSettingsPage";
-import AccountAccessPage from "./pages/settings/AccountAccessPage";
+const PrintProfilePage = lazy(() => import("./pages/PrintProfilePage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const InstructorsPage = lazy(() => import("./pages/InstructorsPage"));
+const InstructorProfilePage = lazy(() => import("./pages/InstructorProfilePage"));
+const MyStatsPage = lazy(() => import("./pages/MyStatsPage"));
+const TrainingPage = lazy(() => import("./pages/TrainingPage"));
+const TrainingColumnsPage = lazy(() => import("./pages/TrainingColumnsPage"));
+const ContributionPage = lazy(() => import("./pages/ContributionPage"));
+const CampuswisePage = lazy(() => import("./pages/CampuswisePage"));
+const ManagerDistributionPage = lazy(() => import("./pages/ManagerDistributionPage"));
+const UsersPage = lazy(() => import("./pages/UsersPage"));
+const FieldsPage = lazy(() => import("./pages/FieldsPage"));
+const MappingPage = lazy(() => import("./pages/MappingPage"));
+const OrgPage = lazy(() => import("./pages/OrgPage"));
+const RequestsPage = lazy(() => import("./pages/RequestsPage"));
+const AuditPage = lazy(() => import("./pages/AuditPage"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
+const NotificationsSettingsPage = lazy(() => import("./pages/settings/NotificationsSettingsPage"));
+const EmailsSettingsPage = lazy(() => import("./pages/settings/EmailsSettingsPage"));
+const GeneralSettingsPage = lazy(() => import("./pages/settings/GeneralSettingsPage"));
+const SecuritySettingsPage = lazy(() => import("./pages/settings/SecuritySettingsPage"));
+const DataSettingsPage = lazy(() => import("./pages/settings/DataSettingsPage"));
+const AccountAccessPage = lazy(() => import("./pages/settings/AccountAccessPage"));
 
 // Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
 // instead of a blank white screen. (Bug B7)
@@ -87,13 +89,14 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset" element={<ResetPage />} />
-      <Route path="/print/instructors/:id" element={<Protected><PrintProfilePage /></Protected>} />
+      <Route path="/print/instructors/:id" element={<Protected><Suspense fallback={<Loading full />}><PrintProfilePage /></Suspense></Protected>} />
       <Route
         path="/app/*"
         element={
           <Protected>
             <AppShell>
               <ErrorBoundary>
+              <Suspense fallback={<Loading />}>
               <Routes>
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
@@ -126,6 +129,7 @@ export default function App() {
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="*" element={<Navigate to="/app" replace />} />
               </Routes>
+              </Suspense>
               </ErrorBoundary>
             </AppShell>
           </Protected>

@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Users, GraduationCap, Clock, Building2, CalendarClock, Activity, Star, TrendingUp,
   Network, ScrollText, BookOpen, ArrowRight, ChevronRight, UserPlus, Trophy, AlertTriangle, ShieldCheck, Briefcase, UserCheck,
 } from "lucide-react";
-import { api } from "../api";
 import { useAuth, LIFECYCLE_LABEL, ROLE_LABEL } from "../auth";
+import { useCachedGet } from "../hooks";
 import { GreetingHeader, TrendArea } from "../components/charts";
 import NotificationBell from "../components/NotificationBell";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
@@ -13,10 +12,8 @@ import Loading from "../components/Loading";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [d, setD] = useState<any>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { let on = true; api.get("/dashboard").then((r) => on && setD(r)).catch((e) => on && setErr(e.message)); return () => { on = false; }; }, []);
-  if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
+  const { data: d, error: err } = useCachedGet<any>("/dashboard"); // instant on revisit, revalidates in background
+  if (err && !d) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!d) return <Loading />;
 
   const first = (user!.name || "").split(" ")[0];

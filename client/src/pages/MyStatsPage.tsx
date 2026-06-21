@@ -6,12 +6,7 @@ import { useToast } from "../toast";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
 
-const MODULE_LABEL: Record<string, string> = {
-  PERSONAL: "Personal Details", HIRING: "Hiring Details", TRAINING: "Training Stats",
-  DEPLOYMENT: "Deployment", PERFORMANCE: "Performance",
-};
-const MODULE_ORDER = ["PERSONAL", "HIRING", "TRAINING", "DEPLOYMENT", "PERFORMANCE"];
-
+// Module labels/order come dynamically from the profile payload (p.modules).
 export default function MyStatsPage() {
   const [p, setP] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -26,11 +21,12 @@ export default function MyStatsPage() {
   if (!p) return <Loading />;
 
   const inst = p.instructor || {};
-  const moduleTabs = MODULE_ORDER.filter((m) => p.byModule?.[m]?.length);
+  const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
+  const moduleTabs = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
   const hasSkills = p.skills?.list?.length || p.skills?.moduleStatus?.length;
   const tabs = [...moduleTabs, ...(hasSkills ? ["SKILLS"] : []), "LIFECYCLE"];
   const active = tab || tabs[0] || "LIFECYCLE";
-  const label = (t: string) => MODULE_LABEL[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status" } as any)[t];
+  const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status" } as any)[t] || t;
   const fmt = (v: any) => (v === true ? "Yes" : v === false ? "No" : v);
 
   return (

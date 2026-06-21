@@ -36,14 +36,19 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     let on = true;
-    const tick = () => {
-      api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {});
-      refresh(); // re-check session/role each tick so a disabled role is blocked within ~30s (Bug B4)
-    };
-    tick();
-    const t = setInterval(tick, 30000);
-    return () => { on = false; clearInterval(t); };
-  }, [user]);
+    // Only poll the unread badge while the tab is visible, and only every 60s (no idle/background spam).
+    const pollCount = () => { if (document.visibilityState === "visible") api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {}); };
+    // Re-check session/role when the user returns to the tab (covers the live role-disable case) — not on a timer.
+    const onFocus = () => { if (document.visibilityState === "visible") { pollCount(); refresh(); } };
+    pollCount();
+    const t = setInterval(pollCount, 60000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { on = false; clearInterval(t); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+    // Key on the user ID only — refresh() replaces the user object, and depending on the whole
+    // object here would re-run this effect on every refresh (the cause of the request storm).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Close the profile menu on outside click / Escape.
   useEffect(() => {

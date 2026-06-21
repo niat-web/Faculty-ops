@@ -4,11 +4,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "../api";
 import { LIFECYCLE_LABEL } from "../auth";
 
-const MODULE_LABEL: Record<string, string> = {
-  PERSONAL: "Personal Details", HIRING: "Hiring Details", TRAINING: "Training Stats",
-  DEPLOYMENT: "Deployment", PERFORMANCE: "Performance", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding",
-};
-const MODULE_ORDER = ["PERSONAL", "HIRING", "TRAINING", "DEPLOYMENT", "PERFORMANCE"];
+// Module labels/order come dynamically from the profile payload (p.modules).
 
 export default function PrintProfilePage() {
   const { id } = useParams();
@@ -17,6 +13,8 @@ export default function PrintProfilePage() {
   useEffect(() => { if (!p) return; const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t); }, [p]);
   if (!p) return <div className="flex min-h-screen items-center justify-center gap-3 text-slate-400"><Loader2 className="h-9 w-9 animate-spin text-brand-600" /></div>;
   const inst = p.instructor || {};
+  const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
+  const moduleKeys: string[] = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
   const fmt = (v: any) => (v === true ? "Yes" : v === false ? "No" : v || "—");
 
   return (
@@ -30,9 +28,9 @@ export default function PrintProfilePage() {
         <button onClick={() => window.print()} className="btn btn-primary btn-sm print:hidden">Print / Save PDF</button>
       </div>
 
-      {MODULE_ORDER.filter((m) => p.byModule?.[m]?.length).map((m) => (
+      {moduleKeys.map((m) => (
         <section key={m} className="mb-5">
-          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">{MODULE_LABEL[m]}</h2>
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">{modLabel[m] || m}</h2>
           <dl className="grid grid-cols-2 gap-x-8 gap-y-2">
             {(p.byModule?.[m] || []).map((f: any) => (
               <div key={f.key} className="flex flex-col border-b border-slate-100 py-1">
