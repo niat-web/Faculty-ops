@@ -7,6 +7,7 @@ import {
 import { api } from "../api";
 import { useAuth, LIFECYCLE_LABEL, ROLE_LABEL } from "../auth";
 import { GreetingHeader, TrendArea } from "../components/charts";
+import NotificationBell from "../components/NotificationBell";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
 import Loading from "../components/Loading";
 
@@ -73,7 +74,7 @@ function AdminDash({ d, first }: any) {
   return (
     <div className="space-y-5">
       <GreetingHeader name={first} subtitle="Organization-wide control center across all NIAT campuses."
-        actions={<><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink><QuickLink to="/app/org" icon={Network}>Org</QuickLink><QuickLink to="/app/audit" icon={ScrollText}>Audit</QuickLink></>} />
+        actions={<><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink><QuickLink to="/app/org" icon={Network}>Org</QuickLink><QuickLink to="/app/audit" icon={ScrollText}>Audit</QuickLink><NotificationBell /></>} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Total instructors" value={k.total} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={spark} footer="vs last month" />
@@ -141,7 +142,7 @@ function SeniorDash({ d, first }: any) {
   return (
     <div className="space-y-5">
       <GreetingHeader name={first} subtitle="Org-wide oversight and approvals."
-        actions={<><QuickLink to="/app/requests" icon={Clock}>Requests</QuickLink><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink></>} />
+        actions={<><QuickLink to="/app/requests" icon={Clock}>Requests</QuickLink><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink><NotificationBell /></>} />
 
       {k.pending > 0 && (
         <Link to="/app/requests" className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-5 py-3.5 text-sm text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100">
@@ -195,7 +196,7 @@ function CapabilityDash({ d, first }: any) {
   return (
     <div className="space-y-5">
       <GreetingHeader name={first} subtitle="Your team of reportees at a glance."
-        actions={<><QuickLink to="/app/instructors" icon={Users}>Reportees</QuickLink><QuickLink to="/app/training" icon={BookOpen}>Training</QuickLink></>} />
+        actions={<><QuickLink to="/app/instructors" icon={Users}>Reportees</QuickLink><QuickLink to="/app/training" icon={BookOpen}>Training</QuickLink><NotificationBell /></>} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="My reportees" value={k.total} icon={Users} tone="brand" />
@@ -255,7 +256,7 @@ function InstructorDash({ d, first, user }: any) {
   return (
     <div className="space-y-5">
       <GreetingHeader name={first} subtitle="Here's how your journey is tracking."
-        actions={<><QuickLink to="/app/my-stats" icon={BookOpen}>My stats</QuickLink><QuickLink to={`/app/instructors/${me.id}`} icon={ArrowRight}>Profile</QuickLink></>} />
+        actions={<><QuickLink to="/app/my-stats" icon={BookOpen}>My stats</QuickLink><QuickLink to={`/app/instructors/${me.id}`} icon={ArrowRight}>Profile</QuickLink><NotificationBell /></>} />
 
       <div className="card overflow-hidden">
         <div className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-brand-600 to-brand-500 p-6 text-white">

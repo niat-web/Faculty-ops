@@ -86,14 +86,28 @@ router.get("/audit/proof/:fileId", async (req, res) => {
 
 // Notifications.
 router.get("/notifications", async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "100"), 10) || 100)); // dropdown can ask for fewer
   const [items, unread] = await Promise.all([
-    Notification.find({ userId: req.user!.id }).sort({ createdAt: -1 }).limit(100).lean(),
+    Notification.find({ userId: req.user!.id }).sort({ createdAt: -1 }).limit(limit).lean(),
     Notification.countDocuments({ userId: req.user!.id, read: false }),
   ]);
   res.json({ items: items.map((n: any) => ({ id: String(n._id), type: n.type, title: n.title, body: n.body, link: n.link, read: n.read, createdAt: n.createdAt })), unread });
 });
 router.get("/notifications/count", async (req, res) => res.json({ count: await Notification.countDocuments({ userId: req.user!.id, read: false }) }));
 router.post("/notifications/read", async (req, res) => { await Notification.updateMany({ userId: req.user!.id, read: false }, { $set: { read: true } }); res.json({ ok: true }); });
+// Mark a single notification read/unread (owner only).
+router.patch("/notifications/:id", async (req, res) => {
+  const read = req.body?.read !== false; // default true
+  const r = await Notification.updateOne({ _id: req.params.id, userId: req.user!.id }, { $set: { read } });
+  if (!r.matchedCount) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+// Delete a single notification (owner only).
+router.delete("/notifications/:id", async (req, res) => {
+  const r = await Notification.deleteOne({ _id: req.params.id, userId: req.user!.id });
+  if (!r.deletedCount) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
 
 // --- Account Access (Ops only): enable/disable portal access for whole roles ---
 router.get("/settings/role-access", async (req, res) => {

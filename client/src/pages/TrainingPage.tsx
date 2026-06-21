@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Search, GraduationCap } from "lucide-react";
+import { Search, GraduationCap, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import Loading from "../components/Loading";
@@ -75,6 +75,10 @@ export default function TrainingPage() {
   const [err, setErr] = useState<string | null>(null);
   const [tabKey, setTabKey] = useState("tech");
   const [q, setQ] = useState("");
+  const [cmFilter, setCmFilter] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const EMPTY_FILTERS = { department: "", primary_track: "", secondary_track: "", ongoing_track: "", startFrom: "", startTo: "", deadlineFrom: "", deadlineTo: "", primaryMin: "", primaryMax: "", secondaryMin: "", secondaryMax: "" };
+  const [filters, setFilters] = useState<Record<string, string>>(EMPTY_FILTERS);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [edit, setEdit] = useState<any>(null); // { id, colKey }
@@ -105,10 +109,41 @@ export default function TrainingPage() {
   }, [tabKey, columns, loading]);
 
   const cols: any[] = columns[tabKey] || [];
+  // Distinct Capability Managers (for the top filter) + per-track column option sets (for the drawer).
+  const managers = useMemo(() => [...new Set(data.map((r: any) => r.manager).filter((m: string) => m && m !== "—"))].sort(), [data]);
+  const colOptions = (key: string) => ((columns[tabKey] || []).find((c: any) => c.key === key)?.options as string[]) || [];
+  const activeFilterCount = Object.values(filters).filter(Boolean).length + (cmFilter ? 1 : 0);
+  const setF = (k: string, v: string) => { setFilters((p) => ({ ...p, [k]: v })); setPage(0); };
+  const clearFilters = () => { setFilters(EMPTY_FILTERS); setCmFilter(""); setPage(0); };
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return data.filter((r) => r.tab === tabKey && (!needle || r.name.toLowerCase().includes(needle) || (r.employeeId || "").toLowerCase().includes(needle)));
-  }, [data, tabKey, q]);
+    const f = filters;
+    const numOr = (v: string) => { const n = Number(v); return v === "" || isNaN(n) ? null : n; };
+    const pMin = numOr(f.primaryMin), pMax = numOr(f.primaryMax), sMin = numOr(f.secondaryMin), sMax = numOr(f.secondaryMax);
+    const sFrom = f.startFrom ? Date.parse(f.startFrom) : null, sTo = f.startTo ? Date.parse(f.startTo) : null;
+    const dFrom = f.deadlineFrom ? Date.parse(f.deadlineFrom) : null, dTo = f.deadlineTo ? Date.parse(f.deadlineTo) : null;
+    const eq = (a: any, b: string) => !b || String(a || "").toLowerCase() === b.toLowerCase();
+    return data.filter((r: any) => {
+      if (r.tab !== tabKey) return false;
+      if (needle && !(r.name.toLowerCase().includes(needle) || (r.employeeId || "").toLowerCase().includes(needle))) return false;
+      if (cmFilter && r.manager !== cmFilter) return false;
+      const v = r.values || {};
+      if (!eq(v.department, f.department) || !eq(v.primary_track, f.primary_track) || !eq(v.secondary_track, f.secondary_track) || !eq(v.ongoing_track, f.ongoing_track)) return false;
+      if (sFrom || sTo) { const t = v.ongoing_start ? Date.parse(v.ongoing_start) : NaN; if (isNaN(t) || (sFrom && t < sFrom) || (sTo && t > sTo)) return false; }
+      if (dFrom || dTo) { const t = v.track_deadline ? Date.parse(v.track_deadline) : NaN; if (isNaN(t) || (dFrom && t < dFrom) || (dTo && t > dTo)) return false; }
+      if (pMin != null || pMax != null || sMin != null || sMax != null) {
+        const sum = computeSummary(v, r.moduleStatus || {}, r.tab);
+        const pp = sum.primaryPct == null ? null : Math.round(sum.primaryPct * 100);
+        const sp = sum.secondaryPct == null ? null : Math.round(sum.secondaryPct * 100);
+        if (pMin != null && (pp == null || pp < pMin)) return false;
+        if (pMax != null && (pp == null || pp > pMax)) return false;
+        if (sMin != null && (sp == null || sp < sMin)) return false;
+        if (sMax != null && (sp == null || sp > sMax)) return false;
+      }
+      return true;
+    });
+  }, [data, tabKey, q, cmFilter, filters]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -150,9 +185,19 @@ export default function TrainingPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Instructors Training Stats</h1>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="Search name or ID…" className="input w-64 pl-9" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="Search name or ID…" className="input w-56 pl-9" />
+          </div>
+          <select value={cmFilter} onChange={(e) => { setCmFilter(e.target.value); setPage(0); }} title="Capability Manager" className="input w-48">
+            <option value="">All managers</option>
+            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm">
+            <SlidersHorizontal className="h-4 w-4" /> Filter
+            {activeFilterCount > 0 && <span className="ml-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{activeFilterCount}</span>}
+          </button>
         </div>
       </div>
 
@@ -199,6 +244,83 @@ export default function TrainingPage() {
       </div>
 
       <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
+
+      {/* Right-side filter drawer — full height, scrollable, with Apply / Clear at the bottom. */}
+      {filterOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onMouseDown={() => setFilterOpen(false)}>
+          <div className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+              <h2 className="flex items-center gap-2 font-semibold text-slate-800"><SlidersHorizontal className="h-5 w-5 text-brand-600" /> Filters</h2>
+              <button onClick={() => setFilterOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">
+              <div>
+                <label className="label">Track</label>
+                <select value={tabKey} onChange={(e) => { setTabKey(e.target.value); setPage(0); setEdit(null); }} className="input w-full">
+                  {tracks.map((t) => <option key={t.key} value={t.key}>{t.label} ({t.count})</option>)}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400">Track-specific options below update with this selection.</p>
+              </div>
+
+              <FilterSelect label="Department" value={filters.department} options={colOptions("department")} onChange={(v) => setF("department", v)} />
+              <FilterSelect label="Primary Track" value={filters.primary_track} options={colOptions("primary_track")} onChange={(v) => setF("primary_track", v)} />
+              <FilterSelect label="Secondary Track" value={filters.secondary_track} options={colOptions("secondary_track")} onChange={(v) => setF("secondary_track", v)} />
+              <FilterSelect label="Ongoing Track" value={filters.ongoing_track} options={colOptions("ongoing_track")} onChange={(v) => setF("ongoing_track", v)} />
+
+              <div>
+                <label className="label">Ongoing Track Start (range)</label>
+                <div className="flex items-center gap-2">
+                  <input type="date" value={filters.startFrom} onChange={(e) => setF("startFrom", e.target.value)} className="input w-full" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="date" value={filters.startTo} onChange={(e) => setF("startTo", e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Ongoing Track Deadline (range)</label>
+                <div className="flex items-center gap-2">
+                  <input type="date" value={filters.deadlineFrom} onChange={(e) => setF("deadlineFrom", e.target.value)} className="input w-full" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="date" value={filters.deadlineTo} onChange={(e) => setF("deadlineTo", e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Primary Score % (range)</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} max={100} placeholder="min" value={filters.primaryMin} onChange={(e) => setF("primaryMin", e.target.value)} className="input w-full" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="number" min={0} max={100} placeholder="max" value={filters.primaryMax} onChange={(e) => setF("primaryMax", e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Secondary Score % (range)</label>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} max={100} placeholder="min" value={filters.secondaryMin} onChange={(e) => setF("secondaryMin", e.target.value)} className="input w-full" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="number" min={0} max={100} placeholder="max" value={filters.secondaryMax} onChange={(e) => setF("secondaryMax", e.target.value)} className="input w-full" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-slate-100 px-5 py-3">
+              <button onClick={clearFilters} className="btn btn-ghost btn-sm flex-1">Clear all</button>
+              <button onClick={() => setFilterOpen(false)} className="btn btn-primary btn-sm flex-1">Apply ({filtered.length})</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="input w-full">
+        <option value="">Any</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
     </div>
   );
 }
