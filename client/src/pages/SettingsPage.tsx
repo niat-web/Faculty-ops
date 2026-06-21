@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { api } from "../api";
 import { useAuth, ROLE_LABEL } from "../auth";
 
@@ -118,8 +119,18 @@ function TwoFactorSection() {
         </div>
       ) : setup ? (
         <div className="space-y-3">
-          <p className="text-sm text-slate-600">Add this secret to your authenticator app (Google Authenticator, Authy…), then enter the 6-digit code to confirm.</p>
-          <div className="rounded-lg bg-slate-50 p-3 text-center"><div className="font-mono text-lg tracking-widest">{setup.secret}</div></div>
+          <p className="text-sm text-slate-600">Scan this QR code with Google Authenticator (or Authy), then enter the 6-digit code to confirm.</p>
+          {setup.otpauth && (
+            <div className="flex justify-center">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <QRCodeSVG value={setup.otpauth} size={168} level="M" />
+              </div>
+            </div>
+          )}
+          <details className="text-sm">
+            <summary className="cursor-pointer text-slate-500 hover:text-slate-700">Can't scan? Enter this key manually</summary>
+            <div className="mt-2 rounded-lg bg-slate-50 p-3 text-center"><div className="select-all break-all font-mono text-sm tracking-widest">{setup.secret}</div></div>
+          </details>
           <div className="flex gap-2"><input className="input tracking-widest" inputMode="numeric" maxLength={6} placeholder="123456" value={token} onChange={(e) => setToken(e.target.value)} /><button disabled={busy || token.length !== 6} onClick={enable} className="btn btn-primary btn-sm shrink-0 disabled:opacity-50">Enable</button></div>
         </div>
       ) : (
