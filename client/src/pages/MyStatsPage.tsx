@@ -5,6 +5,7 @@ import { LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
+import ScrollSelect from "../components/ScrollSelect";
 
 // Module labels/order come dynamically from the profile payload (p.modules).
 export default function MyStatsPage() {
@@ -110,7 +111,8 @@ function EditMyFieldModal({ field, onClose, onDone }: any) {
         <div>
           <label className="label">New value</label>
           {field.type === "DROPDOWN" ? (
-            <select className="input" value={value} onChange={(e) => setValue(e.target.value)}><option value="">— select —</option>{field.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+            <ScrollSelect value={String(value ?? "")} onChange={(v) => setValue(v)} placeholder="— select —"
+              options={[{ value: "", label: "— select —" }, ...((field.options || []).includes(value) || !value ? [] : [{ value: String(value), label: String(value) }]), ...(field.options || []).map((o: string) => ({ value: o, label: o }))]} />
           ) : field.type === "BOOLEAN" ? (
             <select className="input" value={String(value)} onChange={(e) => setValue(e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select>
           ) : (

@@ -1,21 +1,50 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Building2, Users2, UserCog, ArrowRight } from "lucide-react";
+import { Search, Building2, Users2, UserCog, ArrowRight, ChevronDown, ChevronRight, UserX, Plus, Minus, Maximize2, Download } from "lucide-react";
+import { toPng } from "html-to-image";
 import { useCachedGet } from "../hooks";
+import { useToast } from "../toast";
 import Loading from "../components/Loading";
 
+// Per-branch colour (node accent + connector line) so each Senior Manager's tree is distinct.
+const BRANCH = [
+  { hex: "#6366f1", avatar: "bg-brand-100 text-brand-700", chip: "bg-brand-50 text-brand-700" },
+  { hex: "#06b6d4", avatar: "bg-cyan-100 text-cyan-700", chip: "bg-cyan-50 text-cyan-700" },
+  { hex: "#22c55e", avatar: "bg-emerald-100 text-emerald-700", chip: "bg-emerald-50 text-emerald-700" },
+  { hex: "#a855f7", avatar: "bg-violet-100 text-violet-700", chip: "bg-violet-50 text-violet-700" },
+  { hex: "#ec4899", avatar: "bg-pink-100 text-pink-700", chip: "bg-pink-50 text-pink-700" },
+];
+const AMBER = { hex: "#f59e0b", avatar: "bg-amber-100 text-amber-700", chip: "bg-amber-50 text-amber-700" };
+
+const MIN_ZOOM = 0.3, MAX_ZOOM = 2.2;
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 export default function OrgPage() {
-  const { data: raw, error: err } = useCachedGet<any>("/org"); // cached for instant revisits
+  const { data: raw, error: err } = useCachedGet<any>("/org");
+  const toast = useToast();
   const [q, setQ] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [paths, setPaths] = useState<{ d: string; color: string }[]>([]);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const navigate = useNavigate();
+
+  // Pan/zoom of the chart inside its viewport.
+  const [zoom, setZoom] = useState(0.56);
+  const [pan, setPan] = useState({ x: 40, y: 40 });
+  const zoomRef = useRef(zoom); zoomRef.current = zoom;
+  const panRef = useRef(pan); panRef.current = pan;
+  const [exporting, setExporting] = useState(false);
+
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const nodes = useRef<Record<string, HTMLElement | null>>({});
+  const setNode = (id: string) => (el: HTMLElement | null) => { nodes.current[id] = el; };
 
   const seniors: any[] = raw?.seniors || [];
   const unassigned: any[] = raw?.unassignedCMs || [];
   const needle = q.trim().toLowerCase();
-  const cmCount = seniors.reduce((n: number, s: any) => n + (s.capabilityManagers?.length || 0), 0) + unassigned.length;
+  const cmTotal = seniors.reduce((n, s) => n + (s.capabilityManagers?.length || 0), 0) + unassigned.length;
 
-  // Filter the left list: keep a Senior Manager if its name matches OR any of its CMs match.
   const filtered = useMemo(() => {
     if (!needle) return seniors;
     return seniors
@@ -27,138 +56,201 @@ export default function OrgPage() {
       .filter(Boolean) as any[];
   }, [seniors, needle]);
 
+  // Branch list = senior managers (+ an "Unassigned" branch when not searching).
+  const branches = useMemo(() => {
+    const list = filtered.map((s, i) => ({ ...s, _id: s.id, accent: BRANCH[i % BRANCH.length] }));
+    if (!needle && unassigned.length) list.push({ _id: "UNASSIGNED", name: "Unassigned", capabilityManagers: unassigned, accent: AMBER, _unassigned: true } as any);
+    return list;
+  }, [filtered, unassigned, needle]);
+
+  const isOpen = (id: string) => (needle ? true : open[id] ?? true); // expanded by default; search forces open
+
+  // Draw curved connectors between the measured node boxes. Coordinates are divided by the
+  // current zoom so they stay in the chart's UN-scaled layout space (the SVG lives inside the
+  // transformed stage, so it gets scaled along with the nodes → stays aligned at any zoom).
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const z = zoomRef.current || 1;
+      const wr = wrap.getBoundingClientRect();
+      const conns: { d: string; color: string }[] = [];
+      const link = (fromId: string, toId: string, color: string) => {
+        const a = nodes.current[fromId], b = nodes.current[toId];
+        if (!a || !b) return;
+        const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+        const x1 = (ar.right - wr.left) / z, y1 = (ar.top - wr.top) / z + ar.height / z / 2;
+        const x2 = (br.left - wr.left) / z, y2 = (br.top - wr.top) / z + br.height / z / 2;
+        const dx = Math.max(28, (x2 - x1) / 2);
+        conns.push({ d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`, color });
+      };
+      branches.forEach((b: any) => {
+        link("ORG", b._id, b.accent.hex);
+        if (isOpen(b._id)) (b.capabilityManagers || []).forEach((cm: any) => link(b._id, cm.id, b.accent.hex));
+      });
+      setPaths(conns);
+      setSize({ w: wrap.offsetWidth, h: wrap.offsetHeight });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, [branches, open, needle]);
+
+  // Wheel-zoom toward the cursor (native non-passive listener so we can preventDefault).
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+      const z = zoomRef.current, p = panRef.current;
+      const nz = clamp(z * (e.deltaY < 0 ? 1.12 : 0.89), MIN_ZOOM, MAX_ZOOM);
+      if (nz === z) return;
+      setPan({ x: cx - ((cx - p.x) * nz) / z, y: cy - ((cy - p.y) * nz) / z });
+      setZoom(nz);
+    };
+    vp.addEventListener("wheel", onWheel, { passive: false });
+    return () => vp.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Drag-to-pan (ignore drags that start on a button/link so node clicks still work).
+  const onPointerDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button, a")) return;
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY, px: panRef.current.x, py: panRef.current.y };
+    const move = (ev: MouseEvent) => setPan({ x: start.px + (ev.clientX - start.x), y: start.py + (ev.clientY - start.y) });
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.style.userSelect = ""; };
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }, []);
+
+  const zoomBy = (f: number) => setZoom((z) => clamp(z * f, MIN_ZOOM, MAX_ZOOM));
+  const resetView = () => { setZoom(0.56); setPan({ x: 40, y: 40 }); };
+
+  async function exportPng() {
+    if (!wrapRef.current) return;
+    setExporting(true);
+    try {
+      const url = await toPng(wrapRef.current, { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true });
+      const a = document.createElement("a"); a.href = url; a.download = "org-chart.png"; a.click();
+    } catch { toast.error("Couldn't export the chart. Try collapsing some branches and retry."); }
+    finally { setExporting(false); }
+  }
+
   if (err && !raw) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!raw) return <Loading />;
 
-  const instructorsUnder = (s: any) => (s.capabilityManagers || []).reduce((n: number, c: any) => n + (c.reportees || 0), 0);
-  // Active selection. Only auto-pick the first SM when nothing is chosen yet — don't silently
-  // swap to a different manager when the chosen one is filtered out by search. (Medium bug)
-  const selected = selectedId == null ? (filtered[0] || null) : (filtered.find((s) => s.id === selectedId) || null);
-  const selectedCms: any[] = selected?.capabilityManagers || [];
+  const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !(o[id] ?? true) }));
+  const setAll = (v: boolean) => setOpen(Object.fromEntries(branches.map((b: any) => [b._id, v])));
+  const instr = (b: any) => (b.capabilityManagers || []).reduce((n: number, c: any) => n + (c.reportees || 0), 0);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold">Org Chart</h1>
-        <p className="text-sm text-slate-500">Organization → Senior Managers → Capability Managers. Pick a Senior Manager on the left to view their team.</p>
-      </div>
-
-      {/* Level 0 — Organization root */}
-      <div className="card overflow-hidden bg-gradient-to-r from-brand-600 to-brand-500 p-5 text-white">
-        <div className="flex flex-wrap items-center gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20"><Building2 className="h-6 w-6" /></span>
-          <div className="flex-1">
-            <div className="text-lg font-bold">NIAT — FacultyOps</div>
-            <div className="text-sm text-white/80">Instructor organization</div>
-          </div>
-          <div className="flex gap-6 text-center">
-            <Stat label="Instructors" value={raw.totalInstructors || 0} />
-            <Stat label="Senior Mgrs" value={seniors.length} />
-            <Stat label="Capability Mgrs" value={cmCount} />
-          </div>
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Org Chart</h1>
+          <p className="text-sm text-slate-500">Organization → Senior Managers → Capability Managers. Drag to pan, scroll to zoom, click a manager to open their reportees.</p>
         </div>
-      </div>
-
-      {/* Two-column master/detail: 30% Senior Managers · 70% their Capability Managers */}
-      <div className="flex flex-col gap-4 lg:flex-row">
-        {/* LEFT (30%) — Senior Manager cards */}
-        <div className="lg:w-[30%]">
-          <div className="relative mb-3">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAll(true)} className="btn btn-ghost btn-sm">Expand all</button>
+          <button onClick={() => setAll(false)} className="btn btn-ghost btn-sm">Collapse all</button>
+          <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manager…" className="input w-full pl-9" />
-          </div>
-          <div className="space-y-2">
-            {filtered.length === 0 && <div className="card p-4 text-center text-sm text-slate-400">No managers match "{q}".</div>}
-            {filtered.map((sm) => {
-              const active = selected?.id === sm.id;
-              return (
-                <button
-                  key={sm.id}
-                  onClick={() => setSelectedId(sm.id)}
-                  className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${active ? "border-brand-300 bg-brand-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
-                >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${active ? "bg-brand-600 text-white" : "bg-brand-100 text-brand-700"}`}>{sm.name.charAt(0)}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold text-slate-800">{sm.name}</div>
-                    <div className="text-xs text-slate-400">{sm.capabilityManagers?.length || 0} CM · {instructorsUnder(sm)} instructors</div>
-                  </div>
-                  <ArrowRight className={`h-4 w-4 shrink-0 ${active ? "text-brand-600" : "text-slate-300"}`} />
-                </button>
-              );
-            })}
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manager…" className="input w-56 pl-9" />
           </div>
         </div>
+      </div>
 
-        {/* RIGHT (70%) — Capability Managers of the selected Senior Manager */}
-        <div className="lg:w-[70%]">
-          {selected ? (
-            <div className="card overflow-hidden">
-              <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-sm font-bold text-brand-700">{selected.name.charAt(0)}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-lg font-bold text-slate-800">{selected.name}</div>
-                  <div className="text-xs text-slate-400">Senior Manager</div>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600"><UserCog className="h-3.5 w-3.5" /> {selectedCms.length} CM</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"><Users2 className="h-3.5 w-3.5" /> {instructorsUnder(selected)} instructors</span>
+      {/* Full-height viewport: chart pans/zooms INSIDE this; the page itself never scrolls. */}
+      <div ref={viewportRef} onMouseDown={onPointerDown} className="card relative min-h-0 flex-1 cursor-grab overflow-hidden active:cursor-grabbing">
+        {/* Vertical control toolbar (top-right) */}
+        <div className="absolute right-4 top-4 z-20 flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-md">
+          <ToolBtn title="Zoom in" onClick={() => zoomBy(1.15)}><Plus className="h-4 w-4" /></ToolBtn>
+          <div className="px-1 text-center text-[10px] font-medium tabular-nums text-slate-400">{Math.round(zoom * 100)}%</div>
+          <ToolBtn title="Zoom out" onClick={() => zoomBy(0.87)}><Minus className="h-4 w-4" /></ToolBtn>
+          <div className="my-0.5 border-t border-slate-100" />
+          <ToolBtn title="Reset / fit" onClick={resetView}><Maximize2 className="h-4 w-4" /></ToolBtn>
+          <ToolBtn title="Export as PNG" onClick={exportPng} disabled={exporting}><Download className="h-4 w-4" /></ToolBtn>
+        </div>
+
+        {/* Transformed stage (pan + zoom). transformOrigin 0 0 keeps the math simple. */}
+        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
+          <div ref={wrapRef} className="relative inline-flex items-center gap-20 p-8">
+            {/* connector layer */}
+            <svg width={size.w} height={size.h} className="pointer-events-none absolute left-0 top-0 z-0" style={{ overflow: "visible" }}>
+              {paths.map((p, i) => <path key={i} d={p.d} fill="none" stroke={p.color} strokeWidth={2.5} strokeOpacity={0.5} strokeLinecap="round" />)}
+            </svg>
+
+            {/* Level 0 — Organization */}
+            <div ref={setNode("ORG")} className="relative z-10 w-56 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-600 text-white shadow-md">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20"><Building2 className="h-5 w-5" /></span>
+                <div className="min-w-0"><div className="truncate text-sm font-bold">NIAT — FacultyOps</div><div className="text-[11px] text-white/80">Organization</div></div>
               </div>
-
-              <div className="p-4">
-                {selectedCms.length ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {selectedCms.map((cm: any) => (
-                      <button
-                        key={cm.id}
-                        onClick={() => navigate(`/app/instructors?managerId=${cm.id}`)}
-                        className="group flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition hover:border-brand-300 hover:shadow-sm"
-                      >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
-                          <span className="min-w-0 text-left">
-                            <span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span>
-                            <span className="block text-xs text-slate-400">Capability Manager</span>
-                          </span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <span className="chip chip-status">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span>
-                          <ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="px-1 py-6 text-center text-sm text-slate-400">No capability managers assigned to {selected.name}.</p>
-                )}
+              <div className="flex divide-x divide-white/15 border-t border-white/15 text-center text-[11px]">
+                <div className="flex-1 py-1.5"><div className="text-sm font-bold leading-none">{raw.totalInstructors || 0}</div><div className="text-white/70">Instr.</div></div>
+                <div className="flex-1 py-1.5"><div className="text-sm font-bold leading-none">{seniors.length}</div><div className="text-white/70">Sr Mgr</div></div>
+                <div className="flex-1 py-1.5"><div className="text-sm font-bold leading-none">{cmTotal}</div><div className="text-white/70">Cap Mgr</div></div>
               </div>
             </div>
-          ) : (
-            <div className="card p-10 text-center text-sm text-slate-400">Select a Senior Manager to view their team.</div>
-          )}
-        </div>
-      </div>
 
-      {/* Unassigned Capability Managers */}
-      {unassigned.length > 0 && (
-        <div className="card p-4">
-          <div className="mb-2 text-sm font-semibold text-amber-600">Unassigned Capability Managers</div>
-          <div className="flex flex-wrap gap-2">
-            {unassigned.map((c) => (
-              <button key={c.id} onClick={() => navigate(`/app/instructors?managerId=${c.id}`)} className="inline-flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-1.5 text-sm font-medium hover:border-amber-300">
-                {c.name} <span className="chip chip-status">{c.reportees}</span>
-              </button>
-            ))}
+            {/* Level 1 + 2 — branches stacked vertically; each SM sits beside its CM column */}
+            <div className="relative z-10 flex flex-col gap-6">
+              {branches.length === 0 && <div className="px-6 py-4 text-sm text-slate-400">No managers match "{q}".</div>}
+              {branches.map((b: any) => {
+                const cms: any[] = b.capabilityManagers || [];
+                const expanded = isOpen(b._id);
+                return (
+                  <div key={b._id} className="flex items-center gap-20">
+                    {/* Senior Manager (or Unassigned) node */}
+                    <div ref={setNode(b._id)} className="w-64 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <div className="flex items-center gap-2.5 px-3.5 py-3">
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${b.accent.avatar}`}>{b._unassigned ? <UserX className="h-5 w-5" /> : b.name.charAt(0)}</span>
+                        <div className="min-w-0 flex-1"><div className="truncate font-semibold text-slate-800">{b.name}</div><div className="text-[11px] text-slate-400">{b._unassigned ? "No Senior Manager" : "Senior Manager"}</div></div>
+                        {cms.length > 0 && (
+                          <button onClick={() => toggle(b._id)} title={expanded ? "Collapse" : "Expand"} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600">
+                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex gap-2 border-t border-slate-100 px-3.5 py-2 text-[11px]">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${b.accent.chip}`}><UserCog className="h-3 w-3" /> {cms.length} CM</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"><Users2 className="h-3 w-3" /> {instr(b)}</span>
+                      </div>
+                    </div>
+
+                    {/* Capability Managers column */}
+                    {expanded && cms.length > 0 && (
+                      <div className="flex flex-col gap-3">
+                        {cms.map((cm) => (
+                          <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(`/app/instructors?managerId=${cm.id}`)}
+                            className="group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
+                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>
+                            <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function ToolBtn({ title, onClick, disabled, children }: { title: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="text-xl font-bold leading-none">{value}</div>
-      <div className="mt-1 text-[11px] uppercase tracking-wide text-white/70">{label}</div>
-    </div>
+    <button title={title} onClick={onClick} disabled={disabled} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-brand-600 disabled:opacity-40">
+      {children}
+    </button>
   );
 }

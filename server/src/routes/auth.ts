@@ -7,7 +7,7 @@ import { isLocked, recordFailure, clearFailures } from "../lib/throttle";
 import { generateSecret, verifyToken, verifyTokenCounter, otpauthURL } from "../lib/totp";
 import { googleConfigured, buildAuthUrl, exchangeCode, fetchUserInfo } from "../lib/google";
 import { requireUser } from "../middleware";
-import { isRoleEnabled, ROLE_DISABLED_MSG } from "../lib/settings";
+import { isRoleEnabled, ROLE_DISABLED_MSG, getSecurity } from "../lib/settings";
 import { config } from "../config";
 import crypto from "crypto";
 
@@ -77,10 +77,12 @@ router.post("/login", async (req, res) => {
   const lockedFor = Math.max(await isLocked(key), await isLocked(acctKey));
   if (lockedFor) return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(lockedFor / 60)} min.` });
 
+  const sec = await getSecurity();
+  const windowMs = sec.lockoutMinutes * 60 * 1000;
   const user = await User.findOne({ email });
   if (!user || !user.active || !(await verifyPassword(password, user.passwordHash))) {
-    await recordFailure(key);
-    await recordFailure(acctKey, 20); // higher account-wide threshold to avoid easy lockout DoS
+    await recordFailure(key, sec.maxLoginAttempts, windowMs);
+    await recordFailure(acctKey, sec.maxLoginAttempts * 4, windowMs); // higher account-wide threshold to avoid easy lockout DoS
     return res.status(401).json({ error: "Invalid email or password." });
   }
 
@@ -178,7 +180,8 @@ router.post("/reset", async (req, res) => {
   const token = String(req.body?.token || "");
   const password = String(req.body?.password || "");
   if (!token) return res.status(400).json({ error: "Invalid link." });
-  const issue = passwordIssue(password);
+  const sec = await getSecurity();
+  const issue = passwordIssue(password, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity });
   if (issue) return res.status(400).json({ error: issue });
 
   const user = await User.findOne({ resetTokenHash: hashResetToken(token), resetTokenExp: { $gt: new Date() } });

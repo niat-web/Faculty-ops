@@ -11,6 +11,7 @@ import ResetPage from "./pages/ResetPage";
 const PrintProfilePage = lazy(() => import("./pages/PrintProfilePage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const InstructorsPage = lazy(() => import("./pages/InstructorsPage"));
+const InstructorMasterPage = lazy(() => import("./pages/InstructorMasterPage"));
 const InstructorProfilePage = lazy(() => import("./pages/InstructorProfilePage"));
 const MyStatsPage = lazy(() => import("./pages/MyStatsPage"));
 const TrainingPage = lazy(() => import("./pages/TrainingPage"));
@@ -101,6 +102,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
                 <Route path="instructors" element={<RequireRole roles={STAFF}><InstructorsPage /></RequireRole>} />
+                <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/:id" element={<InstructorProfilePage />} />
                 <Route path="training" element={<Navigate to="/app/training/tech-stats" replace />} />
                 <Route path="training/:slug" element={<RequireRole roles={STAFF}><TrainingPage /></RequireRole>} />
@@ -113,6 +115,7 @@ export default function App() {
                 <Route path="mapping" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><MappingPage /></RequireRole>} />
                 <Route path="org" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><OrgPage /></RequireRole>} />
                 <Route path="requests" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
+                <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Personal account settings (all users) — moved from /app/settings */}

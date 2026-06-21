@@ -49,8 +49,7 @@ router.post("/", uploadProof, async (req, res) => {
   if (u.role !== Role.CAPABILITY_MANAGER && u.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only Capability Managers raise requests" });
   const { instructorId, fieldKey, newValue, reason } = req.body || {};
   if (!String(reason || "").trim()) return res.status(400).json({ error: "A reason is required." });
-  const proof = (req as any).file;
-  if (!proof && u.role === Role.CAPABILITY_MANAGER) return res.status(400).json({ error: "A proof document (image or PDF) is required." });
+  const proof = (req as any).file; // optional — proof attachments are no longer required
   if (!(await canAccessInstructor(u, instructorId))) return res.status(403).json({ error: "Out of scope" });
   const def: any = await FieldDefinition.findOne({ key: fieldKey, archivedAt: null }).lean();
   if (!def) return res.status(404).json({ error: "Unknown field" });
@@ -73,7 +72,13 @@ router.post("/", uploadProof, async (req, res) => {
       status: "PENDING", requesterId: u.id, requesterName: u.name, approverId,
     });
   } catch (e) { if (proofPath) await deleteFile(proofPath); throw e; } // don't orphan the proof blob
-  await notify(String(approverId), { type: "EDIT_REQUEST_SUBMITTED", title: `New edit request from ${u.name}`, body: `${def.label} for ${inst.name}`, link: "/app/requests" });
+  // Deep link straight to THIS request so the approver lands on exactly the one to review.
+  const link = `/app/requests/${r._id}`;
+  await notify(String(approverId), { type: "EDIT_REQUEST_SUBMITTED", title: `New edit request from ${u.name}`, body: `${def.label} for ${inst.name}`, link });
+  // Also copy Ops Admins (their own on/off toggle), skipping one who is already the approver.
+  const ops = await User.find({ role: Role.OPS_ADMIN }).select("_id").lean();
+  await Promise.all(ops.filter((o: any) => String(o._id) !== String(approverId)).map((o: any) =>
+    notify(String(o._id), { type: "EDIT_REQUEST_SUBMITTED", emailKey: "REQUEST_SUBMITTED_OPS", title: `New edit request from ${u.name}`, body: `${def.label} for ${inst.name}`, link })));
   res.json({ ok: true, id: String(r._id) });
 });
 

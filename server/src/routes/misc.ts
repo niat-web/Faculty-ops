@@ -127,6 +127,125 @@ router.patch("/settings/role-access", async (req, res) => {
   res.json({ roleAccess });
 });
 
+// Email control center (Ops only) — per-event on/off, grouped by recipient role.
+router.get("/settings/emails", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { EMAIL_EVENTS, getEmailSettings } = await import("../lib/settings");
+  res.json({ events: EMAIL_EVENTS, settings: await getEmailSettings() });
+});
+router.patch("/settings/emails", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { key, enabled } = req.body || {};
+  const { EMAIL_EVENTS, setEmailSetting } = await import("../lib/settings");
+  if (!EMAIL_EVENTS.some((e) => e.key === key)) return res.status(400).json({ error: "Unknown email event" });
+  const settings = await setEmailSetting(key, !!enabled);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "ROLE_ACCESS_CHANGE", fieldName: `Email: ${key}`, newValue: enabled ? "enabled" : "disabled", reason: "Email setting" });
+  res.json({ settings });
+});
+
+// ── In-app notification control center (Ops only) — per-event on/off ──
+router.get("/settings/notifications", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { NOTIFY_EVENTS, getNotifySettings } = await import("../lib/settings");
+  res.json({ events: NOTIFY_EVENTS, settings: await getNotifySettings() });
+});
+router.patch("/settings/notifications", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { key, enabled } = req.body || {};
+  const { NOTIFY_EVENTS, setNotifySetting } = await import("../lib/settings");
+  if (!NOTIFY_EVENTS.some((e) => e.key === key)) return res.status(400).json({ error: "Unknown notification event" });
+  const settings = await setNotifySetting(key, !!enabled);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: `Notification: ${key}`, newValue: enabled ? "enabled" : "disabled", reason: "Notification setting" });
+  res.json({ settings });
+});
+
+// ── General / branding (Ops only) ──
+router.get("/settings/general", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getGeneral } = await import("../lib/settings");
+  const { config } = await import("../config");
+  // Read-only integration status (derived from the server environment, not editable here).
+  const integrations = {
+    email: !!(process.env.AWS_ACCESS_KEY_ID && process.env.SES_FROM_EMAIL),
+    google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    encryption: !!process.env.ENCRYPTION_KEY,
+    cron: !!config.cronSecret,
+  };
+  res.json({ general: await getGeneral(), integrations });
+});
+router.patch("/settings/general", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const b = req.body || {};
+  const patch: Record<string, any> = {};
+  if (typeof b.appName === "string") patch.appName = b.appName.trim().slice(0, 60);
+  if (typeof b.organisation === "string") patch.organisation = b.organisation.trim().slice(0, 80);
+  if (typeof b.appUrl === "string") patch.appUrl = b.appUrl.trim().slice(0, 200);
+  if (typeof b.supportEmail === "string") patch.supportEmail = b.supportEmail.trim().slice(0, 120);
+  if (patch.appName === "") return res.status(400).json({ error: "App name can't be empty." });
+  if (patch.supportEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(patch.supportEmail)) return res.status(400).json({ error: "Support email is not valid." });
+  if (patch.appUrl && !/^https?:\/\//.test(patch.appUrl)) return res.status(400).json({ error: "App URL must start with http:// or https://" });
+  const { setGeneral } = await import("../lib/settings");
+  const general = await setGeneral(patch);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "General settings", newValue: JSON.stringify(patch), reason: "General settings" });
+  res.json({ general });
+});
+
+// ── Security policy (Ops only) ──
+router.get("/settings/security", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getSecurity } = await import("../lib/settings");
+  res.json({ security: await getSecurity() });
+});
+router.patch("/settings/security", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { setSecurity } = await import("../lib/settings");
+  const security = await setSecurity(req.body || {});
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Security policy", newValue: JSON.stringify(security), reason: "Security settings" });
+  res.json({ security });
+});
+
+// ── Data & retention (Ops only) ──
+router.get("/settings/data", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getData } = await import("../lib/settings");
+  const { LoginEvent } = await import("../models");
+  const [data, audit, notifications, logins] = await Promise.all([
+    getData(),
+    AuditLog.estimatedDocumentCount(),
+    Notification.estimatedDocumentCount(),
+    LoginEvent.estimatedDocumentCount(),
+  ]);
+  res.json({ data, counts: { audit, notifications, logins } });
+});
+router.patch("/settings/data", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { setData } = await import("../lib/settings");
+  const data = await setData(req.body || {});
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Data retention", newValue: `${data.retentionDays} days`, reason: "Data settings" });
+  res.json({ data });
+});
+// Manual prune NOW (Ops only) — same logic as the secret-gated cron, but session-authenticated.
+router.post("/settings/data/prune", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getData } = await import("../lib/settings");
+  const days = (await getData()).retentionDays;
+  if (!days || days <= 0) return res.json({ ok: true, prunedAudit: 0, prunedLogins: 0, note: "Retention is set to keep forever — nothing pruned." });
+  const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
+  const { LoginEvent } = await import("../models");
+  const [audit, logins] = await Promise.all([
+    AuditLog.deleteMany({ createdAt: { $lt: cutoff } }),
+    LoginEvent.deleteMany({ at: { $lt: cutoff } }),
+  ]);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Manual prune", newValue: `audit ${audit.deletedCount || 0}, logins ${logins.deletedCount || 0}`, reason: `Older than ${days} days` });
+  res.json({ ok: true, prunedAudit: audit.deletedCount || 0, prunedLogins: logins.deletedCount || 0, cutoff });
+});
+
 // Account overview (read-only profile + email-notification preference).
 router.get("/settings", async (req, res) => {
   const me: any = await User.findById(req.user!.id).lean();
@@ -149,7 +268,9 @@ router.patch("/settings/profile", async (req, res) => {
     if (!me.mustSetPassword) {
       if (!currentPassword || !(await verifyPassword(currentPassword, me.passwordHash))) return res.status(401).json({ error: "Current password is incorrect." });
     }
-    const i = passwordIssue(newPassword); if (i) return res.status(400).json({ error: i });
+    const { getSecurity } = await import("../lib/settings");
+    const sec = await getSecurity();
+    const i = passwordIssue(newPassword, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity }); if (i) return res.status(400).json({ error: i });
     me.passwordHash = await hashPassword(newPassword); me.mustSetPassword = false;
     me.passwordChangedAt = new Date(); // invalidate other sessions (Security)
   }

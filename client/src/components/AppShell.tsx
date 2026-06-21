@@ -8,7 +8,10 @@ const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 const NAV: any[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
-  { to: "/app/instructors", label: "Instructors", icon: Users2, roles: STAFF },
+  { label: "Instructors", icon: Users2, roles: STAFF, children: [
+    { to: "/app/instructors", label: "Instructors", end: true },
+    { to: "/app/instructors/master", label: "Instructor Master" },
+  ] },
   { to: "/app/training", label: "Instructors Training Stats", icon: BookOpen, roles: STAFF },
   { label: "Contribution", icon: Award, roles: ["OPS_ADMIN", "SENIOR_MANAGER"], children: [
     { to: "/app/contribution/distribution", label: "Contribution Distribution" },
@@ -87,7 +90,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   {open && (
                     <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
                       {n.children.map((c: any) => (
-                        <NavLink key={c.to} to={c.to} className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"}`}>{c.label}</NavLink>
+                        <NavLink key={c.to} to={c.to} end={c.end} className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"}`}>{c.label}</NavLink>
                       ))}
                     </div>
                   )}

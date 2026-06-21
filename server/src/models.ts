@@ -22,6 +22,8 @@ const UserSchema = new Schema(
     twoFactorSecret: { type: String, default: null },
     twoFactorLastCounter: { type: Number, default: 0 },
     passwordChangedAt: { type: Date, default: null }, // sessions issued before this are rejected
+    lastLoginAt: { type: Date, default: null }, // set on each successful login (presence tracking)
+    lastSeenAt: { type: Date, default: null },  // bumped on authenticated activity (throttled) → live status
 
     savedViews: { type: [new Schema({ name: String, query: String }, { _id: true })], default: [] },
   },
@@ -205,6 +207,16 @@ const AppSettingSchema = new Schema(
       CAPABILITY_MANAGER: { type: Boolean, default: true },
       INSTRUCTOR: { type: Boolean, default: true },
     },
+    // Per-event email toggles (admin-controlled at /app/settings/emails). Missing key = enabled.
+    emailSettings: { type: Schema.Types.Mixed, default: {} },
+    // Per-event IN-APP notification toggles (/app/settings/notifications). Missing key = enabled.
+    notifySettings: { type: Schema.Types.Mixed, default: {} },
+    // General / branding (/app/settings/general): { appName, organisation, appUrl, supportEmail }.
+    general: { type: Schema.Types.Mixed, default: {} },
+    // Security policy (/app/settings/security): { passwordMinLength, requireComplexity, maxLoginAttempts, lockoutMinutes }.
+    security: { type: Schema.Types.Mixed, default: {} },
+    // Data & retention (/app/settings/data): { retentionDays }.
+    dataRetention: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
@@ -226,7 +238,24 @@ export const FieldModule = compile("FieldModule", FieldModuleSchema);
 export const Instructor = compile("Instructor", InstructorSchema);
 export const FieldDefinition = compile("FieldDefinition", FieldDefinitionSchema);
 export const TrainingColumn = compile("TrainingColumn", TrainingColumnSchema);
+// InstructorMail — log of lifecycle emails sent to an instructor (for the Mails menu: status + resend).
+const InstructorMailSchema = new Schema(
+  {
+    instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", index: true },
+    kind: String,    // ONBOARD | DOCUMENTS | REPORTING_DAY
+    to: String,
+    subject: String,
+    status: String,  // SENT | FAILED | SKIPPED
+    error: String,
+    sentById: { type: Schema.Types.ObjectId, ref: "User" },
+    sentByName: String,
+  },
+  { timestamps: true }
+);
+InstructorMailSchema.index({ instructorId: 1, kind: 1, createdAt: -1 });
+
 export const EditRequest = compile("EditRequest", EditRequestSchema);
+export const InstructorMail = compile("InstructorMail", InstructorMailSchema);
 export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);

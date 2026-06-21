@@ -60,8 +60,9 @@ router.post("/recompute-summaries", async (_req, res) => {
 
 // Retention: prune audit + login history older than RETENTION_DAYS (0 = keep forever).
 router.post("/prune", async (_req, res) => {
-  const days = config.retentionDays;
-  if (!days || days <= 0) return res.json({ ok: true, pruned: 0, note: "RETENTION_DAYS not set" });
+  const { getData } = await import("../lib/settings");
+  const days = (await getData()).retentionDays; // admin-set (Settings → Data), falls back to RETENTION_DAYS env
+  if (!days || days <= 0) return res.json({ ok: true, pruned: 0, note: "Retention disabled (keep forever)" });
   const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
   const [audit, logins] = await Promise.all([
     AuditLog.deleteMany({ createdAt: { $lt: cutoff } }),

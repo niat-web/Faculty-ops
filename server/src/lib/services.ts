@@ -11,19 +11,46 @@ export async function recordLogin(user: any, method: string, req: Request) {
   try {
     const ip = req.ip || (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()) || req.socket?.remoteAddress || null;
     const userAgent = req.headers["user-agent"] || null;
+    const now = new Date();
     await LoginEvent.create({ userId: user._id, email: user.email, name: user.name, role: user.role, method, ip, userAgent });
+    // Stamp last-login + last-seen on the user for the Users-table presence columns.
+    await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: now, lastSeenAt: now } });
   } catch (e: any) { console.error("[login] tracking failed:", e?.message); }
+}
+
+// Throttled "last seen" bump — called on every authenticated request but only hits the
+// DB once per TOUCH_THROTTLE_MS per user (in-process), so it adds ~no per-request cost.
+const TOUCH_THROTTLE_MS = 60_000;
+const lastTouch = new Map<string, number>();
+export function touchLastSeen(userId: string) {
+  const now = Date.now();
+  const prev = lastTouch.get(userId) || 0;
+  if (now - prev < TOUCH_THROTTLE_MS) return;
+  lastTouch.set(userId, now);
+  User.updateOne({ _id: userId }, { $set: { lastSeenAt: new Date() } }).catch(() => {}); // fire-and-forget
 }
 
 export async function writeAudit(data: Record<string, any>) { return AuditLog.create(data); }
 
-export async function notify(userId: string, { type, title, body, link, email = true }: { type: string; title: string; body?: string; link?: string; email?: boolean }) {
+// Notification type → admin email-toggle key (so notify() respects /app/settings/emails).
+const TYPE_EMAIL_KEY: Record<string, string> = {
+  EDIT_REQUEST_SUBMITTED: "REQUEST_SUBMITTED",
+  EDIT_REQUEST_APPROVED: "REQUEST_APPROVED",
+  EDIT_REQUEST_REJECTED: "REQUEST_REJECTED",
+  SCHEMA_CHANGED: "SCHEMA_CHANGED",
+};
+
+export async function notify(userId: string, { type, title, body, link, email = true, emailKey }: { type: string; title: string; body?: string; link?: string; email?: boolean; emailKey?: string }) {
   if (!userId) return;
-  await Notification.create({ userId, type, title, body, link });
+  const { isNotifyEnabled, isEmailEnabled, getGeneral } = await import("./settings");
+  // In-app notification — recorded unless the admin suppressed this event type.
+  if (await isNotifyEnabled(type)) await Notification.create({ userId, type, title, body, link });
   if (email) {
+    const key = emailKey || TYPE_EMAIL_KEY[type];
+    if (key && !(await isEmailEnabled(key))) return; // admin turned this email off
     const u = await User.findById(userId).select("email name emailNotifications").lean();
     if (u?.email && u.emailNotifications !== false) {
-      const url = config.appUrl + (link || "");
+      const url = (await getGeneral()).appUrl + (link || "");
       sendEmail({ to: u.email, subject: title, html: `<p>Hi ${escapeHtml(u.name || "")},</p><p>${escapeHtml(body || title)}</p><p><a href="${url}">Open in CRM</a></p>`, text: `${body || title}\n${url}` })
         .catch((e) => console.error("[notify] email failed:", e?.message));
     }

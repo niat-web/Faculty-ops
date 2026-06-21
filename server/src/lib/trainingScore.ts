@@ -3,10 +3,10 @@
 // Mirrors the Google-Sheet formulas. Keep IN SYNC with client/src/trainingScore.ts.
 
 // Keys whose values are COMPUTED (never stored-as-edited / never editable in the grid).
+// Predicted Completion is now a MANUAL date (editable in the grid), so it's NOT auto-computed.
 export const COMPUTED_KEYS = [
   "primary_pct", "secondary_pct",
-  "health_status", "predicted_completion",
-  "secondary_health_status", "secondary_predicted_completion",
+  "health_status", "secondary_health_status",
 ] as const;
 
 // Module membership per sub-track (matches the training taxonomy / sheet columns).
@@ -123,12 +123,12 @@ const pctStr = (p: number | null) => (p == null ? "" : String(Math.round(p * 100
 
 // Map a computed key → its stored string form (pct as 0..100 integer; others as text).
 export function summaryStored(s: TrainingSummary): Record<string, string> {
+  // Predicted Completion is no longer auto-managed (it's a manual DATE the admin edits in the grid),
+  // so it's intentionally excluded here — recompute won't overwrite the user's chosen date.
   return {
     primary_pct: pctStr(s.primaryPct),
     secondary_pct: pctStr(s.secondaryPct),
     health_status: s.primaryHealth,
-    predicted_completion: s.primaryPredicted,
     secondary_health_status: s.secondaryHealth,
-    secondary_predicted_completion: s.secondaryPredicted,
   };
 }

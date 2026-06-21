@@ -36,46 +36,54 @@ export default function SettingsPage() {
     <div className="space-y-5">
       <div><h1 className="text-2xl font-bold">Settings</h1><p className="text-sm text-slate-500">Manage your account, profile, and security.</p></div>
 
-      {/* Account overview */}
-      <div className="card max-w-lg p-6">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-lg font-bold text-brand-700">{user!.name.charAt(0)}</span>
-          <div><div className="font-semibold">{user!.name}</div><div className="text-xs text-slate-400">{ROLE_LABEL[user!.role]}</div></div>
-        </div>
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-          <div><dt className="text-xs text-slate-400">Email</dt><dd>{overview?.email || user!.email}</dd></div>
-          <div><dt className="text-xs text-slate-400">Role</dt><dd>{ROLE_LABEL[user!.role]}</dd></div>
-          {overview?.managerName && <div><dt className="text-xs text-slate-400">Reports to</dt><dd>{overview.managerName}</dd></div>}
-        </dl>
-      </div>
-
-      {/* Email notifications */}
-      <div className="card max-w-lg p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div><h2 className="font-semibold">Email notifications</h2><p className="text-xs text-slate-400">Receive emails for approvals, decisions and reminders. In-app alerts always stay on.</p></div>
-          <button role="switch" aria-checked={emailNotif} onClick={() => toggleEmail(!emailNotif)} className={`relative h-6 w-11 shrink-0 rounded-full transition ${emailNotif ? "bg-brand-600" : "bg-slate-300"}`}>
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${emailNotif ? "left-[22px]" : "left-0.5"}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Profile + password */}
-      <div className="card max-w-lg p-6">
-        <h2 className="mb-4 font-semibold">Profile &amp; password</h2>
-        {msg && <div className={`mb-4 rounded-lg px-3 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>{msg.text}</div>}
-        <div className="space-y-3">
-          <div><label className="label">Display name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="border-t border-slate-100 pt-3 space-y-3">
-            <p className="text-xs text-slate-400">Change password — leave blank to keep current.</p>
-            <div><label className="label">Current password</label><input type="password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} /></div>
-            <div><label className="label">New password</label><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-            {password && <div><label className="label">Confirm new password</label><input type="password" className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>}
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        {/* Left column: account overview + profile/password */}
+        <div className="space-y-5">
+          {/* Account overview */}
+          <div className="card p-6">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-lg font-bold text-brand-700">{user!.name.charAt(0)}</span>
+              <div><div className="font-semibold">{user!.name}</div><div className="text-xs text-slate-400">{ROLE_LABEL[user!.role]}</div></div>
+            </div>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+              <div><dt className="text-xs text-slate-400">Email</dt><dd>{overview?.email || user!.email}</dd></div>
+              <div><dt className="text-xs text-slate-400">Role</dt><dd>{ROLE_LABEL[user!.role]}</dd></div>
+              {overview?.managerName && <div><dt className="text-xs text-slate-400">Reports to</dt><dd>{overview.managerName}</dd></div>}
+            </dl>
           </div>
-          <div className="flex justify-end pt-1"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
+
+          {/* Profile + password */}
+          <div className="card p-6">
+            <h2 className="mb-4 font-semibold">Profile &amp; password</h2>
+            {msg && <div className={`mb-4 rounded-lg px-3 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}>{msg.text}</div>}
+            <div className="space-y-3">
+              <div><label className="label">Display name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="border-t border-slate-100 pt-3 space-y-3">
+                <p className="text-xs text-slate-400">Change password — leave blank to keep current.</p>
+                <div><label className="label">Current password</label><input type="password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} /></div>
+                <div><label className="label">New password</label><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+                {password && <div><label className="label">Confirm new password</label><input type="password" className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>}
+              </div>
+              <div className="flex justify-end pt-1"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right column: email notifications + two-factor auth */}
+        <div className="space-y-5">
+          {/* Email notifications */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div><h2 className="font-semibold">Email notifications</h2><p className="text-xs text-slate-400">Receive emails for approvals, decisions and reminders. In-app alerts always stay on.</p></div>
+              <button role="switch" aria-checked={emailNotif} onClick={() => toggleEmail(!emailNotif)} className={`relative h-6 w-11 shrink-0 rounded-full transition ${emailNotif ? "bg-brand-600" : "bg-slate-300"}`}>
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${emailNotif ? "left-[22px]" : "left-0.5"}`} />
+              </button>
+            </div>
+          </div>
+
+          <TwoFactorSection />
         </div>
       </div>
-
-      <TwoFactorSection />
     </div>
   );
 }
@@ -105,7 +113,7 @@ function TwoFactorSection() {
   }
 
   return (
-    <div className="card max-w-lg p-6">
+    <div className="card p-6">
       <div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-brand-600" /><h2 className="font-semibold">Two-factor authentication</h2>
         {enabled !== null && <span className={`chip ${enabled ? "chip-public" : "chip-gray"}`}>{enabled ? "On" : "Off"}</span>}
       </div>

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
     "lucide-react": "^0.451.0",
     "papaparse": "^5.5.3",
     "qrcode.react": "^4.2.0",

@@ -225,6 +225,11 @@ router.post("/", staffGuard, async (req, res) => {
 
   await inst.save();
   await writeAudit({ instructorId, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: auditField, newValue: auditValue, reason: "Training stats update" });
+  // Reporting day set/changed (e.g. → DEPLOYED) → notify the instructor (honours the admin toggle).
+  if (target === "value" && key === "reporting_day" && clean && String(current || "") !== clean) {
+    const { sendInstructorMail } = await import("../lib/instructorMail");
+    sendInstructorMail("REPORTING_DAY", { ...inst.toObject(), values: Object.fromEntries(inst.values) }, req.user!).catch((e: any) => console.error("[mail] reporting-day:", e?.message));
+  }
   res.json({ ok: true, summary });
 });
 

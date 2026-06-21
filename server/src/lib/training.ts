@@ -133,10 +133,10 @@ const otherLearn: TrainingColDef = { label: "Other learnings", key: "other_learn
 const cmp = (label: string, key: string, type: string): TrainingColDef => ({ label, key, storage: "value", type, group: "Summary", options: [] });
 const PRIMARY_PCT = cmp("Primary % Done", "primary_pct", "NUMBER");
 const PRIMARY_HEALTH = cmp("Health Status", "health_status", "TEXT");
-const PRIMARY_PRED = cmp("Predicted Completion", "predicted_completion", "TEXT");
+const PRIMARY_PRED = cmp("Predicted Completion", "predicted_completion", "TEXT"); // flexible: a date OR text like "Completed"/"N/A"
 const SECONDARY_PCT = cmp("Secondary % Done", "secondary_pct", "NUMBER");
 const SECONDARY_HEALTH = cmp("Health Status", "secondary_health_status", "TEXT");
-const SECONDARY_PRED = cmp("Predicted Completion", "secondary_predicted_completion", "TEXT");
+const SECONDARY_PRED = cmp("Predicted Completion", "secondary_predicted_completion", "TEXT"); // flexible: a date OR text like "Completed"/"N/A"
 
 export function summaryColumnsFor(track: string): TrainingColDef[] {
   if (track === "tech") return [PRIMARY_PCT, PRIMARY_HEALTH, PRIMARY_PRED, SECONDARY_PCT, SECONDARY_HEALTH, SECONDARY_PRED, sem1("tech"), sem2("tech"), repDay, otherLearn, remarks];
@@ -169,6 +169,9 @@ export async function seedTrainingColumns() {
     // restart will NEVER overwrite their edits. (Admin-controllable dropdowns)
     await TrainingColumn.updateMany({ type: "STATUS", options: { $size: 0 } }, { $set: { options: [...STATUS_OPTIONS] } });
     await TrainingColumn.updateMany({ key: "department", type: { $ne: "DROPDOWN" } }, { $set: { type: "DROPDOWN", options: [...DEPARTMENT_OPTS] } });
+    // Predicted Completion → a flexible TEXT column (accepts a date OR text like "Completed"/"N/A"),
+    // edited via a hybrid date-picker + text cell in the grid.
+    await TrainingColumn.updateMany({ key: { $in: ["predicted_completion", "secondary_predicted_completion"] }, type: { $ne: "TEXT" } }, { $set: { type: "TEXT" } });
     // Promote the per-track Primary/Secondary/Ongoing Track columns to DROPDOWNs with their own option sets (once).
     for (const trackKey of Object.keys(TRACK_OPTS)) {
       const t = TRACK_OPTS[trackKey];

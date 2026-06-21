@@ -26,7 +26,14 @@ export async function resolveUser(req: Request): Promise<SessionUser | null> {
 
 // Attach req.user if a valid session exists (does not block).
 export async function attachUser(req: Request, _res: Response, next: NextFunction) {
-  try { const u = await resolveUser(req); if (u) req.user = u; } catch {}
+  try {
+    const u = await resolveUser(req);
+    if (u) {
+      req.user = u;
+      const { touchLastSeen } = await import("./lib/services"); // throttled DB write → presence tracking
+      touchLastSeen(u.id);
+    }
+  } catch {}
   next();
 }
 

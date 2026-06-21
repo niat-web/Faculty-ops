@@ -8,9 +8,11 @@ export const SESSION_COOKIE = "crm_session";
 export function hashPassword(plain: string) { return bcrypt.hash(plain, 10); }
 export function verifyPassword(plain: string, hash: string) { return bcrypt.compare(plain, hash); }
 
-export function passwordIssue(pw: string): string | null {
-  if (!pw || pw.length < 8) return "Password must be at least 8 characters.";
-  if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return "Password must include letters and numbers.";
+export function passwordIssue(pw: string, opts?: { minLength?: number; requireComplexity?: boolean }): string | null {
+  const min = opts?.minLength ?? 8;
+  const complex = opts?.requireComplexity ?? true;
+  if (!pw || pw.length < min) return `Password must be at least ${min} characters.`;
+  if (complex && (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw))) return "Password must include letters and numbers.";
   return null;
 }
 

@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Loading from "../components/Loading";
+import ScrollSelect from "../components/ScrollSelect";
 
 export default function MappingPage() {
   const toast = useToast();
@@ -97,12 +98,12 @@ function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
       <div className="card p-5">
         <h2 className="mb-3 font-semibold">Bulk reassign reportees</h2>
         <div className="flex flex-wrap items-end gap-3">
-          <div><label className="label">From manager</label>
-            <select className="input w-48" value={bulkFrom} onChange={(e) => setBulkFrom(e.target.value)}><option value="">Choose…</option>{cms.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <div className="w-48"><label className="label">From manager</label>
+            <ScrollSelect value={bulkFrom} onChange={setBulkFrom} placeholder="Choose…" options={[{ value: "", label: "Choose…" }, ...cms.map((c: any) => ({ value: c.id, label: c.name }))]} />
           </div>
           <ArrowRight className="mb-2 h-4 w-4 text-slate-300" />
-          <div><label className="label">To manager</label>
-            <select className="input w-48" value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}><option value="">Choose…</option>{cms.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <div className="w-48"><label className="label">To manager</label>
+            <ScrollSelect value={bulkTo} onChange={setBulkTo} placeholder="Choose…" options={[{ value: "", label: "Choose…" }, ...cms.map((c: any) => ({ value: c.id, label: c.name }))]} />
           </div>
           <button className="btn btn-primary btn-sm" disabled={busy || !bulkFrom || !bulkTo || bulkFrom === bulkTo}
             onClick={async () => {
@@ -135,10 +136,10 @@ function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
                   <td className="px-5 py-3 text-slate-500">{i.campus || "—"}</td>
                   <td className="px-5 py-3 text-slate-600">{cmName(i.managerId)}</td>
                   <td className="px-5 py-3">
-                    <select className="input w-44" value="" disabled={busy} onChange={(e) => { if (e.target.value) reassign([i.id], e.target.value); }}>
-                      <option value="">Change…</option>
-                      {cms.filter((c: any) => c.id !== i.managerId).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <div className="w-44">
+                      <ScrollSelect value="" disabled={busy} placeholder="Change…" onChange={(v) => { if (v) reassign([i.id], v); }}
+                        options={[{ value: "", label: "Change…" }, ...cms.filter((c: any) => c.id !== i.managerId).map((c: any) => ({ value: c.id, label: c.name }))]} />
+                    </div>
                   </td>
                   <td className="px-5 py-3"><Link to={`/app/instructors/${i.id}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline"><History className="h-3.5 w-3.5" /> View</Link></td>
                 </tr>

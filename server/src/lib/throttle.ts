@@ -2,7 +2,7 @@
 import { LoginAttempt } from "../models";
 
 const MAX = 5;
-const WINDOW_MS = 15 * 60 * 1000;
+const WINDOW_MS = 15 * 60 * 1000; // default window/lock duration (overridable per call from Security settings)
 
 export async function isLocked(key: string): Promise<number> {
   const row: any = await LoginAttempt.findOne({ key }).lean();
@@ -12,11 +12,12 @@ export async function isLocked(key: string): Promise<number> {
 
 // Atomic increment + lock decision so concurrent attempts can't race past the limit.
 // `max` lets callers set a higher account-wide threshold than the default per-IP one.
-export async function recordFailure(key: string, max: number = MAX): Promise<void> {
+// `windowMs` (from Security settings) controls both the rolling window and lock duration.
+export async function recordFailure(key: string, max: number = MAX, windowMs: number = WINDOW_MS): Promise<void> {
   const now = new Date();
   // If the window has elapsed since the first failure, start a fresh window.
   const fresh = await LoginAttempt.findOneAndUpdate(
-    { key, first: { $lt: new Date(now.getTime() - WINDOW_MS) } },
+    { key, first: { $lt: new Date(now.getTime() - windowMs) } },
     { $set: { count: 1, first: now, lockedUntil: null, updatedAt: now } },
     { new: true }
   );
@@ -28,7 +29,7 @@ export async function recordFailure(key: string, max: number = MAX): Promise<voi
     { upsert: true, new: true }
   );
   if (row.count >= max && (!row.lockedUntil || new Date(row.lockedUntil) <= now)) {
-    await LoginAttempt.updateOne({ key }, { $set: { lockedUntil: new Date(now.getTime() + WINDOW_MS) } });
+    await LoginAttempt.updateOne({ key }, { $set: { lockedUntil: new Date(now.getTime() + windowMs) } });
   }
 }
 

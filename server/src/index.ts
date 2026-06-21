@@ -20,6 +20,7 @@ import miscRoutes from "./routes/misc";
 import cronRoutes from "./routes/cron";
 import trainingRoutes from "./routes/training";
 import contributionRoutes from "./routes/contribution";
+import masterRoutes from "./routes/master";
 
 async function main() {
   await connectDB();
@@ -49,6 +50,7 @@ async function main() {
   app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/instructors", instructorRoutes);
+  app.use("/api/master", masterRoutes);
   app.use("/api/fields", fieldRoutes);
   app.use("/api/requests", requestRoutes);
   app.use("/api/mapping", mappingRoutes);

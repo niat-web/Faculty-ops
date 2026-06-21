@@ -2,10 +2,10 @@
 // %, Health and Predicted Completion cells update instantly when a dropdown
 // changes (no reload). MUST stay in sync with server/src/lib/trainingScore.ts.
 
+// Predicted Completion is now a MANUAL date (editable in the grid), so it's NOT auto-computed.
 export const COMPUTED_KEYS = [
   "primary_pct", "secondary_pct",
-  "health_status", "predicted_completion",
-  "secondary_health_status", "secondary_predicted_completion",
+  "health_status", "secondary_health_status",
 ] as const;
 
 const FE = ["Static Web", "Responsive Design", "Modern Responsive UI", "JavaScript Sprint", "JavaScript Essentials", "React JS", "Frontend Projects"];

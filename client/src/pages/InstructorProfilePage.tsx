@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, RefreshCw, Upload, FileText, Download, Printer, Loader2 } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, RefreshCw, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Loading from "../components/Loading";
+import ScrollSelect from "../components/ScrollSelect";
 
 // Module labels/order now come dynamically from the profile payload (p.modules).
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
@@ -37,9 +38,11 @@ export default function InstructorProfilePage() {
   const [editKey, setEditKey] = useState<string | null>(null); // inline-edit: which field key
   const inlineRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
 
-  // Capability Managers can now edit their own reportees' details directly (server enforces scope).
+  // Ops/SM edit instructor detail fields directly; a Capability Manager must send changes to their
+  // Senior Manager for approval (a change request with proof). Status/notes/skills stay editable for CMs.
   const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER" || user!.role === "CAPABILITY_MANAGER";
-  const canRequest = false; // approval workflow dropped for CMs — they edit directly
+  const canEditFields = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
+  const canRequest = user!.role === "CAPABILITY_MANAGER"; // CM → approval workflow
   const canAudit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER"; // per-instructor audit tab stays Ops/SM
   const isOps = user!.role === "OPS_ADMIN";
 
@@ -80,10 +83,12 @@ export default function InstructorProfilePage() {
   // ones rendered with special UI (Lifecycle timeline / Exit form).
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
   const moduleTabs = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
-  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canAudit ? ["AUDIT"] : [])];
+  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit ? ["MAILS"] : []), ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
   const inst = p.instructor || {};
-  const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", AUDIT: "Audit" } as any)[t] || t;
+  const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", MAILS: "Mails", AUDIT: "Audit" } as any)[t] || t;
+  // Fields with an open change request awaiting Senior-Manager approval.
+  const pendingByKey: Record<string, any> = Object.fromEntries((p.pendingRequests || []).map((r: any) => [r.fieldKey, r]));
 
   return (
     <div className="space-y-5">
@@ -117,9 +122,15 @@ export default function InstructorProfilePage() {
               <dl className="divide-y divide-slate-100">
                 {(p.byModule?.[active] || []).map((f: any) => (
                   <div key={f.key} className="group grid grid-cols-[200px_1fr_auto] items-center gap-3 py-2">
-                    <dt className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-600">{f.label}<span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>{f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}</dt>
-                    <dd className="min-w-0">
-                      {editKey === f.key ? (
+                    <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
+                    <dd className="flex min-w-0 items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                      {pendingByKey[f.key] ? (
+                        <div>
+                          <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
+                          <div className="mt-0.5 text-[11px] text-amber-600">Pending approval → "{pendingByKey[f.key].newValue}" (by {pendingByKey[f.key].requesterName})</div>
+                        </div>
+                      ) : editKey === f.key ? (
                         f.type === "DROPDOWN" ? (
                           <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="">— select —</option>{(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
                         ) : f.type === "BOOLEAN" ? (
@@ -127,16 +138,20 @@ export default function InstructorProfilePage() {
                         ) : (
                           <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : f.type === "DATE" ? "date" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
                         )
-                      ) : (canEdit && f.type !== "FILE") ? (
-                        <button onClick={() => setEditKey(f.key)} title="Click to edit" className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
+                      ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
+                        <button onClick={() => setEditField(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
                       ) : (
                         <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
                       )}
-                    </dd>
-                    <div className="flex w-5 justify-end">
-                      {(canEdit || canRequest) && f.type !== "FILE" && (
-                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} aria-label={`Edit ${f.label}`} className="opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                      </div>
+                      {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
+                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                       )}
+                    </dd>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>
+                      {f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}
+                      {pendingByKey[f.key] && <span className="chip chip-necessary" title={`Requested by ${pendingByKey[f.key].requesterName}`}>pending</span>}
                     </div>
                   </div>
                 ))}
@@ -158,11 +173,12 @@ export default function InstructorProfilePage() {
           {active === "NOTES" && <NotesTab notes={inst.notes} instructorId={id!} canEdit={canEdit} onChange={load} />}
           {active === "DOCUMENTS" && p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} canEdit={canEdit} onChange={load} />}
           {active === "HISTORY" && <HistoryTab instructorId={id!} />}
+          {active === "MAILS" && <MailsTab instructorId={id!} canSend={canEdit} />}
           {active === "AUDIT" && <AuditTab instructorId={id!} />}
         </div>
       </div>
 
-      {editField && <EditFieldModal field={editField} instructorId={id!} mode={canEdit ? "edit" : "request"} onClose={() => setEditField(null)} onDone={() => { setEditField(null); load(); }} />}
+      {editField && <EditFieldModal field={editField} instructorId={id!} mode={canEditFields ? "edit" : "request"} onClose={() => setEditField(null)} onDone={() => { setEditField(null); load(); }} />}
       {statusOpen && <StatusModal current={inst.status} instructorId={id!} onClose={() => setStatusOpen(false)} onDone={() => { setStatusOpen(false); load(); }} />}
     </div>
   );
@@ -177,23 +193,17 @@ function Field({ label, value }: { label: string; value: any }) {
 function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
   const [value, setValue] = useState(field.value ?? "");
   const [reason, setReason] = useState("");
-  const [proof, setProof] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!reason.trim()) { setErr("A reason is required."); return; }
-    if (mode === "request" && !proof) { setErr("A proof document (image or PDF) is required."); return; }
     setBusy(true); setErr(null);
     try {
       if (mode === "edit") {
         await api.post(`/fields/value`, { instructorId, fieldKey: field.key, fieldLabel: field.label, oldValue: String(field.value ?? ""), newValue: String(value), reason });
       } else {
-        const form = new FormData();
-        form.append("instructorId", instructorId); form.append("fieldKey", field.key);
-        form.append("newValue", String(value)); form.append("reason", reason);
-        if (proof) form.append("proof", proof);
-        await api.upload(`/requests`, form);
+        await api.post(`/requests`, { instructorId, fieldKey: field.key, newValue: String(value), reason });
       }
       onDone();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -206,7 +216,8 @@ function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
         <div>
           <label className="label">New value</label>
           {field.type === "DROPDOWN" ? (
-            <select className="input" value={value} onChange={(e) => setValue(e.target.value)}><option value="">— select —</option>{field.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+            <ScrollSelect value={String(value ?? "")} onChange={(v) => setValue(v)} placeholder="— select —"
+              options={[{ value: "", label: "— select —" }, ...((field.options || []).includes(value) || !value ? [] : [{ value: String(value), label: String(value) }]), ...(field.options || []).map((o: string) => ({ value: o, label: o }))]} />
           ) : field.type === "BOOLEAN" ? (
             <select className="input" value={String(value)} onChange={(e) => setValue(e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select>
           ) : (
@@ -217,7 +228,6 @@ function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
           {field.type === "NUMBER" && (field.min != null || field.max != null) && <p className="mt-1 text-xs text-slate-400">Allowed: {field.min ?? "−∞"} to {field.max ?? "∞"}</p>}
         </div>
         <div><label className="label">Reason {mode === "request" ? "(sent to your Senior Manager)" : "(for the audit log)"}</label><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
-        {mode === "request" && <div><label className="label">Proof document (image or PDF) — required</label><input type="file" accept="image/*,application/pdf" className="input" onChange={(e) => setProof(e.target.files?.[0] || null)} /></div>}
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
           <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : mode === "edit" ? "Save" : "Submit request"}</button>
@@ -410,6 +420,53 @@ function AuditTab({ instructorId }: { instructorId: string }) {
           ))}
         </ul>
       ) : <p className="text-sm text-slate-400">No audit entries for this instructor.</p>}
+    </div>
+  );
+}
+
+// Lifecycle emails to the instructor — status of each + resend (honours the admin on/off toggles).
+function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: boolean }) {
+  const toast = useToast();
+  const [mails, setMails] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  function load() { api.get(`/instructors/${instructorId}/mails`).then((r) => setMails(r.mails)).catch((e) => toast.error(e.message)); }
+  useEffect(load, [instructorId]);
+  async function send(kind: string) {
+    setBusy(kind);
+    try { const r = await api.post(`/instructors/${instructorId}/mails/${kind}/send`); toast.success(`Email ${r.status === "SENT" ? "sent" : r.status.toLowerCase()} to ${r.to || "instructor"}.`); load(); }
+    catch (e: any) { toast.error(e.message); }
+    finally { setBusy(null); }
+  }
+  if (!mails) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  const badge = (status?: string) => {
+    if (status === "SENT") return <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Sent</span>;
+    if (status === "FAILED") return <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><AlertCircle className="h-3.5 w-3.5" /> Failed</span>;
+    if (status === "SKIPPED") return <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600"><MinusCircle className="h-3.5 w-3.5" /> Turned off</span>;
+    return <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400"><MinusCircle className="h-3.5 w-3.5" /> Not sent</span>;
+  };
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3"><Mail className="h-5 w-5 text-brand-600" /><h2 className="font-semibold text-slate-800">Mails</h2></div>
+      <div className="divide-y divide-slate-100">
+        {mails.map((m) => (
+          <div key={m.kind} className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-slate-800">{m.label}</div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                {badge(m.last?.status)}
+                {m.last && <span className="text-[11px] text-slate-400">{m.last.status === "SENT" ? "to " + m.last.to + " · " : ""}{new Date(m.last.createdAt).toLocaleString()}{m.last.sentByName ? " · by " + m.last.sentByName : ""}</span>}
+                {m.last?.error && <span className="text-[11px] text-rose-500">{m.last.error}</span>}
+              </div>
+            </div>
+            {canSend && (
+              <button onClick={() => send(m.kind)} disabled={busy === m.kind} className="btn btn-ghost btn-sm shrink-0 disabled:opacity-50" title={m.last ? "Resend" : "Send"}>
+                {busy === m.kind ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} {m.last ? "Resend" : "Send"}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="border-t border-slate-100 px-5 py-2.5 text-[11px] text-slate-400">These emails are controlled by the admin in Settings → Emails. A turned-off email won't send even on resend.</p>
     </div>
   );
 }

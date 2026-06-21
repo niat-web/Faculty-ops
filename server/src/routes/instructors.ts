@@ -7,6 +7,7 @@ import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canEditDet
 import { escapeRegex } from "../lib/text";
 import { getProfileForViewer } from "../lib/profile";
 import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
+import { sendInstructorMail, listInstructorMails } from "../lib/instructorMail";
 import { maybeDecrypt } from "../lib/crypto";
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
 import { requireUser } from "../middleware";
@@ -327,6 +328,7 @@ router.patch("/:id", async (req, res) => {
     const old = inst.status; inst.status = status;
     inst.lifecycle.push({ status, note: "Edited", actorId: req.user!.id, actorName: req.user!.name });
     await writeAudit({ ...actor, action: "LIFECYCLE_CHANGE", fieldName: "Status", oldValue: old, newValue: status, reason: "Edited" });
+    if (status === LifecycleStatus.ONBOARDING && old !== LifecycleStatus.ONBOARDING) await onOnboarded(inst, req.user!);
   }
 
   if (managerId !== undefined) {
@@ -373,7 +375,31 @@ router.post("/:id/lifecycle", detailGuard, async (req, res) => {
   inst.lifecycle.push({ status, note: note || null, actorId: req.user!.id, actorName: req.user!.name });
   await inst.save();
   await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "LIFECYCLE_CHANGE", fieldName: "Status", oldValue: old, newValue: status, reason: note || "Status change" });
+  if (status === LifecycleStatus.ONBOARDING && old !== LifecycleStatus.ONBOARDING) await onOnboarded(inst, req.user!);
   res.json({ ok: true });
+});
+
+// When an instructor enters Onboarding, auto-send the welcome + documents emails (each honours its toggle).
+async function onOnboarded(inst: any, actor: { id: string; name: string }) {
+  try { await sendInstructorMail("ONBOARD", inst, actor); await sendInstructorMail("DOCUMENTS", inst, actor); }
+  catch (e: any) { console.error("[mail] onboard send failed:", e?.message); }
+}
+
+// Mails menu — list the 3 lifecycle emails + their last status (any staff who can access the instructor).
+router.get("/:id/mails", async (req, res) => {
+  if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
+  res.json({ mails: await listInstructorMails(req.params.id) });
+});
+
+// Manually (re)send one lifecycle email (Ops/SM/CM within scope). Honours the admin toggle.
+router.post("/:id/mails/:kind/send", async (req, res) => {
+  if (!canEditDetails(req.user!)) return res.status(403).json({ error: "Forbidden" });
+  if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
+  const inst: any = await Instructor.findById(req.params.id).lean();
+  if (!inst) return res.status(404).json({ error: "Not found" });
+  const r = await sendInstructorMail(req.params.kind, inst, req.user!);
+  if (!r.ok) return res.status(r.status === "SKIPPED" ? 409 : 400).json({ error: r.reason || "Could not send", status: r.status });
+  res.json({ ok: true, status: r.status, to: r.to });
 });
 
 // Re-hire (EXITED → REHIRED).

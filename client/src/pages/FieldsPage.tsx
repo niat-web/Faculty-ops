@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
+import ScrollSelect from "../components/ScrollSelect";
 
 const TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN", "FILE", "BOOLEAN"];
 const VIS = ["PUBLIC", "NECESSARY", "SENSITIVE"];
@@ -201,7 +202,7 @@ function FieldModal({ field, instructors, modules, isOps, reloadModules, onClose
           <div><label className="label">Scope</label><select className="input" value={f.scope} onChange={(e) => set("scope", e.target.value)}><option value="GLOBAL">Global (all instructors)</option><option value="INSTANCE">Instance (one instructor)</option></select></div>
         )}
         {isNew && f.scope === "INSTANCE" && (
-          <div className="col-span-2"><label className="label">Instructor</label><select className="input" value={f.instructorId} onChange={(e) => set("instructorId", e.target.value)}><option value="">— select —</option>{instructors.map((i: any) => <option key={i.id} value={i.id}>{i.name} ({i.employeeId})</option>)}</select></div>
+          <div className="col-span-2"><label className="label">Instructor</label><ScrollSelect value={f.instructorId} placeholder="— select —" onChange={(v) => set("instructorId", v)} options={[{ value: "", label: "— select —" }, ...instructors.map((i: any) => ({ value: i.id, label: `${i.name} (${i.employeeId})` }))]} /></div>
         )}
         {f.type === "DROPDOWN" && <div className="col-span-2"><label className="label">Options (comma-separated)</label><input className="input" value={f.options} onChange={(e) => set("options", e.target.value)} /></div>}
         {f.type === "NUMBER" && <><div><label className="label">Min</label><input className="input" value={f.min} onChange={(e) => set("min", e.target.value)} /></div><div><label className="label">Max</label><input className="input" value={f.max} onChange={(e) => set("max", e.target.value)} /></div></>}

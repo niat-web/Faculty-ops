@@ -9,6 +9,7 @@ import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
+import ScrollSelect from "../components/ScrollSelect";
 
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
 
@@ -146,21 +147,18 @@ export default function InstructorsPage() {
           <Search className="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-slate-400" />
           <input className="input pl-9" placeholder="Name, ID, campus…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
         </div>
-        <div><label className="label">Status</label>
-          <select className="input w-40" value={status} onChange={(e) => { setPage(1); setStatus(e.target.value); if (e.target.value) setScope("all"); }}>
-            <option value="">All</option>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+        <div className="w-40"><label className="label">Status</label>
+          <ScrollSelect value={status} placeholder="All" onChange={(v) => { setPage(1); setStatus(v); if (v) setScope("all"); }}
+            options={[{ value: "", label: "All" }, ...Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))]} />
         </div>
-        <div><label className="label">Campus</label>
-          <select className="input w-44" value={campus} onChange={(e) => { setPage(1); setCampus(e.target.value); }}>
-            <option value="">All</option>{campuses.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+        <div className="w-44"><label className="label">Campus</label>
+          <ScrollSelect value={campus} placeholder="All" onChange={(v) => { setPage(1); setCampus(v); }}
+            options={[{ value: "", label: "All" }, ...campuses.map((c) => ({ value: c, label: c }))]} />
         </div>
         {canManage && (
-          <div><label className="label">Manager</label>
-            <select className="input w-44" value={managerId} onChange={(e) => { setPage(1); setManagerId(e.target.value); }}>
-              <option value="">All</option>{cms.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          <div className="w-44"><label className="label">Manager</label>
+            <ScrollSelect value={managerId} placeholder="All" onChange={(v) => { setPage(1); setManagerId(v); }}
+              options={[{ value: "", label: "All" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
           </div>
         )}
         <div><label className="label">Min training %</label><input type="number" min={0} max={100} className="input w-28" placeholder="e.g. 50" value={minTraining} onChange={(e) => { setPage(1); setMinTraining(e.target.value); }} /></div>
@@ -183,9 +181,8 @@ export default function InstructorsPage() {
         <div className="card flex flex-wrap items-center gap-3 border-brand-200 bg-brand-50/50 p-3">
           <span className="text-sm font-medium text-brand-700">{ids.length} selected</span>
           <div className="flex items-center gap-1">
-            <select className="input h-8 w-44 py-1 text-xs" value={bulkTarget} onChange={(e) => setBulkTarget(e.target.value)}>
-              <option value="">— Unassigned —</option>{cms.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="w-44"><ScrollSelect value={bulkTarget} placeholder="— Unassigned —" onChange={setBulkTarget}
+              options={[{ value: "", label: "— Unassigned —" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} /></div>
             <button onClick={bulkReassign} className="btn btn-ghost btn-sm"><Network className="h-4 w-4" /> Reassign</button>
           </div>
           <div className="flex items-center gap-1">
@@ -284,9 +281,8 @@ function AddInstructorModal({ cms, onClose, onDone }: any) {
         <div><label className="label">Email</label><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
         <div><label className="label">Campus</label><input className="input" value={f.campus} onChange={(e) => set("campus", e.target.value)} /></div>
         <div><label className="label">Capability Manager</label>
-          <select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)}>
-            <option value="">— Unassigned —</option>{(cms || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => set("managerId", v)}
+            options={[{ value: "", label: "— Unassigned —" }, ...(cms || []).map((c: any) => ({ value: c.id, label: c.name }))]} />
         </div>
         <div><label className="label">Status</label><select className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Create"}</button></div>
@@ -313,9 +309,8 @@ function EditInstructorModal({ inst, cms, onClose, onDone }: any) {
         <div><label className="label">Email</label><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
         <div><label className="label">Campus</label><input className="input" value={f.campus} onChange={(e) => set("campus", e.target.value)} /></div>
         <div><label className="label">Capability Manager</label>
-          <select className="input" value={f.managerId} onChange={(e) => set("managerId", e.target.value)}>
-            <option value="">— Unassigned —</option>{(cms || []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => set("managerId", v)}
+            options={[{ value: "", label: "— Unassigned —" }, ...(cms || []).map((c: any) => ({ value: c.id, label: c.name }))]} />
         </div>
         <div><label className="label">Status</label><select className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>

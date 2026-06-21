@@ -7,10 +7,53 @@ import { useToast } from "../toast";
 import { useCachedGet } from "../hooks";
 import Loading from "../components/Loading";
 import Pagination from "../components/Pagination";
+import ScrollSelect from "../components/ScrollSelect";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
 import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
 
 const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
+
+// "Predicted Completion" is flexible — it can hold a date OR text ("Completed"/"N/A"/anything).
+const PRED_KEYS = new Set(["predicted_completion", "secondary_predicted_completion"]);
+const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function predToISO(s: string): string {
+  if (!s) return "";
+  let d = new Date(s);
+  if (isNaN(d.getTime())) d = new Date(String(s).replace(/-/g, " "));
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// Canonicalise on save: dates → "DD-Mon-YYYY", "completed"/"n/a" → tidy casing, other text kept verbatim.
+function predCanon(s: string): string {
+  const t = (s || "").trim();
+  if (!t) return "";
+  if (/^completed$/i.test(t)) return "Completed";
+  if (/^n\/?a$/i.test(t)) return "N/A";
+  const iso = predToISO(t);
+  if (!iso) return t;
+  const [y, m, da] = iso.split("-").map(Number);
+  return `${String(da).padStart(2, "0")}-${MONTHS3[m - 1]}-${y}`;
+}
+
+// Hybrid editor for Predicted Completion: a free-text box (date OR words) plus a date picker.
+function PredEditor({ val, onSave, onCancel }: { val: string; onSave: (v: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(val || "");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+  const commit = (v: string) => onSave(predCanon(v));
+  return (
+    <div className="flex items-center gap-1 bg-white px-1 ring-2 ring-brand-400">
+      <input ref={inputRef} type="text" value={text} placeholder='date or "Completed" / "N/A"'
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(text); } if (e.key === "Escape") onCancel(); }}
+        onBlur={(e) => { const nt = e.relatedTarget as HTMLElement | null; if (nt?.dataset?.predpick) return; commit(text); }}
+        className="w-28 bg-transparent px-1 py-3 text-xs outline-none" />
+      <input data-predpick="1" type="date" value={predToISO(text)} title="Pick a date"
+        onChange={(e) => { const v = e.target.value ? predCanon(e.target.value) : ""; setText(v); commit(v); }}
+        className="w-[22px] shrink-0 cursor-pointer bg-transparent text-xs text-slate-400 outline-none" />
+    </div>
+  );
+}
 
 // Each track is its own URL so only that track's rows are fetched (smaller payload, faster load).
 export const TRACK_SLUG: Record<string, string> = { tech: "tech-stats", math_aptitude: "mathematics-aptitude-stats", english: "english-stats" };
@@ -54,11 +97,12 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         return (
           <td key={col.id} className={`border-b border-l border-slate-100 p-0 ${isStatus ? "text-center" : ""}`}>
             {isEditing ? (
-              col.type === "STATUS" || col.type === "DROPDOWN" ? (
-                <select ref={editRef as any} autoFocus defaultValue={val || ""} onBlur={onCancel} onChange={(e) => onSave(r, col, e.target.value)} className="w-full bg-white px-1 py-3 text-xs outline-none ring-2 ring-brand-400">
-                  {ordered.map((s: string) => <option key={s} value={s}>{s}</option>)}
-                  <option value="">— clear —</option>
-                </select>
+              PRED_KEYS.has(col.key) ? (
+                <PredEditor val={val} onSave={(v) => onSave(r, col, v)} onCancel={onCancel} />
+              ) : col.type === "STATUS" || col.type === "DROPDOWN" ? (
+                <ScrollSelect autoOpen value={val || ""} onChange={(v) => onSave(r, col, v)} onClose={onCancel} placeholder="— clear —"
+                  className="w-full bg-white px-1 py-2.5 text-xs outline-none ring-2 ring-brand-400 flex items-center justify-between gap-1"
+                  options={[...ordered.map((s: string) => ({ value: s, label: s })), { value: "", label: "— clear —" }]} />
               ) : (
                 <input ref={editRef as any} autoFocus aria-label={col.label} type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
               )
@@ -213,10 +257,8 @@ export default function TrainingPage() {
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="Search name or ID…" className="input w-56 pl-9" />
           </div>
-          <select value={cmFilter} onChange={(e) => { setCmFilter(e.target.value); setPage(0); }} title="Capability Manager" className="input w-48">
-            <option value="">All managers</option>
-            {managers.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <div className="w-48"><ScrollSelect value={cmFilter} placeholder="All managers" onChange={(v) => { setCmFilter(v); setPage(0); }}
+            options={[{ value: "", label: "All managers" }, ...managers.map((m) => ({ value: m, label: m }))]} /></div>
           <button onClick={exportCsv} className="btn btn-ghost btn-sm" title="Export the current table as CSV"><Download className="h-4 w-4" /> Export CSV</button>
           {activeFilterCount > 0 && <button onClick={clearFilters} className="btn btn-ghost btn-sm text-rose-600 hover:text-rose-700">Clear all ({activeFilterCount})</button>}
           <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm">
@@ -342,10 +384,7 @@ function FilterSelect({ label, value, options, onChange }: { label: string; valu
   return (
     <div>
       <label className="label">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="input w-full">
-        <option value="">Any</option>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
+      <ScrollSelect value={value} placeholder="Any" onChange={onChange} options={[{ value: "", label: "Any" }, ...options.map((o) => ({ value: o, label: o }))]} />
     </div>
   );
 }

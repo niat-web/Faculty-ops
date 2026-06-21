@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Check, X, MessageSquare, Paperclip, Search } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
@@ -15,10 +15,17 @@ export default function RequestsPage() {
   const [hq, setHq] = useState(""); // history search
   const [hStatus, setHStatus] = useState(""); // history status filter
 
+  const { id: focusId } = useParams(); // deep link: /app/requests/:id opens that one request
   function load() {
     api.get(`/requests`).then((r) => { setData(r); setErr(null); }).catch((e) => setErr(e.message));
   }
   useEffect(() => { load(); }, []);
+  // When arriving via a unique link, open exactly that request.
+  useEffect(() => {
+    if (!focusId || !data) return;
+    const r = (data.requests || []).find((x: any) => x.id === focusId);
+    if (r) setActive(r);
+  }, [focusId, data]);
 
   const all: any[] = data?.requests || [];
   const pending = all.filter((r) => r.status === "PENDING");

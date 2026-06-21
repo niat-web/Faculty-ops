@@ -1,4 +1,4 @@
-import { Instructor, FieldDefinition, User, TrainingColumn } from "../models";
+import { Instructor, FieldDefinition, User, TrainingColumn, EditRequest } from "../models";
 import { filterVisibleFields, type SessionUser } from "./rbac";
 import { maybeDecrypt, isEncrypted } from "./crypto";
 import { tabForInstructor } from "./training";
@@ -37,19 +37,35 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
 
   // Compute the training summary LIVE so Health/%/Predicted never go stale on the profile. (Bug B1)
   let liveSummary: Record<string, string> = {};
+  let trainingTab: string | null = null;
   try {
     const moduleCols = await TrainingColumn.find({ archivedAt: null, storage: "module" }).select("track key").lean();
     const live: Record<string, string[]> = {};
     for (const c of moduleCols as any[]) (live[c.track] ||= []).push(c.key);
     const ms = inst.moduleStatus || {};
-    const tab = tabForInstructor(values, ms, live);
-    if (tab) liveSummary = summaryStored(computeSummary(values, ms, tab));
+    trainingTab = tabForInstructor(values, ms, live);
+    if (trainingTab) liveSummary = summaryStored(computeSummary(values, ms, trainingTab));
   } catch { /* fall back to stored values */ }
+
+  // Overlay the Training-Stats column definitions (proper DROPDOWN/DATE/NUMBER types + per-track
+  // dropdown options) onto matching dynamic fields, so the profile edit modal mirrors the training
+  // grid instead of falling back to a plain text box. Keyed by the instructor's resolved track tab.
+  const trainingMeta: Record<string, { type: string; options: string[] }> = {};
+  if (trainingTab) {
+    try {
+      const cols = await TrainingColumn.find({ archivedAt: null, track: trainingTab, storage: "value" }).select("key type options").lean();
+      for (const c of cols as any[]) trainingMeta[c.key] = { type: c.type, options: c.options || [] };
+    } catch { /* fall back to the FieldDefinition's own type */ }
+  }
 
   const byModule: Record<string, any[]> = {};
   for (const d of visible as any[]) {
-    const value = COMPUTED.has(d.key) ? (liveSummary[d.key] ?? "") : forDisplay(values[d.key] ?? d.defaultValue ?? null);
-    (byModule[d.module] ||= []).push({ key: d.key, label: d.label, type: d.type, visibility: d.visibility, scope: d.scope, options: d.options || [], min: d.min ?? null, max: d.max ?? null, pattern: d.pattern || null, selfEditable: d.selfEditable !== false, value });
+    const computed = COMPUTED.has(d.key); // live-derived (%, Health) → read-only on the profile
+    const value = computed ? (liveSummary[d.key] ?? "") : forDisplay(values[d.key] ?? d.defaultValue ?? null);
+    const tm = trainingMeta[d.key];
+    const type = tm ? tm.type : d.type;
+    const options = tm ? tm.options : (d.options || []);
+    (byModule[d.module] ||= []).push({ key: d.key, label: d.label, type, visibility: d.visibility, scope: d.scope, options, min: d.min ?? null, max: d.max ?? null, pattern: d.pattern || null, selfEditable: d.selfEditable !== false, computed, value });
   }
 
   let managerName = "— unassigned —";
@@ -66,8 +82,12 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
   const exit = privileged ? { lastWorkingDay: inst.exit?.lastWorkingDay || "", typeOfExit: inst.exit?.typeOfExit || "", reason: inst.exit?.reason || "", detailedReason: inst.exit?.detailedReason || "", items: exitItems } : null;
   const documents = privileged ? (inst.documents || []).map((d: any) => ({ id: String(d._id), name: d.name, path: d.path, uploadedByName: d.uploadedByName, createdAt: d.createdAt })).reverse() : null;
 
+  // Fields with an OPEN change request (CM → SM) → surfaced as "Pending" on the profile.
+  const pend = await EditRequest.find({ instructorId: inst._id, status: "PENDING" }).select("fieldKey fieldLabel newValue requesterName createdAt").sort({ createdAt: -1 }).lean();
+  const pendingRequests = (pend as any[]).map((r) => ({ fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, newValue: r.newValue, requesterName: r.requesterName, createdAt: r.createdAt }));
+
   return {
-    skills, exit, documents,
+    skills, exit, documents, pendingRequests,
     modules: await listModules(), // section order + labels (incl. admin-created ones)
     instructor: {
       id: String(inst._id), employeeId: inst.employeeId, name: inst.name, email: inst.email, campus: inst.campus, status: inst.status, managerName,

@@ -4,6 +4,7 @@ import { api, API_BASE } from "../api";
 import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import Pagination from "../components/Pagination";
+import ScrollSelect from "../components/ScrollSelect";
 
 const ACTIONS = ["FIELD_EDIT", "FIELD_ADD", "FIELD_ARCHIVE", "MAPPING_CHANGE", "LIFECYCLE_CHANGE", "NOTE_ADD", "REQUEST_DECISION", "INSTRUCTOR_CREATE", "INSTRUCTOR_DELETE", "USER_CREATE", "USER_UPDATE", "USER_DELETE"];
 
@@ -46,10 +47,9 @@ export default function AuditPage() {
           <Search className="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-slate-400" />
           <input className="input pl-9" placeholder="Instructor, actor, field, reason…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
         </div>
-        <div><label className="label">Action</label>
-          <select className="input w-52" value={action} onChange={(e) => { setPage(1); setAction(e.target.value); }}>
-            <option value="">All actions</option>{ACTIONS.map((a) => <option key={a} value={a}>{a.replace(/_/g, " ")}</option>)}
-          </select>
+        <div className="w-52"><label className="label">Action</label>
+          <ScrollSelect value={action} placeholder="All actions" onChange={(v) => { setPage(1); setAction(v); }}
+            options={[{ value: "", label: "All actions" }, ...ACTIONS.map((a) => ({ value: a, label: a.replace(/_/g, " ") }))]} />
         </div>
       </div>
 
