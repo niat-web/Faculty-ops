@@ -33,14 +33,43 @@ router.get("/org", async (req, res) => {
   });
 });
 
-// Audit log CSV export (Ops/SM), honors the same q/action filters.
+// Filters accept comma-separated values (single or multi).
+const listParam = (v: any) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+const inOrEq = (vals: string[]) => (vals.length > 1 ? { $in: vals } : vals[0]);
+
+// Shared audit filter: search + action + actor + department/manager (resolved via the instructor) + date range.
+async function buildAuditFilter(req: any): Promise<any> {
+  const q = String(req.query.q || "").trim();
+  const actions = listParam(req.query.action);
+  const actors = listParam(req.query.actorRole);
+  const departments = listParam(req.query.department);
+  const managers = listParam(req.query.managerId);
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+  const filter: any = {};
+  if (actions.length) filter.action = inOrEq(actions);
+  if (actors.length) filter.actorRole = inOrEq(actors);
+  // Department / Capability Manager → resolve matching instructorIds, then scope the audit rows.
+  if (departments.length || managers.length) {
+    const iq: any = {};
+    if (departments.length) iq["values.department"] = inOrEq(departments);
+    if (managers.length) iq.currentManagerId = inOrEq(managers);
+    const ids = (await Instructor.find(iq).select("_id").limit(50000).lean()).map((i: any) => i._id);
+    filter.instructorId = { $in: ids };
+  }
+  if (from || to) {
+    filter.createdAt = {};
+    if (from) { const d = new Date(from); if (!isNaN(d.getTime())) filter.createdAt.$gte = d; }
+    if (to) { const d = new Date(to); if (!isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); filter.createdAt.$lte = d; } }
+  }
+  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ instructorName: rx }, { actorName: rx }, { fieldName: rx }, { reason: rx }, { oldValue: rx }, { newValue: rx }]; }
+  return filter;
+}
+
+// Audit log CSV export (Ops/SM), honors the same filters.
 router.get("/audit/export.csv", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
-  const q = String(req.query.q || "").trim();
-  const action = String(req.query.action || "").trim();
-  const filter: any = {};
-  if (action) filter.action = action;
-  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ instructorName: rx }, { actorName: rx }, { fieldName: rx }, { reason: rx }]; }
+  const filter = await buildAuditFilter(req);
   const rows = await AuditLog.find(filter).sort({ createdAt: -1 }).limit(20000).lean();
   const data = rows.map((a: any) => ({
     when: new Date(a.createdAt).toISOString(), action: a.action, instructor: a.instructorName || "",
@@ -54,14 +83,10 @@ router.get("/audit/export.csv", async (req, res) => {
 // Audit log (Ops/SM), paginated + filtered.
 router.get("/audit", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
-  const q = String(req.query.q || "").trim();
-  const action = String(req.query.action || "").trim();
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
   const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
-  const filter: any = {};
-  if (action) filter.action = action;
-  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ instructorName: rx }, { actorName: rx }, { fieldName: rx }, { reason: rx }]; }
+  const filter = await buildAuditFilter(req);
   const [total, rows] = await Promise.all([
     AuditLog.countDocuments(filter),
     AuditLog.find(filter).sort({ createdAt: -1 }).skip((page - 1) * PER).limit(PER).lean(),

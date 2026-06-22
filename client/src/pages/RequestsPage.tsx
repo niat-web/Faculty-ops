@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, X, MessageSquare, Paperclip, Search, Plus } from "lucide-react";
+import { Check, X, MessageSquare, Paperclip, Search, Plus, Trash2 } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
+import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import ScrollSelect from "../components/ScrollSelect";
 
@@ -10,6 +12,8 @@ const STATUS_CHIP: Record<string, string> = { PENDING: "chip-necessary", APPROVE
 
 export default function RequestsPage() {
   const { user } = useAuth();
+  const toast = useToast();
+  const confirm = useConfirm();
   const canDecide = user!.role === "SENIOR_MANAGER" || user!.role === "OPS_ADMIN";
   const canRaise = ["CAPABILITY_MANAGER", "SENIOR_MANAGER", "OPS_ADMIN"].includes(user!.role);
   const [data, setData] = useState<any>(null);
@@ -24,6 +28,10 @@ export default function RequestsPage() {
     api.get(`/requests`).then((r) => { setData(r); setErr(null); }).catch((e) => setErr(e.message));
   }
   useEffect(() => { load(); }, []);
+  async function removeRequest(r: any) {
+    if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
+    try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
+  }
   // When arriving via a unique link, open exactly that request.
   useEffect(() => {
     if (!focusId || !data) return;
@@ -78,6 +86,7 @@ export default function RequestsPage() {
                     <button onClick={() => setActive({ ...r, mode: "REJECT" })} className="btn btn-danger btn-sm"><X className="h-4 w-4" /> Reject</button>
                   </>
                 )}
+                {r.deletable && <button onClick={() => removeRequest(r)} title="Delete request" className="btn btn-ghost btn-sm text-rose-600 hover:text-rose-700"><Trash2 className="h-4 w-4" /></button>}
               </div>
             </div>
           </div>

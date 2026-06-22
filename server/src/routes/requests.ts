@@ -41,6 +41,7 @@ router.get("/", async (req, res) => {
       status: r.status, requesterName: r.requesterName, decisionComment: r.decisionComment,
       proofPath: r.proofPath || null,
       decidable: isOps || String(r.approverId) === u.id, // can THIS viewer approve/reject it
+      deletable: String(r.requesterId) === u.id && r.status === "PENDING", // requester may withdraw their own pending request
       createdAt: r.createdAt, comments: (r.comments || []).map((c: any) => ({ body: c.body, authorName: c.authorName, createdAt: c.createdAt })),
     })),
   });
@@ -126,6 +127,22 @@ router.post("/:id/decide", async (req, res) => {
     await writeAudit({ instructorId: r.instructorId, instructorName: r.instructorName, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "REQUEST_DECISION", fieldName: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: `Rejected: ${comment || "no comment"}` });
     await notify(String(r.requesterId), { type: "EDIT_REQUEST_REJECTED", title: "Your edit request was rejected", body: comment || "No comment provided", link: `/app/instructors/${r.instructorId}` });
   } else return res.status(400).json({ error: "Bad decision" });
+  res.json({ ok: true });
+});
+
+// Withdraw (delete) a PENDING request — requester only. Pending requests never applied a change,
+// so nothing to revert; the field keeps its previous value. The approver gets an in-app notice only.
+router.delete("/:id", async (req, res) => {
+  const u = req.user!;
+  const r: any = await EditRequest.findById(req.params.id);
+  if (!r) return res.status(404).json({ error: "Request not found" });
+  if (String(r.requesterId) !== u.id) return res.status(403).json({ error: "You can only delete your own requests." });
+  if (r.status !== "PENDING") return res.status(409).json({ error: "Only pending requests can be deleted." });
+  const { approverId, fieldLabel, instructorName, instructorId, oldValue, newValue, proofPath } = r;
+  if (proofPath) { try { await deleteFile(proofPath); } catch { /* ignore */ } }
+  await r.deleteOne();
+  await writeAudit({ instructorId, instructorName, actorId: u.id, actorName: u.name, actorRole: u.role, action: "REQUEST_DELETE", fieldName: fieldLabel, oldValue, newValue, reason: "Edit request withdrawn by requester" });
+  if (approverId) await notify(String(approverId), { type: "EDIT_REQUEST_REJECTED", title: `${u.name} withdrew an edit request`, body: `${fieldLabel} for ${instructorName}`, link: "/app/requests", email: false });
   res.json({ ok: true });
 });
 

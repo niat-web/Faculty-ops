@@ -83,8 +83,8 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
   const documents = privileged ? (inst.documents || []).map((d: any) => ({ id: String(d._id), name: d.name, path: d.path, uploadedByName: d.uploadedByName, createdAt: d.createdAt })).reverse() : null;
 
   // Fields with an OPEN change request (CM → SM) → surfaced as "Pending" on the profile.
-  const pend = await EditRequest.find({ instructorId: inst._id, status: "PENDING" }).select("fieldKey fieldLabel newValue requesterName createdAt").sort({ createdAt: -1 }).lean();
-  const pendingRequests = (pend as any[]).map((r) => ({ fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, newValue: r.newValue, requesterName: r.requesterName, createdAt: r.createdAt }));
+  const pend = await EditRequest.find({ instructorId: inst._id, status: "PENDING" }).select("fieldKey fieldLabel newValue requesterName requesterId createdAt").sort({ createdAt: -1 }).lean();
+  const pendingRequests = (pend as any[]).map((r) => ({ id: String(r._id), fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, newValue: r.newValue, requesterName: r.requesterName, requesterId: r.requesterId ? String(r.requesterId) : "", createdAt: r.createdAt }));
 
   // Staff (Ops Admin / Senior Manager / Capability Manager / central team) are NOT teaching
   // instructors — they only exist as Instructor records so they show in Master. A record is

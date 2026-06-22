@@ -47,6 +47,10 @@ export default function InstructorProfilePage() {
   const isOps = user!.role === "OPS_ADMIN";
 
   function load() { api.get(`/instructors/${id}`).then(setP).catch((e) => setErr(e.message)); }
+  async function withdrawRequest(r: any) {
+    if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
+    try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
+  }
   useEffect(() => { setP(null); load(); }, [id]);
 
   // Open the native dropdown/date picker immediately when a cell enters inline-edit.
@@ -128,7 +132,12 @@ export default function InstructorProfilePage() {
                       {pendingByKey[f.key] ? (
                         <div>
                           <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
-                          <div className="mt-0.5 text-[11px] text-amber-600">Pending approval → "{pendingByKey[f.key].newValue}" (by {pendingByKey[f.key].requesterName})</div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-amber-600">
+                            <span>Pending approval → "{pendingByKey[f.key].newValue}" (by {pendingByKey[f.key].requesterName})</span>
+                            {pendingByKey[f.key].requesterId === user!.id && (
+                              <button onClick={() => withdrawRequest(pendingByKey[f.key])} title="Delete request" className="text-rose-500 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
+                            )}
+                          </div>
                         </div>
                       ) : editKey === f.key ? (
                         f.type === "DROPDOWN" ? (
