@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, SlidersHorizontal, Download, X } from "lucide-react";
 import { api, API_BASE } from "../api";
+import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
@@ -32,12 +34,19 @@ export default function InstructorMasterPage() {
 
   const [edit, setEdit] = useState<{ id: string; key: string } | null>(null);
 
+  // Role filter (deep-linked from the Roles page): /app/instructors/master?role=OPS_ADMIN
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [role, setRole] = useState(searchParams.get("role") || "");
+  useEffect(() => { setRole(searchParams.get("role") || ""); setPage(1); }, [searchParams]);
+  function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
+
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
   // Build the query string shared by the list fetch and the CSV export.
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
+    if (role) p.set("role", role);
     if (applied.managerId) p.set("managerId", applied.managerId);
     if (applied.department) p.set("department", applied.department);
     if (applied.payroll) p.set("payroll", applied.payroll);
@@ -45,7 +54,7 @@ export default function InstructorMasterPage() {
     if (applied.campus) p.set("campus", applied.campus);
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope]);
+  }, [dq, applied, scope, role]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -98,6 +107,12 @@ export default function InstructorMasterPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input className="input h-9 pl-9 text-sm" placeholder="Search name, ID, email…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
           </div>
+          {role && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+              Role: {ROLE_LABEL[role] || role}
+              <button onClick={clearRole} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear role filter"><X className="h-3 w-3" /></button>
+            </span>
+          )}
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}

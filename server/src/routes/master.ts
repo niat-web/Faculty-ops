@@ -21,6 +21,21 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
 const COL_TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
 
+// Non-teaching departments — excluded when filtering to the Instructor role (kept in sync with instructors.ts).
+const NON_INSTRUCTOR_DEPTS = ["Instructors - Delivery Support (Ops and Central managers)", "Product Team"];
+
+// Role filter (from the Roles page): map a role to an `email` Mongo condition. A record's role =
+// the role of the User matching its email; "INSTRUCTOR" = any record whose email is NOT a staff user.
+async function roleEmailCondition(role: string): Promise<any | null> {
+  if (!role) return null;
+  if (role === "INSTRUCTOR") {
+    const staff = await User.find({ role: { $in: [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER] } }).select("email").lean();
+    return { $nin: (staff as any[]).map((u) => (u.email || "").toLowerCase()).filter(Boolean) };
+  }
+  const us = await User.find({ role }).select("email").lean();
+  return { $in: (us as any[]).map((u) => (u.email || "").toLowerCase()).filter(Boolean) };
+}
+
 // Column defs (from the editable MasterColumn docs) + dropdown filter lists + the CM picker list.
 router.get("/meta", guard, async (req, res) => {
   const columns = await getActiveMasterColumns();
@@ -67,6 +82,13 @@ router.get("/", guard, async (req, res) => {
   if (region) base["values.contribution_region"] = region;
   if (campus) base.campus = campus;
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
+  const role = String(req.query.role || "").trim();
+  if (role) {
+    const cond = await roleEmailCondition(role);
+    if (cond) base.email = cond;
+    // Instructor role = teaching only → also drop the non-teaching departments (unless a dept filter is set).
+    if (role === "INSTRUCTOR" && !department) base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+  }
 
   const filter: any = { ...base };
   if (scope === "active") filter.status = { $nin: EXIT_STATES };
@@ -106,6 +128,12 @@ router.get("/export.csv", guard, async (req, res) => {
   if (req.query.region) filter["values.contribution_region"] = String(req.query.region);
   if (req.query.campus) filter.campus = String(req.query.campus);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
+  const role = String(req.query.role || "").trim();
+  if (role) {
+    const cond = await roleEmailCondition(role);
+    if (cond) filter.email = cond;
+    if (role === "INSTRUCTOR" && !req.query.department) filter["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+  }
   const scope = String(req.query.scope || "active").trim();
   if (scope === "active") filter.status = { $nin: EXIT_STATES };
   else if (scope === "exited") filter.status = { $in: EXIT_STATES };

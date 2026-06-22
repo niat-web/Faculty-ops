@@ -13,6 +13,7 @@ const NAV: any[] = [
     { to: "/app/instructors", label: "Instructors", end: true },
     { to: "/app/instructors/master", label: "Instructor Master" },
     { to: "/app/instructors/exited", label: "Instructor Exited" },
+    { to: "/app/instructors/roles", label: "Roles" },
   ] },
   { to: "/app/training", label: "Instructors Training Stats", icon: BookOpen, roles: STAFF },
   { label: "Contribution", icon: Award, roles: ["OPS_ADMIN", "SENIOR_MANAGER"], children: [
