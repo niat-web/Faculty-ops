@@ -116,7 +116,7 @@ function EditMyFieldModal({ field, onClose, onDone }: any) {
           ) : field.type === "BOOLEAN" ? (
             <select className="input" value={String(value)} onChange={(e) => setValue(e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select>
           ) : (
-            <input type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} className="input" value={value as any}
+            <input type={field.type === "NUMBER" ? "number" : "text"} className="input" value={value as any}
               min={field.min ?? undefined} max={field.max ?? undefined} pattern={field.pattern || undefined}
               onChange={(e) => setValue(e.target.value)} />
           )}

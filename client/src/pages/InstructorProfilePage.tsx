@@ -51,6 +51,9 @@ export default function InstructorProfilePage() {
     if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
     try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
   }
+  // Ops/SM edit inline (direct, audited, no reason prompt); a Capability Manager opens the
+  // request modal (their change needs SM approval with a reason).
+  const startEdit = (f: any) => { if (canEditFields) setEditKey(f.key); else if (canRequest) setEditField(f); };
   useEffect(() => { setP(null); load(); }, [id]);
 
   // Open the native dropdown/date picker immediately when a cell enters inline-edit.
@@ -125,7 +128,7 @@ export default function InstructorProfilePage() {
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
               <dl className="divide-y divide-slate-100">
                 {(p.byModule?.[active] || []).map((f: any) => (
-                  <div key={f.key} className="group grid grid-cols-[200px_1fr_auto] items-center gap-3 py-2">
+                  <div key={f.key} className="group grid grid-cols-[200px_1fr] items-center gap-3 py-2">
                     <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <div className="min-w-0 flex-1">
@@ -141,27 +144,22 @@ export default function InstructorProfilePage() {
                         </div>
                       ) : editKey === f.key ? (
                         f.type === "DROPDOWN" ? (
-                          <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="">— select —</option>{(f.options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}</select>
+                          <ScrollSelect autoOpen value={String(f.value ?? "")} options={[{ value: "", label: "— select —" }, ...(f.options || []).map((o: string) => ({ value: o, label: o }))]} onChange={(v) => saveInline(f, v)} onClose={() => setEditKey(null)} className={`${CELL_EDIT} flex items-center justify-between gap-2`} />
                         ) : f.type === "BOOLEAN" ? (
                           <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "false")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="false">No</option><option value="true">Yes</option></select>
                         ) : (
-                          <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : f.type === "DATE" ? "date" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
+                          <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
                         )
                       ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
-                        <button onClick={() => setEditField(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
+                        <button onClick={() => startEdit(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
                       ) : (
                         <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
                       )}
                       </div>
                       {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
-                        <button onClick={() => setEditField(f)} title={canRequest ? "Request change" : "Edit with a reason"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                        <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                       )}
                     </dd>
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span>
-                      {f.scope === "INSTANCE" && <span className="chip chip-gray">instance</span>}
-                      {pendingByKey[f.key] && <span className="chip chip-necessary" title={`Requested by ${pendingByKey[f.key].requesterName}`}>pending</span>}
-                    </div>
                   </div>
                 ))}
               </dl>
@@ -230,7 +228,7 @@ function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
           ) : field.type === "BOOLEAN" ? (
             <select className="input" value={String(value)} onChange={(e) => setValue(e.target.value === "true")}><option value="false">No</option><option value="true">Yes</option></select>
           ) : (
-            <input type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} className="input" value={value as any}
+            <input type={field.type === "NUMBER" ? "number" : "text"} className="input" value={value as any}
               min={field.min ?? undefined} max={field.max ?? undefined} pattern={field.pattern || undefined}
               onChange={(e) => setValue(e.target.value)} />
           )}
@@ -310,7 +308,7 @@ function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
         <h2 className="mb-4 font-semibold">Exit / Offboarding</h2>
         {canEdit ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><label className="label">Last working day</label><input type="date" className="input" value={f.lastWorkingDay} onChange={(e) => set("lastWorkingDay", e.target.value)} /></div>
+            <div><label className="label">Last working day</label><input type="text" className="input" placeholder="e.g. 04-Sep-2026" value={f.lastWorkingDay} onChange={(e) => set("lastWorkingDay", e.target.value)} /></div>
             <div><label className="label">Type of exit</label><select className="input" value={f.typeOfExit} onChange={(e) => set("typeOfExit", e.target.value)}><option value="">— select —</option>{EXIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
             <div><label className="label">Reason</label><input className="input" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></div>
             <div className="sm:col-span-2"><label className="label">Detailed reason</label><textarea className="input" rows={2} value={f.detailedReason} onChange={(e) => set("detailedReason", e.target.value)} /></div>

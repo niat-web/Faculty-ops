@@ -104,7 +104,7 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
                   className="w-full bg-white px-1 py-2.5 text-xs outline-none ring-2 ring-brand-400 flex items-center justify-between gap-1"
                   options={[...ordered.map((s: string) => ({ value: s, label: s })), { value: "", label: "— clear —" }]} />
               ) : (
-                <input ref={editRef as any} autoFocus aria-label={col.label} type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
+                <input ref={editRef as any} autoFocus aria-label={col.label} type={col.type === "NUMBER" ? "number" : "text"} defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full bg-white px-2 py-3 text-xs outline-none ring-2 ring-brand-400" />
               )
             ) : isStatus ? (
               <button onClick={() => onEdit(r.id, col.key)} className={`block w-full whitespace-nowrap px-2 py-3 text-[11px] ${TONE[tone]} hover:opacity-80`}>{SHORT[tone] || val || "—"}</button>

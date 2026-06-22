@@ -249,7 +249,7 @@ function NewRequestModal({ onClose, onDone }: { onClose: () => void; onDone: () 
             ) : field.type === "BOOLEAN" ? (
               <ScrollSelect value={String(value)} onChange={setValue} options={[{ value: "false", label: "No" }, { value: "true", label: "Yes" }]} />
             ) : (
-              <input type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} className="input"
+              <input type={field.type === "NUMBER" ? "number" : "text"} className="input"
                 value={value as any} min={field.min ?? undefined} max={field.max ?? undefined} onChange={(e) => setValue(e.target.value)} />
             )}
           </div>

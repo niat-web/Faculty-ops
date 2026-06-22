@@ -240,7 +240,7 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
   return (
     <input
       autoFocus
-      type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"}
+      type={col.type === "NUMBER" ? "number" : "text"}
       defaultValue={value}
       className={base}
       onBlur={(e) => onCommit(e.target.value)}
