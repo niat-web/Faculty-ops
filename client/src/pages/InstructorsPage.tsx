@@ -65,6 +65,7 @@ export default function InstructorsPage() {
     if (applied.minTraining) p.set("minTraining", applied.minTraining);
     // A specific status overrides the scope; otherwise apply the active/exited scope.
     if (!applied.status && scope !== "all") p.set("scope", scope);
+    p.set("excludeStaff", "1"); // Instructors page = teaching instructors only (matches the table)
     return p;
   }
   function loadList() { setReloadKey((k) => k + 1); }

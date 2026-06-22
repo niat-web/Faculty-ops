@@ -35,6 +35,8 @@ function uploadFile(req: any, res: any, next: any) {
 }
 
 const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // the lifecycle states the "Active" scope hides
+// Non-teaching departments — excluded from the Instructors list page (they stay in Instructor Master).
+const NON_INSTRUCTOR_DEPTS = ["Instructors - Delivery Support (Ops and Central managers)", "Product Team"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
 async function emailConflict(email: string, excludeId?: any) {
@@ -92,7 +94,10 @@ router.get("/", async (req, res) => {
   const scope = String(req.query.scope || "").trim();
   const base: any = { ...instructorScopeFilter(user) };
   if (campus) base.campus = campus;
-  if (department) base["values.department"] = department;
+  // Instructors page = teaching instructors only. A valid (non-excluded) department filter narrows
+  // further; otherwise exclude the non-teaching departments (they remain in Instructor Master).
+  if (department && !NON_INSTRUCTOR_DEPTS.includes(department)) base["values.department"] = department;
+  else base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
   if (managerId) base.currentManagerId = managerId;
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
   if (!isNaN(minTraining)) base.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
@@ -209,7 +214,7 @@ router.get("/campuses", async (req, res) => {
 // Distinct departments (for the Instructors-page department filter).
 router.get("/departments", async (req, res) => {
   const list = await Instructor.distinct("values.department", instructorScopeFilter(req.user!));
-  res.json({ departments: (list as string[]).filter(Boolean).sort() });
+  res.json({ departments: (list as string[]).filter(Boolean).filter((d) => !NON_INSTRUCTOR_DEPTS.includes(d)).sort() });
 });
 
 // ─── Inline cell edit for the Instructor Exited grid (Ops/SM). Routes by `kind`. ──
@@ -303,7 +308,9 @@ router.get("/export.csv", async (req, res) => {
     else if (scope === "exited") baseFilter.status = { $in: EXIT_STATES };
     if (campus) baseFilter.campus = campus;
     if (managerId) baseFilter.currentManagerId = managerId;
-    if (String(req.query.department || "").trim()) baseFilter["values.department"] = String(req.query.department).trim();
+    const dep = String(req.query.department || "").trim();
+    if (dep) baseFilter["values.department"] = dep;
+    else if (String(req.query.excludeStaff) === "1") baseFilter["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
     if (String(req.query.region || "").trim()) baseFilter["values.contribution_region"] = String(req.query.region).trim();
     if (String(req.query.payroll || "").trim()) baseFilter["values.payroll_entity"] = String(req.query.payroll).trim();
     if (String(req.query.typeOfExit || "").trim()) baseFilter["exit.typeOfExit"] = String(req.query.typeOfExit).trim();

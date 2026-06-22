@@ -174,7 +174,7 @@ export default function InstructorExitedPage() {
                     const display = val === "" || val == null ? "—" : val;
                     const isEditing = canEdit && edit?.id === row.id && edit?.field === c.field;
                     return (
-                      <td key={c.field} className="px-3 py-2">
+                      <td key={c.field} className="px-3 py-2" style={{ minWidth: c.wrap ? 200 : 150, maxWidth: c.wrap ? 360 : 260 }}>
                         {isEditing ? (
                           <CellEditor col={c} cms={cms} value={c.manager ? (row.managerId || "") : String(val)} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
                         ) : (
@@ -182,7 +182,7 @@ export default function InstructorExitedPage() {
                             type="button"
                             disabled={!canEdit}
                             onClick={() => canEdit && setEdit({ id: row.id, field: c.field })}
-                            className={`block ${c.wrap ? "max-w-[22rem]" : "max-w-[18rem]"} truncate rounded px-2 py-1 text-left ${canEdit ? "cursor-text hover:bg-brand-50" : "cursor-default"} ${display === "—" ? "text-slate-300" : "text-slate-600"}`}
+                            className={`block w-full truncate rounded px-2 py-1 text-left ${canEdit ? "cursor-text hover:bg-brand-50" : "cursor-default"} ${display === "—" ? "text-slate-300" : "text-slate-600"}`}
                             title={typeof display === "string" ? display : ""}
                           >
                             {display}
