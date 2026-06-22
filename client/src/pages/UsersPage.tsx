@@ -8,6 +8,7 @@ import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
+import { useSort, SortHeader } from "../components/SortHeader";
 
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
 type Filters = { role: string; managerId: string; status: string; live: string };
@@ -51,6 +52,7 @@ export default function UsersPage() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  const sort = useSort();
   function load() { setReloadKey((k) => k + 1); }
   useEffect(() => {
     const ac = new AbortController();
@@ -60,9 +62,10 @@ export default function UsersPage() {
     if (applied.managerId) p.set("managerId", applied.managerId);
     if (applied.status) p.set("status", applied.status);
     if (applied.live) p.set("live", applied.live);
+    if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     api.get(`/users?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
-  }, [dq, applied, page, per, reloadKey]);
+  }, [dq, applied, page, per, reloadKey, sort.sort, sort.dir]);
 
   const activeCount = Object.values(applied).filter(Boolean).length;
   function openDrawer() { setDraft(applied); setDrawer(true); }
@@ -112,14 +115,14 @@ export default function UsersPage() {
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:sticky [&_th]:top-0 [&_th]:z-20 [&_th]:bg-slate-50">
               <tr>
-                <th className="px-5 py-3">Name</th>
-                <th className="px-5 py-3">Email</th>
-                <th className="px-5 py-3">Role</th>
+                <SortHeader label="Name" k="name" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Email" k="email" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Role" k="role" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <th className="px-5 py-3">Reports to</th>
                 <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Last login</th>
+                <SortHeader label="Last login" k="lastLoginAt" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <th className="px-5 py-3">Live</th>
-                <th className="px-5 py-3">Last seen</th>
+                <SortHeader label="Last seen" k="lastSeenAt" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <th className="sticky right-0 z-30 border-l border-slate-100 bg-slate-50 px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>

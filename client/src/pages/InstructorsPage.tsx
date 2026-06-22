@@ -10,12 +10,15 @@ import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
+import MultiSelect from "../components/MultiSelect";
+import { useSort, SortHeader } from "../components/SortHeader";
 
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
 
-// All field filters live in a right-side drawer (draft → applied on "Apply"), mirroring the Users page.
-type Filters = { status: string; campus: string; department: string; managerId: string; minTraining: string };
-const EMPTY_FILTERS: Filters = { status: "", campus: "", department: "", managerId: "", minTraining: "" };
+// Field filters (multi-select) live in a right-side drawer (draft → applied on "Apply").
+type Filters = { status: string[]; campus: string[]; department: string[]; managerId: string[]; minTraining: string };
+const EMPTY_FILTERS: Filters = { status: [], campus: [], department: [], managerId: [], minTraining: "" };
+const oneOf = (v: string | null): string[] => (v ? [v] : []);
 
 export default function InstructorsPage() {
   const { user } = useAuth();
@@ -31,9 +34,10 @@ export default function InstructorsPage() {
   const dq = useDebouncedValue(q, 300);
   // Lifecycle scope quick-filter: "active" (default — excludes Exited + Exit in Progress), "all", "exited".
   const [scope, setScope] = useState<"active" | "all" | "exited">(searchParams.get("status") ? "all" : "active");
+  const sort = useSort();
   const initialFilters: Filters = {
-    status: searchParams.get("status") || "", campus: searchParams.get("campus") || "",
-    department: searchParams.get("department") || "", managerId: searchParams.get("managerId") || "", minTraining: "",
+    status: oneOf(searchParams.get("status")), campus: oneOf(searchParams.get("campus")),
+    department: oneOf(searchParams.get("department")), managerId: oneOf(searchParams.get("managerId")), minTraining: "",
   };
   const [applied, setApplied] = useState<Filters>(initialFilters);
   const [draft, setDraft] = useState<Filters>(initialFilters);
@@ -58,13 +62,14 @@ export default function InstructorsPage() {
   function filterParams() {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
-    if (applied.status) p.set("status", applied.status);
-    if (applied.campus) p.set("campus", applied.campus);
-    if (applied.department) p.set("department", applied.department);
-    if (applied.managerId) p.set("managerId", applied.managerId);
+    if (applied.status.length) p.set("status", applied.status.join(","));
+    if (applied.campus.length) p.set("campus", applied.campus.join(","));
+    if (applied.department.length) p.set("department", applied.department.join(","));
+    if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
     if (applied.minTraining) p.set("minTraining", applied.minTraining);
+    if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     // A specific status overrides the scope; otherwise apply the active/exited scope.
-    if (!applied.status && scope !== "all") p.set("scope", scope);
+    if (!applied.status.length && scope !== "all") p.set("scope", scope);
     p.set("excludeStaff", "1"); // Instructors page = teaching instructors only (matches the table)
     return p;
   }
@@ -84,7 +89,7 @@ export default function InstructorsPage() {
       .then((r) => { setData(r); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load instructors"); });
     return () => ac.abort();
-  }, [dq, applied, scope, page, per, reloadKey]);
+  }, [dq, applied, scope, page, per, reloadKey, sort.sort, sort.dir]);
 
   const scopeNote = user!.role === "CAPABILITY_MANAGER" ? "Showing only your assigned instructors." : user!.role === "INSTRUCTOR" ? "Showing your own profile." : "Showing all instructors across NIAT campuses.";
 
@@ -105,14 +110,14 @@ export default function InstructorsPage() {
   function applyView(query: string) {
     const p = new URLSearchParams(query);
     setQ(p.get("q") || "");
-    const f: Filters = { status: p.get("status") || "", campus: p.get("campus") || "", department: p.get("department") || "", managerId: p.get("managerId") || "", minTraining: p.get("minTraining") || "" };
+    const f: Filters = { status: oneOf(p.get("status")), campus: oneOf(p.get("campus")), department: oneOf(p.get("department")), managerId: oneOf(p.get("managerId")), minTraining: p.get("minTraining") || "" };
     setApplied(f); setDraft(f);
     setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
   }
   // Drawer (draft → applied), mirroring the Users page.
-  const activeFilterCount = Object.values(applied).filter(Boolean).length;
+  const activeFilterCount = Object.values(applied).filter((v) => (Array.isArray(v) ? v.length : v)).length;
   function openDrawer() { setDraft(applied); setDrawer(true); }
-  function applyFilters() { setApplied(draft); if (draft.status) setScope("all"); setPage(1); setDrawer(false); }
+  function applyFilters() { setApplied(draft); if (draft.status.length) setScope("all"); setPage(1); setDrawer(false); }
   function clearFilters() { setApplied(EMPTY_FILTERS); setDraft(EMPTY_FILTERS); setPage(1); }
   async function saveView() {
     const name = await prompt({ title: "Save view", message: "Name this view:", placeholder: "e.g. In-training at Aurora", confirmText: "Save", required: true });
@@ -225,7 +230,14 @@ export default function InstructorsPage() {
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {canManage && <th className="w-10 px-5 py-3"><input type="checkbox" checked={allOnPage} onChange={(e) => { const v = e.target.checked; const next = { ...selected }; rows.forEach((i) => (next[i.id] = v)); setSelected(next); }} /></th>}
-                <th className="px-5 py-3">Employee ID</th><th className="px-5 py-3">Name</th><th className="px-5 py-3">Campus</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Manager</th><th className="px-5 py-3">Training</th><th className="px-5 py-3">Status</th>{isOps && <th className="px-5 py-3 text-right">Actions</th>}
+                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Name" k="name" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Department" k="department" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Manager" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Training" k="training" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                <SortHeader label="Status" k="status" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
+                {isOps && <th className="px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -279,22 +291,18 @@ export default function InstructorsPage() {
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
               <div><label className="label">Status</label>
-                <ScrollSelect value={draft.status} onChange={(v) => setDraft({ ...draft, status: v })} placeholder="All statuses"
-                  options={[{ value: "", label: "All statuses" }, ...Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))]} />
-              </div>
+                <MultiSelect values={draft.status} onChange={(v) => setDraft({ ...draft, status: v })} placeholder="All statuses"
+                  options={Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))} /></div>
               <div><label className="label">Campus</label>
-                <ScrollSelect value={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} placeholder="All campuses"
-                  options={[{ value: "", label: "All campuses" }, ...campuses.map((c) => ({ value: c, label: c }))]} />
-              </div>
+                <MultiSelect values={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} placeholder="All campuses"
+                  options={campuses.map((c) => ({ value: c, label: c }))} /></div>
               <div><label className="label">Department</label>
-                <ScrollSelect value={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} placeholder="All departments"
-                  options={[{ value: "", label: "All departments" }, ...departments.map((d) => ({ value: d, label: d }))]} />
-              </div>
+                <MultiSelect values={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} placeholder="All departments"
+                  options={departments.map((d) => ({ value: d, label: d }))} /></div>
               {canManage && (
                 <div><label className="label">Manager</label>
-                  <ScrollSelect value={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} placeholder="All managers"
-                    options={[{ value: "", label: "All managers" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
-                </div>
+                  <MultiSelect values={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} placeholder="All managers"
+                    options={cms.map((c) => ({ value: c.id, label: c.name }))} /></div>
               )}
               <div><label className="label">Min training %</label>
                 <input type="number" min={0} max={100} className="input" placeholder="e.g. 50" value={draft.minTraining} onChange={(e) => setDraft({ ...draft, minTraining: e.target.value })} />

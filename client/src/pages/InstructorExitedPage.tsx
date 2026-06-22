@@ -7,12 +7,14 @@ import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
+import MultiSelect from "../components/MultiSelect";
+import { useSort, SortHeader } from "../components/SortHeader";
 
 // Exited instructors only — a dedicated, inline-editable grid with the full EXIT-sheet columns.
 type Save = { kind: "core" | "value" | "manager" | "exit"; key?: string };
 type Col = { label: string; field: string; save: Save; manager?: boolean; dropdown?: string[]; wrap?: boolean };
-type Filters = { department: string; managerId: string; campus: string; region: string; payroll: string; typeOfExit: string; exitPreset: string; exitFrom: string; exitTo: string };
-const EMPTY: Filters = { department: "", managerId: "", campus: "", region: "", payroll: "", typeOfExit: "", exitPreset: "", exitFrom: "", exitTo: "" };
+type Filters = { department: string[]; managerId: string[]; campus: string[]; region: string[]; payroll: string[]; typeOfExit: string[]; exitPreset: string; exitFrom: string; exitTo: string };
+const EMPTY: Filters = { department: [], managerId: [], campus: [], region: [], payroll: [], typeOfExit: [], exitPreset: "", exitFrom: "", exitTo: "" };
 type Facets = { departments: string[]; campuses: string[]; regions: string[]; payrolls: string[]; types: string[] };
 const EMPTY_FACETS: Facets = { departments: [], campuses: [], regions: [], payrolls: [], types: [] };
 const EXIT_PRESETS = [
@@ -74,20 +76,22 @@ export default function InstructorExitedPage() {
     api.get("/mapping").then((r) => setCms(r.cms)).catch(() => {});
   }, []);
 
+  const sort = useSort();
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
-    if (applied.department) p.set("department", applied.department);
-    if (applied.managerId) p.set("managerId", applied.managerId);
-    if (applied.campus) p.set("campus", applied.campus);
-    if (applied.region) p.set("region", applied.region);
-    if (applied.payroll) p.set("payroll", applied.payroll);
-    if (applied.typeOfExit) p.set("typeOfExit", applied.typeOfExit);
+    if (applied.department.length) p.set("department", applied.department.join(","));
+    if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
+    if (applied.campus.length) p.set("campus", applied.campus.join(","));
+    if (applied.region.length) p.set("region", applied.region.join(","));
+    if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
+    if (applied.typeOfExit.length) p.set("typeOfExit", applied.typeOfExit.join(","));
     if (applied.exitPreset) p.set("exitPreset", applied.exitPreset);
     if (applied.exitFrom) p.set("exitFrom", applied.exitFrom);
     if (applied.exitTo) p.set("exitTo", applied.exitTo);
+    if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     return p;
-  }, [dq, applied]);
+  }, [dq, applied, sort.sort, sort.dir]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -102,12 +106,12 @@ export default function InstructorExitedPage() {
   const exportHref = () => {
     const p = new URLSearchParams({ scope: "exited" });
     if (dq) p.set("q", dq);
-    for (const k of ["department", "managerId", "campus", "region", "payroll", "typeOfExit"] as const) if (applied[k]) p.set(k, applied[k]);
+    for (const k of ["department", "managerId", "campus", "region", "payroll", "typeOfExit"] as const) if (applied[k].length) p.set(k, applied[k].join(","));
     return `${API_BASE}/api/instructors/export.csv?${p}`;
   };
 
   const cmName = useMemo(() => Object.fromEntries(cms.map((c) => [c.id, c.name])), [cms]);
-  const activeCount = Object.values(applied).filter(Boolean).length;
+  const activeCount = Object.values(applied).filter((v) => (Array.isArray(v) ? v.length : v)).length;
   const pages = Math.max(1, Math.ceil(total / per));
   function openDrawer() { setDraft(applied); setDrawer(true); }
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
@@ -159,8 +163,8 @@ export default function InstructorExitedPage() {
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <th className="sticky left-0 top-0 z-30 bg-slate-50 px-3 py-3 font-semibold">Employee ID</th>
-                {COLS.map((c) => <th key={c.field} className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold">{c.label}</th>)}
+                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="sticky left-0 top-0 z-30 bg-slate-50 px-3 py-3 font-semibold" />
+                {COLS.map((c) => <SortHeader key={c.field} label={c.label} k={c.manager ? undefined : c.field} state={sort} onToggle={sort.toggle} className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold" />)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -212,29 +216,17 @@ export default function InstructorExitedPage() {
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
               <div><label className="label">Department</label>
-                <ScrollSelect value={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} placeholder="All departments"
-                  options={[{ value: "", label: "All departments" }, ...facets.departments.map((d) => ({ value: d, label: d }))]} />
-              </div>
+                <MultiSelect values={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} options={facets.departments.map((d) => ({ value: d, label: d }))} placeholder="All departments" /></div>
               <div><label className="label">Capability Manager</label>
-                <ScrollSelect value={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} placeholder="All managers"
-                  options={[{ value: "", label: "All managers" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
-              </div>
+                <MultiSelect values={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} options={cms.map((c) => ({ value: c.id, label: c.name }))} placeholder="All managers" /></div>
               <div><label className="label">Type of Exit</label>
-                <ScrollSelect value={draft.typeOfExit} onChange={(v) => setDraft({ ...draft, typeOfExit: v })} placeholder="All types"
-                  options={[{ value: "", label: "All types" }, ...facets.types.map((t) => ({ value: t, label: t }))]} />
-              </div>
+                <MultiSelect values={draft.typeOfExit} onChange={(v) => setDraft({ ...draft, typeOfExit: v })} options={facets.types.map((t) => ({ value: t, label: t }))} placeholder="All types" /></div>
               <div><label className="label">Contribution Region</label>
-                <ScrollSelect value={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} placeholder="All regions"
-                  options={[{ value: "", label: "All regions" }, ...facets.regions.map((r) => ({ value: r, label: r }))]} />
-              </div>
+                <MultiSelect values={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} options={facets.regions.map((r) => ({ value: r, label: r }))} placeholder="All regions" /></div>
               <div><label className="label">Payroll</label>
-                <ScrollSelect value={draft.payroll} onChange={(v) => setDraft({ ...draft, payroll: v })} placeholder="All"
-                  options={[{ value: "", label: "All" }, ...facets.payrolls.map((p) => ({ value: p, label: p }))]} />
-              </div>
+                <MultiSelect values={draft.payroll} onChange={(v) => setDraft({ ...draft, payroll: v })} options={facets.payrolls.map((p) => ({ value: p, label: p }))} placeholder="All" /></div>
               <div><label className="label">Work Location</label>
-                <ScrollSelect value={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} placeholder="All locations"
-                  options={[{ value: "", label: "All locations" }, ...facets.campuses.map((c) => ({ value: c, label: c }))]} />
-              </div>
+                <MultiSelect values={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} options={facets.campuses.map((c) => ({ value: c, label: c }))} placeholder="All locations" /></div>
               <div className="border-t border-slate-100 pt-4">
                 <label className="label">Exit date — quick range</label>
                 <ScrollSelect value={draft.exitPreset} onChange={(v) => setDraft({ ...draft, exitPreset: v, exitFrom: "", exitTo: "" })} placeholder="Any time"

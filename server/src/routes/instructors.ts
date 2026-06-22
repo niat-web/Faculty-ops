@@ -77,14 +77,27 @@ function parseLooseDate(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Filters accept comma-separated values (single or multi) → equality or $in.
+const listParam = (v: any) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+const inOrEq = (vals: string[]) => (vals.length > 1 ? { $in: vals } : vals[0]);
+const CORE_SORT = new Set(["employeeId", "name", "email", "campus", "uid", "status"]);
+function buildSort(sort: string, dir: string): Record<string, 1 | -1> {
+  if (!sort || !dir) return { employeeId: 1 };
+  const d: 1 | -1 = dir === "desc" ? -1 : 1;
+  if (CORE_SORT.has(sort)) return { [sort]: d };
+  if (sort === "managerId" || sort === "manager") return { employeeId: 1 };
+  if (sort === "training") return { "values.primary_pct": d };
+  return { [`values.${sort}`]: d };
+}
+
 // Paginated, scoped, filtered instructor list.
 router.get("/", async (req, res) => {
   const user = req.user!;
   const q = String(req.query.q || "").trim();
-  const status = String(req.query.status || "").trim();
-  const campus = String(req.query.campus || "").trim();
-  const department = String(req.query.department || "").trim();
-  const managerId = String(req.query.managerId || "").trim();
+  const statuses = listParam(req.query.status);
+  const campuses = listParam(req.query.campus);
+  const departments = listParam(req.query.department).filter((d) => !NON_INSTRUCTOR_DEPTS.includes(d));
+  const managers = listParam(req.query.managerId);
   const minTraining = parseInt(String(req.query.minTraining || ""), 10);
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -93,24 +106,24 @@ router.get("/", async (req, res) => {
   // Scope-independent base (everything except the status/scope condition) — used for the bucket counts.
   const scope = String(req.query.scope || "").trim();
   const base: any = { ...instructorScopeFilter(user) };
-  if (campus) base.campus = campus;
+  if (campuses.length) base.campus = inOrEq(campuses);
   // Instructors page = teaching instructors only. A valid (non-excluded) department filter narrows
   // further; otherwise exclude the non-teaching departments (they remain in Instructor Master).
-  if (department && !NON_INSTRUCTOR_DEPTS.includes(department)) base["values.department"] = department;
+  if (departments.length) base["values.department"] = inOrEq(departments);
   else base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
-  if (managerId) base.currentManagerId = managerId;
+  if (managers.length) base.currentManagerId = inOrEq(managers);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
   if (!isNaN(minTraining)) base.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
 
   // A specific status overrides the scope; otherwise "active" excludes (and "exited" shows only) the exit states.
   const filter: any = { ...base };
-  if (status) filter.status = status;
+  if (statuses.length) filter.status = inOrEq(statuses);
   else if (scope === "active") filter.status = { $nin: EXIT_STATES };
   else if (scope === "exited") filter.status = { $in: EXIT_STATES };
 
   const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
-    Instructor.find(filter).select("employeeId name email campus uid status currentManagerId values exit").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.find(filter).select("employeeId name email campus uid status currentManagerId values exit").sort(buildSort(String(req.query.sort || ""), String(req.query.dir || ""))).skip((page - 1) * PER).limit(PER).lean(),
     Instructor.countDocuments(base),
     Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
@@ -131,12 +144,12 @@ router.get("/", async (req, res) => {
 router.get("/exited", async (req, res) => {
   const user = req.user!;
   const q = String(req.query.q || "").trim();
-  const department = String(req.query.department || "").trim();
-  const managerId = String(req.query.managerId || "").trim();
-  const campus = String(req.query.campus || "").trim();
-  const region = String(req.query.region || "").trim();
-  const payroll = String(req.query.payroll || "").trim();
-  const typeOfExit = String(req.query.typeOfExit || "").trim();
+  const department = listParam(req.query.department);
+  const managerId = listParam(req.query.managerId);
+  const campus = listParam(req.query.campus);
+  const region = listParam(req.query.region);
+  const payroll = listParam(req.query.payroll);
+  const typeOfExit = listParam(req.query.typeOfExit);
   const exitPreset = String(req.query.exitPreset || "").trim(); // last_month | past_3_months | past_6_months | past_year
   const exitFrom = String(req.query.exitFrom || "").trim();      // YYYY-MM-DD
   const exitTo = String(req.query.exitTo || "").trim();          // YYYY-MM-DD
@@ -145,12 +158,12 @@ router.get("/exited", async (req, res) => {
   const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
 
   const filter: any = { ...instructorScopeFilter(user), status: { $in: EXIT_STATES } };
-  if (department) filter["values.department"] = department;
-  if (managerId) filter.currentManagerId = managerId;
-  if (campus) filter.campus = campus;
-  if (region) filter["values.contribution_region"] = region;
-  if (payroll) filter["values.payroll_entity"] = payroll;
-  if (typeOfExit) filter["exit.typeOfExit"] = typeOfExit;
+  if (department.length) filter["values.department"] = inOrEq(department);
+  if (managerId.length) filter.currentManagerId = inOrEq(managerId);
+  if (campus.length) filter.campus = inOrEq(campus);
+  if (region.length) filter["values.contribution_region"] = inOrEq(region);
+  if (payroll.length) filter["values.payroll_entity"] = inOrEq(payroll);
+  if (typeOfExit.length) filter["exit.typeOfExit"] = inOrEq(typeOfExit);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
 
   // Facets (from the full exited scope, so options never disappear when filtering).
@@ -184,6 +197,23 @@ router.get("/exited", async (req, res) => {
       if (to && d > to) return false;
       return true;
     });
+  }
+
+  // In-memory 3-state sort (the set is small). Maps row keys → record accessors.
+  const sortKey = String(req.query.sort || ""), sortDir = String(req.query.dir || "");
+  if (sortKey && sortDir) {
+    const VK: Record<string, string> = { department: "department", designation: "designation", contribution: "contribution", contributionRegion: "contribution_region", reportingManager: "reporting_manager", payroll: "payroll_entity", phone: "phone", universityMail: "university_mail", doj: "doj", qualification: "qualification", domain: "domain", gender: "gender", nativeLanguage: "native_language", access: "access_status", cmEmployeeId: "cm_employee_id", remarks: "remarks" };
+    const val = (r: any): string | number => {
+      if (["employeeId", "name", "email", "campus", "uid", "status"].includes(sortKey)) return String(r[sortKey] || "").toLowerCase();
+      if (sortKey === "exitDate") return parseLooseDate(String(r.exit?.lastWorkingDay || r.values?.exit_date || ""))?.getTime() || 0;
+      if (sortKey === "typeOfExit") return String(r.exit?.typeOfExit || "").toLowerCase();
+      if (sortKey === "exitReason") return String(r.exit?.reason || "").toLowerCase();
+      if (sortKey === "exitDetailedReason") return String(r.exit?.detailedReason || "").toLowerCase();
+      const vk = VK[sortKey]; if (vk) return String(maybeDecrypt(r.values?.[vk]) || "").toLowerCase();
+      return String(r.employeeId || "");
+    };
+    filtered = [...filtered].sort((a, b) => { const x = val(a), y = val(b); return x < y ? -1 : x > y ? 1 : 0; });
+    if (sortDir === "desc") filtered.reverse();
   }
 
   const total = filtered.length;

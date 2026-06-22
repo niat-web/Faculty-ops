@@ -61,14 +61,27 @@ router.get("/meta", guard, async (req, res) => {
 
 const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // the lifecycle states the "Active" tab hides
 
+// Filters accept comma-separated values (single or multi) → equality or $in.
+const listParam = (v: any) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+const inOrEq = (vals: string[]) => (vals.length > 1 ? { $in: vals } : vals[0]);
+// 3-state column sort → Mongo sort object. Core fields sort directly; others sort by values.<key>.
+const CORE_SORT = new Set(["employeeId", "name", "email", "campus", "uid", "status"]);
+function buildSort(sort: string, dir: string): Record<string, 1 | -1> {
+  if (!sort || !dir) return { employeeId: 1 };
+  const d: 1 | -1 = dir === "desc" ? -1 : 1;
+  if (CORE_SORT.has(sort)) return { [sort]: d };
+  if (sort === "managerId") return { employeeId: 1 }; // manager-name sort unsupported (join) → default
+  return { [`values.${sort}`]: d };
+}
+
 // Paginated, scoped, filtered master rows.
 router.get("/", guard, async (req, res) => {
   const q = String(req.query.q || "").trim();
-  const managerId = String(req.query.managerId || "").trim();
-  const department = String(req.query.department || "").trim();
-  const payroll = String(req.query.payroll || "").trim();
-  const region = String(req.query.region || "").trim();
-  const campus = String(req.query.campus || "").trim();
+  const managers = listParam(req.query.managerId);
+  const departments = listParam(req.query.department);
+  const payrolls = listParam(req.query.payroll);
+  const regions = listParam(req.query.region);
+  const campuses = listParam(req.query.campus);
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -76,18 +89,18 @@ router.get("/", guard, async (req, res) => {
 
   // base = everything except the lifecycle/scope condition (used for the bucket counts).
   const base: any = { ...instructorScopeFilter(req.user!) };
-  if (managerId) base.currentManagerId = managerId;
-  if (department) base["values.department"] = department;
-  if (payroll) base["values.payroll_entity"] = payroll;
-  if (region) base["values.contribution_region"] = region;
-  if (campus) base.campus = campus;
+  if (managers.length) base.currentManagerId = inOrEq(managers);
+  if (departments.length) base["values.department"] = inOrEq(departments);
+  if (payrolls.length) base["values.payroll_entity"] = inOrEq(payrolls);
+  if (regions.length) base["values.contribution_region"] = inOrEq(regions);
+  if (campuses.length) base.campus = inOrEq(campuses);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
   const role = String(req.query.role || "").trim();
   if (role) {
     const cond = await roleEmailCondition(role);
     if (cond) base.email = cond;
     // Instructor role = teaching only → also drop the non-teaching departments (unless a dept filter is set).
-    if (role === "INSTRUCTOR" && !department) base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+    if (role === "INSTRUCTOR" && !departments.length) base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
   }
 
   const filter: any = { ...base };
@@ -96,7 +109,7 @@ router.get("/", guard, async (req, res) => {
 
   const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
-    Instructor.find(filter).sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.find(filter).sort(buildSort(String(req.query.sort || ""), String(req.query.dir || ""))).skip((page - 1) * PER).limit(PER).lean(),
     Instructor.countDocuments(base),
     Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);

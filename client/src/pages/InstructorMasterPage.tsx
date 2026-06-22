@@ -8,11 +8,13 @@ import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
 import Loading from "../components/Loading";
 import ScrollSelect from "../components/ScrollSelect";
+import MultiSelect from "../components/MultiSelect";
+import { useSort, SortHeader } from "../components/SortHeader";
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
 type Meta = { columns: Column[]; managers: { id: string; name: string }[]; filters: { departments: string[]; payrolls: string[]; regions: string[]; campuses: string[] } };
-type Filters = { managerId: string; department: string; payroll: string; region: string; campus: string };
-const EMPTY: Filters = { managerId: "", department: "", payroll: "", region: "", campus: "" };
+type Filters = { managerId: string[]; department: string[]; payroll: string[]; region: string[]; campus: string[] };
+const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [], campus: [] };
 
 export default function InstructorMasterPage() {
   const toast = useToast();
@@ -43,18 +45,20 @@ export default function InstructorMasterPage() {
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
   // Build the query string shared by the list fetch and the CSV export.
+  const sort = useSort();
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
     if (role) p.set("role", role);
-    if (applied.managerId) p.set("managerId", applied.managerId);
-    if (applied.department) p.set("department", applied.department);
-    if (applied.payroll) p.set("payroll", applied.payroll);
-    if (applied.region) p.set("region", applied.region);
-    if (applied.campus) p.set("campus", applied.campus);
+    if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
+    if (applied.department.length) p.set("department", applied.department.join(","));
+    if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
+    if (applied.region.length) p.set("region", applied.region.join(","));
+    if (applied.campus.length) p.set("campus", applied.campus.join(","));
+    if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role]);
+  }, [dq, applied, scope, role, sort.sort, sort.dir]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -68,7 +72,7 @@ export default function InstructorMasterPage() {
 
   const pages = Math.max(1, Math.ceil(total / per));
   const managerName = useMemo(() => Object.fromEntries((meta?.managers || []).map((m) => [m.id, m.name])), [meta]);
-  const activeCount = Object.values(applied).filter(Boolean).length;
+  const activeCount = Object.values(applied).filter((a) => a.length).length;
 
   function openDrawer() { setDraft(applied); setDrawer(true); }
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
@@ -144,7 +148,8 @@ export default function InstructorMasterPage() {
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {meta.columns.map((c, i) => (
-                  <th key={c.key} className={`sticky top-0 bg-slate-50 px-3 py-3 font-semibold ${i === 0 ? "left-0 z-30" : i === 1 ? "left-[120px] z-30" : "z-20"}`}>{c.label}</th>
+                  <SortHeader key={c.key} label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
+                    className={`sticky top-0 bg-slate-50 px-3 py-3 font-semibold ${i === 0 ? "left-0 z-30" : i === 1 ? "left-[120px] z-30" : "z-20"}`} />
                 ))}
               </tr>
             </thead>
@@ -193,11 +198,16 @@ export default function InstructorMasterPage() {
               <button onClick={() => setDrawer(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-              <DrawerSelect label="Capability Manager" value={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} options={meta.managers.map((m) => ({ value: m.id, label: m.name }))} allLabel="All managers" />
-              <DrawerSelect label="Department" value={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} options={meta.filters.departments.map((d) => ({ value: d, label: d }))} allLabel="All departments" />
-              <DrawerSelect label="Payroll" value={draft.payroll} onChange={(v) => setDraft({ ...draft, payroll: v })} options={meta.filters.payrolls.map((d) => ({ value: d, label: d }))} allLabel="All" />
-              <DrawerSelect label="Contribution Region" value={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} options={meta.filters.regions.map((d) => ({ value: d, label: d }))} allLabel="All regions" />
-              <DrawerSelect label="Work Location" value={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} options={meta.filters.campuses.map((d) => ({ value: d, label: d }))} allLabel="All locations" />
+              <div><label className="label">Capability Manager</label>
+                <MultiSelect values={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} options={meta.managers.map((m) => ({ value: m.id, label: m.name }))} placeholder="All managers" /></div>
+              <div><label className="label">Department</label>
+                <MultiSelect values={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} options={meta.filters.departments.map((d) => ({ value: d, label: d }))} placeholder="All departments" /></div>
+              <div><label className="label">Payroll</label>
+                <MultiSelect values={draft.payroll} onChange={(v) => setDraft({ ...draft, payroll: v })} options={meta.filters.payrolls.map((d) => ({ value: d, label: d }))} placeholder="All" /></div>
+              <div><label className="label">Contribution Region</label>
+                <MultiSelect values={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} options={meta.filters.regions.map((d) => ({ value: d, label: d }))} placeholder="All regions" /></div>
+              <div><label className="label">Work Location</label>
+                <MultiSelect values={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} options={meta.filters.campuses.map((d) => ({ value: d, label: d }))} placeholder="All locations" /></div>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
               <button onClick={() => setDraft(EMPTY)} className="btn btn-ghost btn-sm">Clear</button>
@@ -206,15 +216,6 @@ export default function InstructorMasterPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function DrawerSelect({ label, value, onChange, options, allLabel }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; allLabel: string }) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <ScrollSelect value={value} onChange={onChange} placeholder={allLabel} options={[{ value: "", label: allLabel }, ...options]} />
     </div>
   );
 }

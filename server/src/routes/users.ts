@@ -48,12 +48,17 @@ router.get("/", opsOnly, async (req, res) => {
   // Custom role ordering for the table: Ops Admin → Senior Manager → Capability Manager → Instructor.
   // Done in the DB (not after fetch) so it stays correct across pagination.
   const ROLE_ORDER = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER, Role.INSTRUCTOR];
+  // 3-state column sort (overrides the default role-rank ordering when set).
+  const SORTABLE = new Set(["name", "email", "role", "createdAt", "lastLoginAt", "lastSeenAt"]);
+  const sortKey = String(req.query.sort || ""); const sortDir = String(req.query.dir || "");
+  const sortStage: Record<string, 1 | -1> = sortKey && SORTABLE.has(sortKey) && sortDir
+    ? { [sortKey]: sortDir === "desc" ? -1 : 1 } : { _roleRank: 1, name: 1 };
   const [total, users, seniors, managers] = await Promise.all([
     User.countDocuments(query),
     User.aggregate([
       { $match: query },
       { $addFields: { _roleRank: { $indexOfArray: [ROLE_ORDER, "$role"] } } },
-      { $sort: { _roleRank: 1, name: 1 } },
+      { $sort: sortStage },
       { $skip: (page - 1) * PER },
       { $limit: PER },
     ]),
