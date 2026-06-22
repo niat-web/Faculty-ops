@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, X, MessageSquare, Paperclip, Search } from "lucide-react";
+import { Check, X, MessageSquare, Paperclip, Search, Plus } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
+import Modal from "../components/Modal";
+import ScrollSelect from "../components/ScrollSelect";
 
 const STATUS_CHIP: Record<string, string> = { PENDING: "chip-necessary", APPROVED: "chip-public", REJECTED: "chip-sensitive" };
 
 export default function RequestsPage() {
   const { user } = useAuth();
   const canDecide = user!.role === "SENIOR_MANAGER" || user!.role === "OPS_ADMIN";
+  const canRaise = ["CAPABILITY_MANAGER", "SENIOR_MANAGER", "OPS_ADMIN"].includes(user!.role);
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<any>(null); // request being decided/commented
+  const [newReq, setNewReq] = useState(false); // "New request" modal
   const [hq, setHq] = useState(""); // history search
   const [hStatus, setHStatus] = useState(""); // history status filter
 
@@ -38,7 +42,10 @@ export default function RequestsPage() {
 
   return (
     <div className="space-y-6">
-      <div><h1 className="text-2xl font-bold">Edit Requests</h1><p className="text-sm text-slate-500">{canDecide ? "Approve or reject changes submitted by your Capability Managers." : "Track the status of changes you've submitted."}</p></div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h1 className="text-2xl font-bold">Edit Requests</h1><p className="text-sm text-slate-500">{canDecide ? "Approve or reject submitted changes, and raise your own." : "Track the status of changes you've submitted."}</p></div>
+        {canRaise && <button onClick={() => setNewReq(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> New request</button>}
+      </div>
 
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
@@ -65,7 +72,7 @@ export default function RequestsPage() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <button onClick={() => setActive({ ...r, mode: "comment" })} title="Comment" className="btn btn-ghost btn-sm"><MessageSquare className="h-4 w-4" /></button>
-                {canDecide && (
+                {r.decidable && (
                   <>
                     <button onClick={() => setActive({ ...r, mode: "APPROVE" })} className="btn btn-success btn-sm"><Check className="h-4 w-4" /> Approve</button>
                     <button onClick={() => setActive({ ...r, mode: "REJECT" })} className="btn btn-danger btn-sm"><X className="h-4 w-4" /> Reject</button>
@@ -117,7 +124,84 @@ export default function RequestsPage() {
       </section>
 
       {active && <DecideModal req={active} onClose={() => setActive(null)} onDone={() => { setActive(null); load(); }} />}
+      {newReq && <NewRequestModal onClose={() => setNewReq(false)} onDone={() => { setNewReq(false); load(); }} />}
     </div>
+  );
+}
+
+// Raise a new edit request: pick instructor → field (subject) → new value → reason.
+function NewRequestModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [instructors, setInstructors] = useState<any[]>([]);
+  const [instructorId, setInstructorId] = useState("");
+  const [fields, setFields] = useState<any[]>([]);
+  const [fieldKey, setFieldKey] = useState("");
+  const [loadingFields, setLoadingFields] = useState(false);
+  const [value, setValue] = useState<any>("");
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api.get("/instructors?per=500&scope=all").then((r) => setInstructors(r.instructors || [])).catch((e) => setErr(e.message)); }, []);
+  // Load that instructor's editable fields (excludes computed/file fields) when one is picked.
+  useEffect(() => {
+    if (!instructorId) { setFields([]); setFieldKey(""); return; }
+    setLoadingFields(true); setFieldKey(""); setValue("");
+    api.get(`/instructors/${instructorId}`).then((r) => {
+      const fs: any[] = [];
+      Object.values(r.byModule || {}).forEach((arr: any) => (arr as any[]).forEach((f) => { if (!f.computed && f.type !== "FILE") fs.push(f); }));
+      setFields(fs);
+    }).catch((e) => setErr(e.message)).finally(() => setLoadingFields(false));
+  }, [instructorId]);
+  // Prefill the current value when a field is chosen.
+  useEffect(() => { const f = fields.find((x) => x.key === fieldKey); setValue(f ? (f.value ?? "") : ""); }, [fieldKey, fields]);
+
+  const field = fields.find((f) => f.key === fieldKey) || null;
+
+  async function submit() {
+    if (!instructorId) { setErr("Pick an instructor."); return; }
+    if (!fieldKey) { setErr("Pick a field."); return; }
+    if (!reason.trim()) { setErr("A reason is required."); return; }
+    setBusy(true); setErr(null);
+    try { await api.post("/requests", { instructorId, fieldKey, newValue: String(value ?? ""), reason }); onDone(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title="New edit request" onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div>
+          <label className="label">Instructor</label>
+          <ScrollSelect value={instructorId} placeholder="Select instructor…" onChange={setInstructorId}
+            options={instructors.map((i) => ({ value: i.id, label: `${i.name} (${i.employeeId})` }))} />
+        </div>
+        <div>
+          <label className="label">Field (subject)</label>
+          <ScrollSelect value={fieldKey} onChange={setFieldKey}
+            placeholder={loadingFields ? "Loading fields…" : instructorId ? "Select field…" : "Pick an instructor first"}
+            options={fields.map((f) => ({ value: f.key, label: f.label }))} />
+        </div>
+        {field && (
+          <div>
+            <label className="label">New value</label>
+            {field.type === "DROPDOWN" ? (
+              <ScrollSelect value={String(value ?? "")} onChange={setValue} placeholder="— select —"
+                options={[{ value: "", label: "— select —" }, ...((field.options || []).includes(value) || !value ? [] : [{ value: String(value), label: String(value) }]), ...(field.options || []).map((o: string) => ({ value: o, label: o }))]} />
+            ) : field.type === "BOOLEAN" ? (
+              <ScrollSelect value={String(value)} onChange={setValue} options={[{ value: "false", label: "No" }, { value: "true", label: "Yes" }]} />
+            ) : (
+              <input type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} className="input"
+                value={value as any} min={field.min ?? undefined} max={field.max ?? undefined} onChange={(e) => setValue(e.target.value)} />
+            )}
+          </div>
+        )}
+        <div><label className="label">Reason / note (sent to the approver)</label><textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button disabled={busy} onClick={submit} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Submitting…" : "Submit request"}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

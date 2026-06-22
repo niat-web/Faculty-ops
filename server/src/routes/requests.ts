@@ -25,10 +25,12 @@ function uploadProof(req: any, res: any, next: any) {
 // List requests relevant to the viewer.
 router.get("/", async (req, res) => {
   const u = req.user!;
+  const isOps = u.role === Role.OPS_ADMIN;
   const status = String(req.query.status || "").trim();
   const q: any = {};
   if (status) q.status = status;
-  if (u.role === Role.SENIOR_MANAGER) q.approverId = u.id;
+  // Senior Managers see what they approve AND what they themselves submitted; CMs see their own.
+  if (u.role === Role.SENIOR_MANAGER) q.$or = [{ approverId: u.id }, { requesterId: u.id }];
   else if (u.role === Role.CAPABILITY_MANAGER) q.requesterId = u.id;
   // Ops Admin sees all
   const rows = await EditRequest.find(q).sort({ createdAt: -1 }).limit(200).lean();
@@ -38,6 +40,7 @@ router.get("/", async (req, res) => {
       fieldLabel: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: r.reason,
       status: r.status, requesterName: r.requesterName, decisionComment: r.decisionComment,
       proofPath: r.proofPath || null,
+      decidable: isOps || String(r.approverId) === u.id, // can THIS viewer approve/reject it
       createdAt: r.createdAt, comments: (r.comments || []).map((c: any) => ({ body: c.body, authorName: c.authorName, createdAt: c.createdAt })),
     })),
   });
@@ -46,7 +49,7 @@ router.get("/", async (req, res) => {
 // Capability Manager submits a change request (with a mandatory proof file) → routed to their Senior Manager.
 router.post("/", uploadProof, async (req, res) => {
   const u = req.user!;
-  if (u.role !== Role.CAPABILITY_MANAGER && u.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only Capability Managers raise requests" });
+  if (!([Role.CAPABILITY_MANAGER, Role.SENIOR_MANAGER, Role.OPS_ADMIN] as string[]).includes(u.role)) return res.status(403).json({ error: "You can't raise requests." });
   const { instructorId, fieldKey, newValue, reason } = req.body || {};
   if (!String(reason || "").trim()) return res.status(400).json({ error: "A reason is required." });
   const proof = (req as any).file; // optional — proof attachments are no longer required
@@ -59,9 +62,12 @@ router.post("/", uploadProof, async (req, res) => {
   const inst: any = await Instructor.findById(instructorId).lean();
   if (!inst) return res.status(404).json({ error: "Instructor not found" });
 
+  // Approver routing: CM/Ops → their Senior Manager (or any SM); Senior Manager → an Ops Admin.
   const me: any = await User.findById(u.id).select("managerId").lean();
-  const approverId = me?.managerId || (await User.findOne({ role: Role.SENIOR_MANAGER }).select("_id").lean())?._id;
-  if (!approverId) return res.status(400).json({ error: "No Senior Manager to approve." });
+  const approverId = u.role === Role.SENIOR_MANAGER
+    ? (await User.findOne({ role: Role.OPS_ADMIN, active: true, _id: { $ne: u.id } }).select("_id").lean())?._id
+    : (me?.managerId || (await User.findOne({ role: Role.SENIOR_MANAGER, active: true }).select("_id").lean())?._id);
+  if (!approverId) return res.status(400).json({ error: u.role === Role.SENIOR_MANAGER ? "No Ops Admin available to approve." : "No Senior Manager available to approve." });
 
   const proofPath = proof ? await uploadBuffer(proof.originalname || "proof", proof.mimetype || "application/octet-stream", proof.buffer) : null;
   let r: any;

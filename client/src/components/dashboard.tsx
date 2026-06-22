@@ -159,19 +159,25 @@ export function Leaderboard({ items, color = "#6366f1", unit = "", to }: { items
   );
 }
 
-/* ── MiniBars: small labelled vertical bars (distributions) ── */
+/* ── MiniBars: a proportional vertical column chart (distributions) ── */
 export function MiniBars({ data, colors }: { data: { name: string; value: number }[]; colors?: string[] }) {
   if (!data?.length) return <Empty />;
   const max = Math.max(...data.map((d) => d.value), 1);
   return (
-    <div className="flex items-end justify-between gap-3" style={{ height: 130 }}>
+    // items-stretch (not items-end) so each column fills the height and bars scale proportionally.
+    <div className="flex items-stretch justify-between gap-3" style={{ height: 180 }}>
       {data.map((d, i) => (
-        <div key={i} className="flex flex-1 flex-col items-center gap-2">
-          <span className="text-xs font-semibold text-slate-700">{d.value}</span>
-          <div className="flex w-full flex-1 items-end">
-            <div className="w-full rounded-t-md" style={{ height: `${(d.value / max) * 100}%`, minHeight: 4, background: colors?.[i] || PALETTE[i % PALETTE.length] }} />
+        <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
+          <span className="text-sm font-semibold text-slate-700">{d.value}</span>
+          {/* plot area — bar grows from the baseline (x-axis) up to its proportional height */}
+          <div className="flex w-full flex-1 items-end justify-center border-b-2 border-slate-200">
+            <div
+              className="w-full max-w-[52px] rounded-t-md transition-[height] duration-300"
+              style={{ height: `${(d.value / max) * 100}%`, minHeight: 4, background: colors?.[i] || PALETTE[i % PALETTE.length] }}
+              title={`${d.name}: ${d.value}`}
+            />
           </div>
-          <span className="text-center text-[10px] leading-tight text-slate-400">{d.name}</span>
+          <span className="text-center text-[11px] leading-tight text-slate-400">{d.name}</span>
         </div>
       ))}
     </div>
