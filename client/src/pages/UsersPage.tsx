@@ -90,7 +90,7 @@ export default function UsersPage() {
   return (
     <div className="flex h-full flex-col space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Users</h1>
+        <h1 className="text-2xl font-bold">Users <span className="text-base font-medium text-slate-400">· {data?.total ?? "…"}</span></h1>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-56 sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -110,7 +110,6 @@ export default function UsersPage() {
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
       <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{data?.total ?? "…"} user(s)</div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:sticky [&_th]:top-0 [&_th]:z-20 [&_th]:bg-slate-50">

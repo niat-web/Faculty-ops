@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, X, MessageSquare, Paperclip, Search, Plus, Trash2 } from "lucide-react";
+import { Check, X, MessageSquare, Paperclip, Search, Plus, Trash2, SlidersHorizontal, Download } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import ScrollSelect from "../components/ScrollSelect";
+import MultiSelect from "../components/MultiSelect";
+
+type HFilters = { status: string[]; field: string[]; requester: string[] };
+const H_EMPTY: HFilters = { status: [], field: [], requester: [] };
 
 const STATUS_CHIP: Record<string, string> = { PENDING: "chip-necessary", APPROVED: "chip-public", REJECTED: "chip-sensitive" };
 
@@ -21,7 +25,9 @@ export default function RequestsPage() {
   const [active, setActive] = useState<any>(null); // request being decided/commented
   const [newReq, setNewReq] = useState(false); // "New request" modal
   const [hq, setHq] = useState(""); // history search
-  const [hStatus, setHStatus] = useState(""); // history status filter
+  const [hApplied, setHApplied] = useState<HFilters>(H_EMPTY);
+  const [hDraft, setHDraft] = useState<HFilters>(H_EMPTY);
+  const [hDrawer, setHDrawer] = useState(false);
 
   const { id: focusId } = useParams(); // deep link: /app/requests/:id opens that one request
   function load() {
@@ -41,12 +47,29 @@ export default function RequestsPage() {
 
   const all: any[] = data?.requests || [];
   const pending = all.filter((r) => r.status === "PENDING");
+  const histAll = useMemo(() => all.filter((r) => r.status !== "PENDING"), [all]);
+  const fieldOpts = useMemo(() => [...new Set(histAll.map((r) => r.fieldLabel).filter(Boolean))].sort(), [histAll]);
+  const requesterOpts = useMemo(() => [...new Set(histAll.map((r) => r.requesterName).filter(Boolean))].sort(), [histAll]);
   const history = useMemo(() => {
     const needle = hq.trim().toLowerCase();
-    return all.filter((r) => r.status !== "PENDING")
-      .filter((r) => !hStatus || r.status === hStatus)
+    return histAll
+      .filter((r) => !hApplied.status.length || hApplied.status.includes(r.status))
+      .filter((r) => !hApplied.field.length || hApplied.field.includes(r.fieldLabel))
+      .filter((r) => !hApplied.requester.length || hApplied.requester.includes(r.requesterName))
       .filter((r) => !needle || r.instructorName.toLowerCase().includes(needle) || (r.fieldLabel || "").toLowerCase().includes(needle));
-  }, [all, hq, hStatus]);
+  }, [histAll, hq, hApplied]);
+  const hActive = hApplied.status.length + hApplied.field.length + hApplied.requester.length;
+  function openHDrawer() { setHDraft(hApplied); setHDrawer(true); }
+  function applyHFilters() { setHApplied(hDraft); setHDrawer(false); }
+  function clearHFilters() { setHApplied(H_EMPTY); setHDraft(H_EMPTY); }
+  function exportHistory() {
+    const header = ["Instructor", "Field", "Old value", "New value", "Status", "Decision note", "Requested by"];
+    const rows = history.map((r) => [r.instructorName, r.fieldLabel, r.oldValue || "", r.newValue || "", r.status, r.decisionComment || "", r.requesterName || ""]);
+    const csv = [header, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "request-history.csv";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  }
 
   return (
     <div className="space-y-6">
@@ -96,17 +119,19 @@ export default function RequestsPage() {
 
       {/* History */}
       <section className="space-y-3">
-        <h2 className="font-semibold">History ({history.length})</h2>
-        <div className="card flex flex-wrap items-end gap-3 p-4">
-          <div className="relative min-w-[200px] flex-1">
-            <label className="label">Search</label>
-            <Search className="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-slate-400" />
-            <input className="input pl-9" placeholder="Instructor or field…" value={hq} onChange={(e) => setHq(e.target.value)} />
-          </div>
-          <div><label className="label">Status</label>
-            <select className="input w-40" value={hStatus} onChange={(e) => setHStatus(e.target.value)}>
-              <option value="">All</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option>
-            </select>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold">History ({history.length})</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-56 sm:w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input className="input h-9 pl-9 text-sm" placeholder="Instructor or field…" value={hq} onChange={(e) => setHq(e.target.value)} />
+            </div>
+            <button onClick={openHDrawer} className="btn btn-ghost btn-sm shrink-0">
+              <SlidersHorizontal className="h-4 w-4" /> Filters
+              {hActive > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{hActive}</span>}
+            </button>
+            {hActive > 0 && <button onClick={clearHFilters} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
+            <button onClick={exportHistory} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</button>
           </div>
         </div>
         <div className="card overflow-hidden">
@@ -134,6 +159,31 @@ export default function RequestsPage() {
 
       {active && <DecideModal req={active} onClose={() => setActive(null)} onDone={() => { setActive(null); load(); }} />}
       {newReq && <NewRequestModal onClose={() => setNewReq(false)} onDone={() => { setNewReq(false); load(); }} />}
+
+      {/* History filter drawer */}
+      {hDrawer && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-slate-900/30" onClick={() => setHDrawer(false)} />
+          <div className="relative flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4 text-brand-600" /> Filter history</h2>
+              <button onClick={() => setHDrawer(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+              <div><label className="label">Status</label>
+                <MultiSelect values={hDraft.status} onChange={(v) => setHDraft({ ...hDraft, status: v })} options={[{ value: "APPROVED", label: "approved" }, { value: "REJECTED", label: "rejected" }]} placeholder="All statuses" searchable={false} /></div>
+              <div><label className="label">Field</label>
+                <MultiSelect values={hDraft.field} onChange={(v) => setHDraft({ ...hDraft, field: v })} options={fieldOpts.map((f) => ({ value: f, label: f }))} placeholder="All fields" /></div>
+              <div><label className="label">Requested by</label>
+                <MultiSelect values={hDraft.requester} onChange={(v) => setHDraft({ ...hDraft, requester: v })} options={requesterOpts.map((r) => ({ value: r, label: r }))} placeholder="Anyone" /></div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
+              <button onClick={() => setHDraft(H_EMPTY)} className="btn btn-ghost btn-sm">Clear</button>
+              <button onClick={applyHFilters} className="btn btn-primary btn-sm">Apply filters</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

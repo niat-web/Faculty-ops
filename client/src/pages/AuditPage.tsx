@@ -57,7 +57,7 @@ export default function AuditPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-bold">Audit Log</h1><p className="text-sm text-slate-500">Every change across the system, newest first.</p></div>
+        <div><h1 className="text-2xl font-bold">Audit Log <span className="text-base font-medium text-slate-400">· {data?.total ?? "…"}</span></h1><p className="text-sm text-slate-500">Every change across the system, newest first.</p></div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-56 sm:w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -74,7 +74,6 @@ export default function AuditPage() {
       {err && <div className="card p-4 text-sm text-rose-600">{err}</div>}
 
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{data?.total ?? "…"} entries</div>
         <div className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">

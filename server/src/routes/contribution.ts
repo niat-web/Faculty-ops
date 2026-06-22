@@ -9,6 +9,7 @@ const router = Router();
 router.use(requireUser());
 const STAFF = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const staffGuard = (req: any, res: any, next: any) => (STAFF.includes(req.user.role) ? next() : res.status(403).json({ error: "Forbidden" }));
+const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // exited instructors are excluded from all contribution rollups
 
 // The dynamic "Contribution" field (resolved by label; key is a safe slug like "contribution").
 async function contribField(): Promise<{ key: string; label: string } | null> {
@@ -22,7 +23,7 @@ router.get("/", staffGuard, async (req, res) => {
   if (!field) return res.json({ field: null, items: [], total: 0 });
   const path = `values.${field.key}`;
   const agg = await Instructor.aggregate([
-    { $match: instructorScopeFilter(req.user!) },
+    { $match: { ...instructorScopeFilter(req.user!), status: { $nin: EXIT_STATES } } },
     { $group: { _id: `$${path}`, n: { $sum: 1 } } },
   ]);
   const items = agg
@@ -33,7 +34,6 @@ router.get("/", staffGuard, async (req, res) => {
 });
 
 // Campus-wise instructor counts, split by payroll entity (University vs Nxtwave). Excludes exited.
-const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"];
 router.get("/campuswise", staffGuard, async (req, res) => {
   const agg = await Instructor.aggregate([
     { $match: { ...instructorScopeFilter(req.user!), status: { $nin: EXIT_STATES } } },
@@ -54,7 +54,7 @@ router.get("/campuswise", staffGuard, async (req, res) => {
 // Capability Manager distribution — reportee counts per manager (+ unassigned), with grand total.
 router.get("/managers", staffGuard, async (req, res) => {
   const agg = await Instructor.aggregate([
-    { $match: instructorScopeFilter(req.user!) },
+    { $match: { ...instructorScopeFilter(req.user!), status: { $nin: EXIT_STATES } } },
     { $group: { _id: "$currentManagerId", n: { $sum: 1 } } },
   ]);
   const mgrIds = agg.map((a: any) => a._id).filter(Boolean).map(String);

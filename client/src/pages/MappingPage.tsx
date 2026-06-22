@@ -52,7 +52,6 @@ export default function MappingPage() {
         <ReassignTab cms={cms} instructors={instructors} cmName={cmName} busy={busy} reassign={reassign} toast={toast} />
       ) : (
         <div className="card overflow-hidden">
-          <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{managers.length} capability manager(s)</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
@@ -95,8 +94,8 @@ function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
   return (
     <div className="space-y-5">
       {/* Bulk reassign */}
-      <div className="card p-5">
-        <h2 className="mb-3 font-semibold">Bulk reassign reportees</h2>
+      <div className="card flex flex-wrap items-center justify-between gap-4 p-5">
+        <h2 className="font-semibold">Bulk reassign reportees</h2>
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-48"><label className="label">From manager</label>
             <ScrollSelect value={bulkFrom} onChange={setBulkFrom} placeholder="Choose…" options={[{ value: "", label: "Choose…" }, ...cms.map((c: any) => ({ value: c.id, label: c.name }))]} />

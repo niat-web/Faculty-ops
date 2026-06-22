@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
@@ -6,6 +6,7 @@ import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
 import TopProgressBar from "./components/TopProgressBar";
 import { progress } from "./progress";
+import { lazyWithReload as lazy, isChunkError, reloadOnce } from "./lazyWithReload";
 
 // Suspense fallback for lazy route chunks — drives the top bar (chunk loads aren't API calls) and
 // renders no in-page spinner.
@@ -52,7 +53,11 @@ const AccountAccessPage = lazy(() => import("./pages/settings/AccountAccessPage"
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error, info: ErrorInfo) { console.error("[ui] render error:", error, info); }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // A stale chunk after a redeploy → silently reload once to fetch the new build.
+    if (isChunkError(error) && reloadOnce()) return;
+    console.error("[ui] render error:", error, info);
+  }
   render() {
     if (this.state.error) return (
       <div className="m-6 card p-6">

@@ -140,7 +140,7 @@ export default function InstructorExitedPage() {
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Instructor Exited</h1>
+          <h1 className="text-2xl font-bold">Instructor Exited <span className="text-base font-medium text-slate-400">· {total}</span></h1>
           <p className="text-sm text-slate-500">Instructors who have exited NIAT{canEdit ? " — click any cell to edit." : "."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -160,7 +160,6 @@ export default function InstructorExitedPage() {
       {err && <div className="card p-4 text-sm text-rose-600">{err}</div>}
 
       <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{total} exited instructor(s)</div>
         <div className="flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
