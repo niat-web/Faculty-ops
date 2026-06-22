@@ -86,9 +86,28 @@ export async function getProfileForViewer(viewer: SessionUser, instructorId: str
   const pend = await EditRequest.find({ instructorId: inst._id, status: "PENDING" }).select("fieldKey fieldLabel newValue requesterName createdAt").sort({ createdAt: -1 }).lean();
   const pendingRequests = (pend as any[]).map((r) => ({ fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, newValue: r.newValue, requesterName: r.requesterName, createdAt: r.createdAt }));
 
+  // Staff (Ops Admin / Senior Manager / Capability Manager / central team) are NOT teaching
+  // instructors — they only exist as Instructor records so they show in Master. A record is
+  // "staff" if it's in the Delivery-Support department OR its email maps to an Ops/SM/CM user.
+  // Staff get no teaching sections: hide Training Stats (+ Skills) and Mails.
+  const STAFF_DEPT = "Instructors - Delivery Support (Ops and Central managers)";
+  let isStaff = values.department === STAFF_DEPT;
+  if (!isStaff && inst.email) {
+    const u: any = await User.findOne({ email: inst.email }).select("role").lean();
+    if (u && [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER].includes(u.role)) isStaff = true;
+  }
+  let modules = await listModules(); // section order + labels (incl. admin-created ones)
+  let outSkills = skills;
+  if (isStaff) {
+    delete byModule["TRAINING"];
+    modules = (modules as any[]).filter((m) => m.key !== "TRAINING");
+    outSkills = { track: null, list: [], done: 0, moduleStatus: [] };
+  }
+
   return {
-    skills, exit, documents, pendingRequests,
-    modules: await listModules(), // section order + labels (incl. admin-created ones)
+    isStaff,
+    skills: outSkills, exit, documents, pendingRequests,
+    modules, // section order + labels (incl. admin-created ones)
     instructor: {
       id: String(inst._id), employeeId: inst.employeeId, name: inst.name, email: inst.email, campus: inst.campus, status: inst.status, managerName,
       notes: (inst.notes || []).map((n: any) => ({ id: String(n._id), body: n.body, authorName: n.authorName, createdAt: n.createdAt })).reverse(),

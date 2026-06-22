@@ -83,7 +83,7 @@ export default function InstructorProfilePage() {
   // ones rendered with special UI (Lifecycle timeline / Exit form).
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
   const moduleTabs = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
-  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit ? ["MAILS"] : []), ...(canAudit ? ["AUDIT"] : [])];
+  const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit && !p.isStaff ? ["MAILS"] : []), ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
   const inst = p.instructor || {};
   const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", MAILS: "Mails", AUDIT: "Audit" } as any)[t] || t;

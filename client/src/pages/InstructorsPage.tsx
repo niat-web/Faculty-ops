@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search, Plus, Download, Upload, Save, Star, X, Network, RefreshCw, Pencil, Trash2 } from "lucide-react";
+import { Search, Plus, Download, Upload, Save, Star, X, Network, RefreshCw, Pencil, Trash2, SlidersHorizontal } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL } from "../auth";
@@ -12,6 +12,10 @@ import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
 
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
+
+// All field filters live in a right-side drawer (draft → applied on "Apply"), mirroring the Users page.
+type Filters = { status: string; campus: string; department: string; managerId: string; minTraining: string };
+const EMPTY_FILTERS: Filters = { status: "", campus: "", department: "", managerId: "", minTraining: "" };
 
 export default function InstructorsPage() {
   const { user } = useAuth();
@@ -25,14 +29,15 @@ export default function InstructorsPage() {
   const [searchParams] = useSearchParams();
   const [q, setQ] = useState(searchParams.get("q") || "");
   const dq = useDebouncedValue(q, 300);
-  const [status, setStatus] = useState(searchParams.get("status") || "");
   // Lifecycle scope quick-filter: "active" (default — excludes Exited + Exit in Progress), "all", "exited".
   const [scope, setScope] = useState<"active" | "all" | "exited">(searchParams.get("status") ? "all" : "active");
-  const [campus, setCampus] = useState(searchParams.get("campus") || "");
-  const [department, setDepartment] = useState(searchParams.get("department") || "");
-  const [managerId, setManagerId] = useState(searchParams.get("managerId") || "");
-  const [minTraining, setMinTraining] = useState("");
-  const dMin = useDebouncedValue(minTraining, 400);
+  const initialFilters: Filters = {
+    status: searchParams.get("status") || "", campus: searchParams.get("campus") || "",
+    department: searchParams.get("department") || "", managerId: searchParams.get("managerId") || "", minTraining: "",
+  };
+  const [applied, setApplied] = useState<Filters>(initialFilters);
+  const [draft, setDraft] = useState<Filters>(initialFilters);
+  const [drawer, setDrawer] = useState(false);
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
   const [data, setData] = useState<any>(null);
@@ -52,9 +57,14 @@ export default function InstructorsPage() {
 
   function filterParams() {
     const p = new URLSearchParams();
-    if (dq) p.set("q", dq); if (status) p.set("status", status); if (campus) p.set("campus", campus); if (department) p.set("department", department); if (managerId) p.set("managerId", managerId); if (dMin) p.set("minTraining", dMin);
+    if (dq) p.set("q", dq);
+    if (applied.status) p.set("status", applied.status);
+    if (applied.campus) p.set("campus", applied.campus);
+    if (applied.department) p.set("department", applied.department);
+    if (applied.managerId) p.set("managerId", applied.managerId);
+    if (applied.minTraining) p.set("minTraining", applied.minTraining);
     // A specific status overrides the scope; otherwise apply the active/exited scope.
-    if (!status && scope !== "all") p.set("scope", scope);
+    if (!applied.status && scope !== "all") p.set("scope", scope);
     return p;
   }
   function loadList() { setReloadKey((k) => k + 1); }
@@ -73,7 +83,7 @@ export default function InstructorsPage() {
       .then((r) => { setData(r); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load instructors"); });
     return () => ac.abort();
-  }, [dq, status, scope, campus, department, managerId, dMin, page, per, reloadKey]);
+  }, [dq, applied, scope, page, per, reloadKey]);
 
   const scopeNote = user!.role === "CAPABILITY_MANAGER" ? "Showing only your assigned instructors." : user!.role === "INSTRUCTOR" ? "Showing your own profile." : "Showing all instructors across NIAT campuses.";
 
@@ -93,8 +103,16 @@ export default function InstructorsPage() {
   }
   function applyView(query: string) {
     const p = new URLSearchParams(query);
-    setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setDepartment(p.get("department") || ""); setManagerId(p.get("managerId") || ""); setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
+    setQ(p.get("q") || "");
+    const f: Filters = { status: p.get("status") || "", campus: p.get("campus") || "", department: p.get("department") || "", managerId: p.get("managerId") || "", minTraining: p.get("minTraining") || "" };
+    setApplied(f); setDraft(f);
+    setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
   }
+  // Drawer (draft → applied), mirroring the Users page.
+  const activeFilterCount = Object.values(applied).filter(Boolean).length;
+  function openDrawer() { setDraft(applied); setDrawer(true); }
+  function applyFilters() { setApplied(draft); if (draft.status) setScope("all"); setPage(1); setDrawer(false); }
+  function clearFilters() { setApplied(EMPTY_FILTERS); setDraft(EMPTY_FILTERS); setPage(1); }
   async function saveView() {
     const name = await prompt({ title: "Save view", message: "Name this view:", placeholder: "e.g. In-training at Aurora", confirmText: "Save", required: true });
     if (!name) return;
@@ -136,40 +154,21 @@ export default function InstructorsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold">Instructors</h1><p className="text-sm text-slate-500">{scopeNote}</p></div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-56 sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input className="input h-9 pl-9 text-sm" placeholder="Name, ID, campus…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
+          </div>
           <button onClick={() => exportCsv(false)} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</button>
           {isOps && <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm"><Upload className="h-4 w-4" /> Import CSV</button>}
+          <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
+            <SlidersHorizontal className="h-4 w-4" /> Filters
+            {activeFilterCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeFilterCount}</span>}
+          </button>
+          {activeFilterCount > 0 && <button onClick={clearFilters} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
           {isOps && <button onClick={() => setAdding(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add instructor</button>}
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
         </div>
-      </div>
-
-      <div className="card flex flex-wrap items-end gap-3 p-4">
-        <div className="relative min-w-[200px] flex-1">
-          <label className="label">Search</label>
-          <Search className="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-slate-400" />
-          <input className="input pl-9" placeholder="Name, ID, campus…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
-        </div>
-        <div className="w-40"><label className="label">Status</label>
-          <ScrollSelect value={status} placeholder="All" onChange={(v) => { setPage(1); setStatus(v); if (v) setScope("all"); }}
-            options={[{ value: "", label: "All" }, ...Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))]} />
-        </div>
-        <div className="w-44"><label className="label">Campus</label>
-          <ScrollSelect value={campus} placeholder="All" onChange={(v) => { setPage(1); setCampus(v); }}
-            options={[{ value: "", label: "All" }, ...campuses.map((c) => ({ value: c, label: c }))]} />
-        </div>
-        <div className="w-56"><label className="label">Department</label>
-          <ScrollSelect value={department} placeholder="All" onChange={(v) => { setPage(1); setDepartment(v); }}
-            options={[{ value: "", label: "All" }, ...departments.map((d) => ({ value: d, label: d }))]} />
-        </div>
-        {canManage && (
-          <div className="w-44"><label className="label">Manager</label>
-            <ScrollSelect value={managerId} placeholder="All" onChange={(v) => { setPage(1); setManagerId(v); }}
-              options={[{ value: "", label: "All" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
-          </div>
-        )}
-        <div><label className="label">Min training %</label><input type="number" min={0} max={100} className="input w-28" placeholder="e.g. 50" value={minTraining} onChange={(e) => { setPage(1); setMinTraining(e.target.value); }} /></div>
-        <button onClick={saveView} className="btn btn-ghost btn-sm"><Save className="h-4 w-4" /> Save view</button>
       </div>
 
       {views.length > 0 && (
@@ -209,7 +208,7 @@ export default function InstructorsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <span className="text-sm font-medium text-slate-500">{data?.total ?? "…"} instructor(s)</span>
           {/* Quick lifecycle scope — defaults to Active (excludes Exited + Exit in Progress). */}
-          {!status && (
+          {!applied.status && (
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
               {([["active", "Active", data?.counts?.active], ["all", "All", data?.counts?.all], ["exited", "Exited", data?.counts?.exited]] as const).map(([key, label, count]) => (
                 <button key={key} onClick={() => { setScope(key); setPage(1); }}
@@ -267,6 +266,49 @@ export default function InstructorsPage() {
       {adding && <AddInstructorModal cms={cms} onClose={() => setAdding(false)} onDone={() => { setAdding(false); loadList(); }} />}
       {editing && <EditInstructorModal inst={editing} cms={cms} onClose={() => setEditing(null)} onDone={() => { setEditing(null); loadList(); }} />}
       {importing && <ImportModal rows={importing} onClose={() => setImporting(null)} onDone={() => { setImporting(null); loadList(); }} />}
+
+      {/* Right-side filter drawer (mirrors the Users page) */}
+      {drawer && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-slate-900/30" onClick={() => setDrawer(false)} />
+          <div className="relative flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4 text-brand-600" /> Filters</h2>
+              <button onClick={() => setDrawer(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+              <div><label className="label">Status</label>
+                <ScrollSelect value={draft.status} onChange={(v) => setDraft({ ...draft, status: v })} placeholder="All statuses"
+                  options={[{ value: "", label: "All statuses" }, ...Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))]} />
+              </div>
+              <div><label className="label">Campus</label>
+                <ScrollSelect value={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} placeholder="All campuses"
+                  options={[{ value: "", label: "All campuses" }, ...campuses.map((c) => ({ value: c, label: c }))]} />
+              </div>
+              <div><label className="label">Department</label>
+                <ScrollSelect value={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} placeholder="All departments"
+                  options={[{ value: "", label: "All departments" }, ...departments.map((d) => ({ value: d, label: d }))]} />
+              </div>
+              {canManage && (
+                <div><label className="label">Manager</label>
+                  <ScrollSelect value={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} placeholder="All managers"
+                    options={[{ value: "", label: "All managers" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
+                </div>
+              )}
+              <div><label className="label">Min training %</label>
+                <input type="number" min={0} max={100} className="input" placeholder="e.g. 50" value={draft.minTraining} onChange={(e) => setDraft({ ...draft, minTraining: e.target.value })} />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
+              <button onClick={() => setDraft(EMPTY_FILTERS)} className="btn btn-ghost btn-sm">Clear all</button>
+              <div className="flex gap-2">
+                <button onClick={saveView} className="btn btn-ghost btn-sm"><Save className="h-4 w-4" /> Save view</button>
+                <button onClick={applyFilters} className="btn btn-primary btn-sm">Apply filters</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

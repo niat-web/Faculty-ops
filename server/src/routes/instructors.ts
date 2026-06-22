@@ -71,7 +71,7 @@ router.get("/", async (req, res) => {
 
   const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
-    Instructor.find(filter).select("employeeId name email campus status currentManagerId values.primary_pct values.department values.designation values.exit_date exit").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.find(filter).select("employeeId name email campus uid status currentManagerId values exit").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
     Instructor.countDocuments(base),
     Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
@@ -82,17 +82,25 @@ router.get("/", async (req, res) => {
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
     counts: { all: cAll, exited: cExited, active: cAll - cExited },
-    instructors: rows.map((r: any) => ({
-      id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus, status: r.status,
-      department: r.values?.department || "", designation: r.values?.designation || "",
-      managerId: r.currentManagerId ? String(r.currentManagerId) : "",
-      managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || null : null,
-      training: r.values?.primary_pct != null && r.values.primary_pct !== "" && !isNaN(Number(r.values.primary_pct)) ? Number(r.values.primary_pct) : null,
-      // Exit details (for the Instructor Exited view). exit.lastWorkingDay is the EXIT-sheet date;
-      // values.exit_date is the MASTER-sheet column — surface whichever is present.
-      exitDate: r.exit?.lastWorkingDay || r.values?.exit_date || "",
-      typeOfExit: r.exit?.typeOfExit || "", exitReason: r.exit?.reason || "", exitDetailedReason: r.exit?.detailedReason || "",
-    })),
+    instructors: rows.map((r: any) => {
+      const v = (k: string) => (maybeDecrypt(r.values?.[k] ?? "") || "");
+      const pct = r.values?.primary_pct;
+      return {
+        id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
+        managerId: r.currentManagerId ? String(r.currentManagerId) : "",
+        managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || null : null,
+        training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
+        // Full master-sheet field set (for the Instructor Exited view + Department column).
+        department: v("department"), designation: v("designation"), contribution: v("contribution"),
+        contributionRegion: v("contribution_region"), reportingManager: v("reporting_manager"), payroll: v("payroll_entity"),
+        phone: v("phone"), universityMail: v("university_mail"), doj: v("doj"), qualification: v("qualification"),
+        domain: v("domain"), gender: v("gender"), nativeLanguage: v("native_language"), access: v("access_status"),
+        cmEmployeeId: v("cm_employee_id"), remarks: v("remarks"),
+        // Exit details. exit.lastWorkingDay is the EXIT-sheet date; values.exit_date is the MASTER column.
+        exitDate: r.exit?.lastWorkingDay || v("exit_date"),
+        typeOfExit: r.exit?.typeOfExit || "", exitReason: r.exit?.reason || "", exitDetailedReason: r.exit?.detailedReason || "",
+      };
+    }),
   });
 });
 

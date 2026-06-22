@@ -53,6 +53,35 @@ export default function InstructorExitedPage() {
 
   const rows: any[] = data?.instructors || [];
 
+  // Full EXIT-sheet column set, in sheet order. `wrap` widens the cell for long free-text.
+  const COLS: { label: string; get: (i: any) => string; wrap?: boolean }[] = [
+    { label: "Department", get: (i) => i.department },
+    { label: "Capability Manager", get: (i) => i.managerName || "" },
+    { label: "Work Location", get: (i) => i.campus },
+    { label: "Contribution", get: (i) => i.contribution },
+    { label: "Contribution Region", get: (i) => i.contributionRegion },
+    { label: "Reporting Manager (Darwin)", get: (i) => i.reportingManager },
+    { label: "Payroll", get: (i) => i.payroll },
+    { label: "Role", get: (i) => i.designation },
+    { label: "Phone Number", get: (i) => i.phone },
+    { label: "Mail ID", get: (i) => i.email },
+    { label: "University Mail Id", get: (i) => i.universityMail },
+    { label: "DOJ", get: (i) => i.doj },
+    { label: "Qualification", get: (i) => i.qualification },
+    { label: "Domain", get: (i) => i.domain },
+    { label: "UID", get: (i) => i.uid },
+    { label: "Gender", get: (i) => i.gender },
+    { label: "Native language", get: (i) => i.nativeLanguage },
+    { label: "Portal / Assets / Drive Access", get: (i) => i.access },
+    { label: "Capability Manager Employee ID", get: (i) => i.cmEmployeeId },
+    { label: "Exit Date", get: (i) => i.exitDate },
+    { label: "Remarks", get: (i) => i.remarks, wrap: true },
+    { label: "Type Of Exit", get: (i) => i.typeOfExit },
+    { label: "Reason For Exit", get: (i) => i.exitReason, wrap: true },
+    { label: "Indetailed Reason", get: (i) => i.exitDetailedReason, wrap: true },
+  ];
+  const NCOLS = COLS.length + 2; // + Employee ID + Name
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -89,31 +118,26 @@ export default function InstructorExitedPage() {
           <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <th className="px-5 py-3">Employee ID</th>
+                <th className="sticky left-0 z-10 bg-slate-50 px-5 py-3">Employee ID</th>
                 <th className="px-5 py-3">Name</th>
-                <th className="px-5 py-3">Department</th>
-                <th className="px-5 py-3">Manager</th>
-                <th className="px-5 py-3">Exit Date</th>
-                <th className="px-5 py-3">Type of Exit</th>
-                <th className="px-5 py-3">Reason</th>
-                <th className="px-5 py-3">Detailed Reason</th>
+                {COLS.map((c) => <th key={c.label} className="px-5 py-3">{c.label}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((i: any) => (
-                <tr key={i.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-mono text-xs text-slate-500">{i.employeeId}</td>
+                <tr key={i.id} className="group hover:bg-slate-50">
+                  <td className="sticky left-0 z-10 bg-white px-5 py-3 font-mono text-xs text-slate-500 group-hover:bg-slate-50">{i.employeeId}</td>
                   <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline">{i.name}</Link></td>
-                  <td className="px-5 py-3 text-slate-500">{i.department || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.managerName || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.exitDate || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.typeOfExit || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.exitReason || "—"}</td>
-                  <td className="max-w-[24rem] truncate px-5 py-3 text-slate-500" title={i.exitDetailedReason || ""}>{i.exitDetailedReason || "—"}</td>
+                  {COLS.map((c) => {
+                    const val = c.get(i);
+                    return c.wrap
+                      ? <td key={c.label} className="max-w-[20rem] truncate px-5 py-3 text-slate-500" title={val || ""}>{val || "—"}</td>
+                      : <td key={c.label} className="px-5 py-3 text-slate-500">{val || "—"}</td>;
+                  })}
                 </tr>
               ))}
               {rows.length === 0 && data && (
-                <tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400">No exited instructors match these filters.</td></tr>
+                <tr><td colSpan={NCOLS} className="px-5 py-10 text-center text-slate-400">No exited instructors match these filters.</td></tr>
               )}
             </tbody>
           </table>
