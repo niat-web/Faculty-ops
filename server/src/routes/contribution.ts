@@ -32,10 +32,11 @@ router.get("/", staffGuard, async (req, res) => {
   res.json({ field, items, total: items.reduce((s, i) => s + i.count, 0) });
 });
 
-// Campus-wise instructor counts, split by payroll entity (University vs Nxtwave).
+// Campus-wise instructor counts, split by payroll entity (University vs Nxtwave). Excludes exited.
+const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"];
 router.get("/campuswise", staffGuard, async (req, res) => {
   const agg = await Instructor.aggregate([
-    { $match: instructorScopeFilter(req.user!) },
+    { $match: { ...instructorScopeFilter(req.user!), status: { $nin: EXIT_STATES } } },
     { $group: {
       _id: "$campus", total: { $sum: 1 },
       university: { $sum: { $cond: [{ $eq: ["$values.payroll_entity", "University"] }, 1, 0] } },
