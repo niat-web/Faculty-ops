@@ -13,7 +13,7 @@ const NAV: any[] = [
     { to: "/app/instructors", label: "Instructors", end: true },
     { to: "/app/instructors/master", label: "Instructor Master" },
     { to: "/app/instructors/exited", label: "Instructor Exited" },
-    { to: "/app/instructors/roles", label: "Roles" },
+    { to: "/app/instructors/roles", label: "Roles", roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
   ] },
   { to: "/app/training", label: "Instructors Training Stats", icon: BookOpen, roles: STAFF },
   { label: "Contribution", icon: Award, roles: ["OPS_ADMIN", "SENIOR_MANAGER"], children: [
@@ -82,7 +82,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <nav className="flex-1 space-y-1 overflow-y-auto">
           {items.map((n) => {
             if (n.children) {
-              const childActive = n.children.some((c: any) => location.pathname.startsWith(c.to));
+              const children = n.children.filter((c: any) => !c.roles || c.roles.includes(user.role));
+              const childActive = children.some((c: any) => location.pathname.startsWith(c.to));
               const open = openGroups[n.label] ?? childActive; // auto-open when a child is active
               return (
                 <div key={n.label}>
@@ -92,7 +93,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   </button>
                   {open && (
                     <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
-                      {n.children.map((c: any) => (
+                      {children.map((c: any) => (
                         <NavLink key={c.to} to={c.to} end={c.end} className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"}`}>{c.label}</NavLink>
                       ))}
                     </div>

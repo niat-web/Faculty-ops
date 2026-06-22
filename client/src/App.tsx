@@ -118,7 +118,7 @@ export default function App() {
                 <Route path="instructors" element={<RequireRole roles={STAFF}><InstructorsPage /></RequireRole>} />
                 <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/exited" element={<RequireRole roles={STAFF}><InstructorExitedPage /></RequireRole>} />
-                <Route path="instructors/roles" element={<RequireRole roles={STAFF}><RolesPage /></RequireRole>} />
+                <Route path="instructors/roles" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />
                 <Route path="instructors/:id" element={<InstructorProfilePage />} />
                 <Route path="training" element={<Navigate to="/app/training/tech-stats" replace />} />
                 <Route path="training/:slug" element={<RequireRole roles={STAFF}><TrainingPage /></RequireRole>} />
