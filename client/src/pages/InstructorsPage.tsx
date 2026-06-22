@@ -29,6 +29,7 @@ export default function InstructorsPage() {
   // Lifecycle scope quick-filter: "active" (default — excludes Exited + Exit in Progress), "all", "exited".
   const [scope, setScope] = useState<"active" | "all" | "exited">(searchParams.get("status") ? "all" : "active");
   const [campus, setCampus] = useState(searchParams.get("campus") || "");
+  const [department, setDepartment] = useState(searchParams.get("department") || "");
   const [managerId, setManagerId] = useState(searchParams.get("managerId") || "");
   const [minTraining, setMinTraining] = useState("");
   const dMin = useDebouncedValue(minTraining, 400);
@@ -37,6 +38,7 @@ export default function InstructorsPage() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [campuses, setCampuses] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
   const [cms, setCms] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -50,7 +52,7 @@ export default function InstructorsPage() {
 
   function filterParams() {
     const p = new URLSearchParams();
-    if (dq) p.set("q", dq); if (status) p.set("status", status); if (campus) p.set("campus", campus); if (managerId) p.set("managerId", managerId); if (dMin) p.set("minTraining", dMin);
+    if (dq) p.set("q", dq); if (status) p.set("status", status); if (campus) p.set("campus", campus); if (department) p.set("department", department); if (managerId) p.set("managerId", managerId); if (dMin) p.set("minTraining", dMin);
     // A specific status overrides the scope; otherwise apply the active/exited scope.
     if (!status && scope !== "all") p.set("scope", scope);
     return p;
@@ -59,6 +61,7 @@ export default function InstructorsPage() {
   function loadViews() { api.get("/settings/views").then((r) => setViews(r.views)).catch(() => {}); }
   useEffect(() => {
     api.get("/instructors/campuses").then((r) => setCampuses(r.campuses)).catch(() => {});
+    api.get("/instructors/departments").then((r) => setDepartments(r.departments)).catch(() => {});
     loadViews();
     if (canManage) api.get("/mapping").then((r) => setCms(r.cms)).catch(() => {});
   }, []);
@@ -70,7 +73,7 @@ export default function InstructorsPage() {
       .then((r) => { setData(r); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load instructors"); });
     return () => ac.abort();
-  }, [dq, status, scope, campus, managerId, dMin, page, per, reloadKey]);
+  }, [dq, status, scope, campus, department, managerId, dMin, page, per, reloadKey]);
 
   const scopeNote = user!.role === "CAPABILITY_MANAGER" ? "Showing only your assigned instructors." : user!.role === "INSTRUCTOR" ? "Showing your own profile." : "Showing all instructors across NIAT campuses.";
 
@@ -90,7 +93,7 @@ export default function InstructorsPage() {
   }
   function applyView(query: string) {
     const p = new URLSearchParams(query);
-    setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setManagerId(p.get("managerId") || ""); setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
+    setQ(p.get("q") || ""); setStatus(p.get("status") || ""); setCampus(p.get("campus") || ""); setDepartment(p.get("department") || ""); setManagerId(p.get("managerId") || ""); setScope((p.get("scope") as any) || (p.get("status") ? "all" : "active")); setPage(1);
   }
   async function saveView() {
     const name = await prompt({ title: "Save view", message: "Name this view:", placeholder: "e.g. In-training at Aurora", confirmText: "Save", required: true });
@@ -155,6 +158,10 @@ export default function InstructorsPage() {
           <ScrollSelect value={campus} placeholder="All" onChange={(v) => { setPage(1); setCampus(v); }}
             options={[{ value: "", label: "All" }, ...campuses.map((c) => ({ value: c, label: c }))]} />
         </div>
+        <div className="w-56"><label className="label">Department</label>
+          <ScrollSelect value={department} placeholder="All" onChange={(v) => { setPage(1); setDepartment(v); }}
+            options={[{ value: "", label: "All" }, ...departments.map((d) => ({ value: d, label: d }))]} />
+        </div>
         {canManage && (
           <div className="w-44"><label className="label">Manager</label>
             <ScrollSelect value={managerId} placeholder="All" onChange={(v) => { setPage(1); setManagerId(v); }}
@@ -218,7 +225,7 @@ export default function InstructorsPage() {
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {canManage && <th className="w-10 px-5 py-3"><input type="checkbox" checked={allOnPage} onChange={(e) => { const v = e.target.checked; const next = { ...selected }; rows.forEach((i) => (next[i.id] = v)); setSelected(next); }} /></th>}
-                <th className="px-5 py-3">Employee ID</th><th className="px-5 py-3">Name</th><th className="px-5 py-3">Campus</th><th className="px-5 py-3">Manager</th><th className="px-5 py-3">Training</th><th className="px-5 py-3">Status</th>{isOps && <th className="px-5 py-3 text-right">Actions</th>}
+                <th className="px-5 py-3">Employee ID</th><th className="px-5 py-3">Name</th><th className="px-5 py-3">Campus</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Manager</th><th className="px-5 py-3">Training</th><th className="px-5 py-3">Status</th>{isOps && <th className="px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -228,6 +235,7 @@ export default function InstructorsPage() {
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{i.employeeId}</td>
                   <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline">{i.name}</Link></td>
                   <td className="px-5 py-3 text-slate-500">{i.campus || "—"}</td>
+                  <td className="px-5 py-3 text-slate-500">{i.department || "—"}</td>
                   <td className="px-5 py-3 text-slate-500">{i.managerName || "—"}</td>
                   <td className="px-5 py-3">{i.training == null ? <span className="text-slate-300">—</span> : <div className="flex items-center gap-2"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(i.training), 100)}%` }} /></div><span className="text-xs text-slate-500">{i.training}%</span></div>}</td>
                   <td className="px-5 py-3">

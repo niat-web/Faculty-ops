@@ -47,6 +47,7 @@ router.get("/", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const status = String(req.query.status || "").trim();
   const campus = String(req.query.campus || "").trim();
+  const department = String(req.query.department || "").trim();
   const managerId = String(req.query.managerId || "").trim();
   const minTraining = parseInt(String(req.query.minTraining || ""), 10);
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
@@ -57,6 +58,7 @@ router.get("/", async (req, res) => {
   const scope = String(req.query.scope || "").trim();
   const base: any = { ...instructorScopeFilter(user) };
   if (campus) base.campus = campus;
+  if (department) base["values.department"] = department;
   if (managerId) base.currentManagerId = managerId;
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
   if (!isNaN(minTraining)) base.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
@@ -69,7 +71,7 @@ router.get("/", async (req, res) => {
 
   const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
-    Instructor.find(filter).select("employeeId name email campus status currentManagerId values.primary_pct").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.find(filter).select("employeeId name email campus status currentManagerId values.primary_pct values.department values.designation values.exit_date exit").sort({ employeeId: 1 }).skip((page - 1) * PER).limit(PER).lean(),
     Instructor.countDocuments(base),
     Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
@@ -82,9 +84,14 @@ router.get("/", async (req, res) => {
     counts: { all: cAll, exited: cExited, active: cAll - cExited },
     instructors: rows.map((r: any) => ({
       id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus, status: r.status,
+      department: r.values?.department || "", designation: r.values?.designation || "",
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
       managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || null : null,
       training: r.values?.primary_pct != null && r.values.primary_pct !== "" && !isNaN(Number(r.values.primary_pct)) ? Number(r.values.primary_pct) : null,
+      // Exit details (for the Instructor Exited view). exit.lastWorkingDay is the EXIT-sheet date;
+      // values.exit_date is the MASTER-sheet column — surface whichever is present.
+      exitDate: r.exit?.lastWorkingDay || r.values?.exit_date || "",
+      typeOfExit: r.exit?.typeOfExit || "", exitReason: r.exit?.reason || "", exitDetailedReason: r.exit?.detailedReason || "",
     })),
   });
 });
@@ -93,6 +100,12 @@ router.get("/", async (req, res) => {
 router.get("/campuses", async (req, res) => {
   const list = await Instructor.distinct("campus", instructorScopeFilter(req.user!));
   res.json({ campuses: list.filter(Boolean).sort() });
+});
+
+// Distinct departments (for the Instructors-page department filter).
+router.get("/departments", async (req, res) => {
+  const list = await Instructor.distinct("values.department", instructorScopeFilter(req.user!));
+  res.json({ departments: (list as string[]).filter(Boolean).sort() });
 });
 
 // Bulk lifecycle status change (Ops/SM).
