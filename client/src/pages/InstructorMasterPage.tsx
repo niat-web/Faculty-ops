@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, SlidersHorizontal, Download, X } from "lucide-react";
 import { api, API_BASE } from "../api";
-import { ROLE_LABEL } from "../auth";
+import { ROLE_LABEL, useAuth } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
@@ -17,6 +17,8 @@ type Filters = { managerId: string[]; department: string[]; payroll: string[]; r
 const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [], campus: [] };
 
 export default function InstructorMasterPage() {
+  const { user } = useAuth();
+  const isOps = user?.role === "OPS_ADMIN";
   const toast = useToast();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -160,6 +162,7 @@ export default function InstructorMasterPage() {
                     const sticky = i === 0 ? "sticky left-0 z-10 bg-white group-hover:bg-slate-50" : i === 1 ? "sticky left-[120px] z-10 bg-white group-hover:bg-slate-50" : "";
                     const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
                     const isEditing = edit?.id === row.id && edit?.key === c.key;
+                    const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
                     return (
                       <td key={c.key} className={`px-3 py-2 ${sticky} ${i === 0 ? "font-medium" : ""}`} style={i === 0 ? { minWidth: 120 } : i === 1 ? { minWidth: 160 } : undefined}>
                         {isEditing ? (
@@ -167,9 +170,9 @@ export default function InstructorMasterPage() {
                         ) : (
                           <button
                             type="button"
-                            disabled={!c.editable}
-                            onClick={() => c.editable && setEdit({ id: row.id, key: c.key })}
-                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${c.editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""}`}
+                            disabled={!editable}
+                            onClick={() => editable && setEdit({ id: row.id, key: c.key })}
+                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""}`}
                             title={typeof display === "string" ? display : ""}
                           >
                             {display}

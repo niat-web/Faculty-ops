@@ -175,7 +175,9 @@ router.get("/export.csv", guard, async (req, res) => {
 router.post("/cell", guard, async (req, res) => {
   const { instructorId, key, value } = req.body || {};
   const col = (await getActiveMasterColumns()).find((c) => c.key === String(key));
-  if (!col || !col.editable) return res.status(400).json({ error: "Unknown or read-only column" });
+  if (!col) return res.status(400).json({ error: "Unknown column" });
+  // Employee ID is normally locked, but an Ops Admin (super admin) may change it.
+  if (!col.editable && col.key !== "employeeId") return res.status(400).json({ error: "Read-only column" });
   if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
   const val = value == null ? "" : String(value);
 
@@ -209,8 +211,18 @@ router.post("/cell", guard, async (req, res) => {
     return res.json({ ok: true });
   }
 
+  // Employee ID — Ops Admin only; must be non-empty and unique.
+  if (col.key === "employeeId") {
+    if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only an Ops Admin can change the Employee ID." });
+    const v = val.trim();
+    if (!v) return res.status(400).json({ error: "Employee ID can't be empty." });
+    const dup = await Instructor.findOne({ employeeId: v, _id: { $ne: inst._id } }).select("_id").lean();
+    if (dup) return res.status(409).json({ error: "Another instructor already uses that Employee ID." });
+    const old = inst.employeeId; inst.employeeId = v; await inst.save();
+    await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "FIELD_EDIT", fieldName: "Employee ID", oldValue: old, newValue: v, reason: "Master edit" });
+    return res.json({ ok: true });
+  }
   // Core string fields: name / email / campus / uid.
-  if (col.key === "employeeId") return res.status(400).json({ error: "Employee ID can't be changed." });
   let oldValue = "";
   if (col.key === "name") {
     if (!val.trim()) return res.status(400).json({ error: "Name can't be empty." });

@@ -290,6 +290,16 @@ router.post("/:id/cell", editGuard, async (req, res) => {
     writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action, fieldName, oldValue, newValue, reason: "Exited grid edit" });
 
   if (kind === "core") {
+    if (key === "employeeId") {
+      if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only an Ops Admin can change the Employee ID." });
+      const v = val.trim();
+      if (!v) return res.status(400).json({ error: "Employee ID can't be empty." });
+      const dup = await Instructor.findOne({ employeeId: v, _id: { $ne: inst._id } }).select("_id").lean();
+      if (dup) return res.status(409).json({ error: "Another instructor already uses that Employee ID." });
+      const old = inst.employeeId; inst.employeeId = v; await inst.save();
+      await audit("Employee ID", old, v);
+      return res.json({ ok: true });
+    }
     if (!CELL_CORE.has(key)) return res.status(400).json({ error: "Bad field" });
     if (key === "name") { if (!val.trim()) return res.status(400).json({ error: "Name can't be empty." }); const old = inst.name; inst.name = val.trim(); await inst.save(); await audit("Name", old, inst.name); return res.json({ ok: true }); }
     if (key === "email") { const e = normEmail(val); if (e && !EMAIL_RE.test(e)) return res.status(400).json({ error: "Invalid email." }); if (e && (await emailConflict(e, inst._id))) return res.status(409).json({ error: "Another instructor already uses this email." }); const old = inst.email || ""; inst.email = e; await inst.save(); await audit("Mail ID", old, e || ""); return res.json({ ok: true }); }

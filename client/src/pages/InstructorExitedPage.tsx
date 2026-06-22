@@ -17,6 +17,7 @@ type Filters = { department: string[]; managerId: string[]; campus: string[]; re
 const EMPTY: Filters = { department: [], managerId: [], campus: [], region: [], payroll: [], typeOfExit: [], exitPreset: "", exitFrom: "", exitTo: "" };
 type Facets = { departments: string[]; campuses: string[]; regions: string[]; payrolls: string[]; types: string[] };
 const EMPTY_FACETS: Facets = { departments: [], campuses: [], regions: [], payrolls: [], types: [] };
+const EMP_COL: Col = { label: "Employee ID", field: "employeeId", save: { kind: "core", key: "employeeId" } };
 const EXIT_PRESETS = [
   { value: "last_month", label: "Last month (30 days)" },
   { value: "past_3_months", label: "Past 3 months" },
@@ -57,6 +58,7 @@ const COLS: Col[] = [
 export default function InstructorExitedPage() {
   const { user } = useAuth();
   const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
+  const isOps = user!.role === "OPS_ADMIN"; // super admin may edit Employee ID
   const toast = useToast();
   const [q, setQ] = useState("");
   const dq = useDebouncedValue(q, 300);
@@ -171,7 +173,13 @@ export default function InstructorExitedPage() {
               {rows.map((row) => (
                 <tr key={row.id} className="group hover:bg-slate-50">
                   <td className="sticky left-0 z-10 bg-white px-3 py-2 font-mono text-xs text-slate-500 group-hover:bg-slate-50" style={{ minWidth: 120 }}>
-                    <Link to={`/app/instructors/${row.id}`} className="hover:text-brand-700 hover:underline">{row.employeeId}</Link>
+                    {isOps && edit?.id === row.id && edit?.field === "employeeId" ? (
+                      <CellEditor col={EMP_COL} cms={cms} value={String(row.employeeId || "")} onCommit={(v) => save(row, EMP_COL, v)} onCancel={() => setEdit(null)} />
+                    ) : isOps ? (
+                      <button type="button" onClick={() => setEdit({ id: row.id, field: "employeeId" })} className="block w-full truncate rounded px-1 py-0.5 text-left hover:bg-brand-50" title="Click to edit (Ops Admin)">{row.employeeId}</button>
+                    ) : (
+                      <Link to={`/app/instructors/${row.id}`} className="hover:text-brand-700 hover:underline">{row.employeeId}</Link>
+                    )}
                   </td>
                   {COLS.map((c) => {
                     const val = row[c.field] ?? "";
