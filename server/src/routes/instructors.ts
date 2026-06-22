@@ -41,6 +41,40 @@ async function emailConflict(email: string, excludeId?: any) {
   return Instructor.findOne({ email, ...(excludeId ? { _id: { $ne: excludeId } } : {}) }).select("_id").lean();
 }
 
+// Shared row shape for the instructor list + exited grid (full master-sheet field set).
+function toRow(r: any, mgrName: Record<string, string>) {
+  const v = (k: string) => (maybeDecrypt(r.values?.[k] ?? "") || "");
+  const pct = r.values?.primary_pct;
+  return {
+    id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
+    managerId: r.currentManagerId ? String(r.currentManagerId) : "",
+    managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || null : null,
+    training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
+    department: v("department"), designation: v("designation"), contribution: v("contribution"),
+    contributionRegion: v("contribution_region"), reportingManager: v("reporting_manager"), payroll: v("payroll_entity"),
+    phone: v("phone"), universityMail: v("university_mail"), doj: v("doj"), qualification: v("qualification"),
+    domain: v("domain"), gender: v("gender"), nativeLanguage: v("native_language"), access: v("access_status"),
+    cmEmployeeId: v("cm_employee_id"), remarks: v("remarks"),
+    exitDate: r.exit?.lastWorkingDay || v("exit_date"),
+    typeOfExit: r.exit?.typeOfExit || "", exitReason: r.exit?.reason || "", exitDetailedReason: r.exit?.detailedReason || "",
+  };
+}
+
+// Tolerant parser for the messy exit-date strings (dd/mm/yyyy, dd-Mon-yy, ISO, JS date strings).
+const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function parseLooseDate(s: string): Date | null {
+  if (!s) return null;
+  s = s.trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = /^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$/.exec(s);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[2] - 1, +m[1]); }
+  m = /^(\d{1,2})[\-\s]([A-Za-z]{3,})[\-\s](\d{2,4})$/.exec(s);
+  if (m) { const mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo != null) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, mo, +m[1]); } }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 // Paginated, scoped, filtered instructor list.
 router.get("/", async (req, res) => {
   const user = req.user!;
@@ -82,25 +116,87 @@ router.get("/", async (req, res) => {
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
     counts: { all: cAll, exited: cExited, active: cAll - cExited },
-    instructors: rows.map((r: any) => {
-      const v = (k: string) => (maybeDecrypt(r.values?.[k] ?? "") || "");
-      const pct = r.values?.primary_pct;
-      return {
-        id: String(r._id), employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
-        managerId: r.currentManagerId ? String(r.currentManagerId) : "",
-        managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || null : null,
-        training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
-        // Full master-sheet field set (for the Instructor Exited view + Department column).
-        department: v("department"), designation: v("designation"), contribution: v("contribution"),
-        contributionRegion: v("contribution_region"), reportingManager: v("reporting_manager"), payroll: v("payroll_entity"),
-        phone: v("phone"), universityMail: v("university_mail"), doj: v("doj"), qualification: v("qualification"),
-        domain: v("domain"), gender: v("gender"), nativeLanguage: v("native_language"), access: v("access_status"),
-        cmEmployeeId: v("cm_employee_id"), remarks: v("remarks"),
-        // Exit details. exit.lastWorkingDay is the EXIT-sheet date; values.exit_date is the MASTER column.
-        exitDate: r.exit?.lastWorkingDay || v("exit_date"),
-        typeOfExit: r.exit?.typeOfExit || "", exitReason: r.exit?.reason || "", exitDetailedReason: r.exit?.detailedReason || "",
-      };
-    }),
+    instructors: rows.map((r: any) => toRow(r, mgrName)),
+  });
+});
+
+// ─── Instructor Exited grid — exited only, full filters incl. exit-date range. ──
+// The exited set is small (~277), so exit-date filtering is done in JS (string dates are
+// inconsistent) over the DB-filtered set, then paginated in memory.
+router.get("/exited", async (req, res) => {
+  const user = req.user!;
+  const q = String(req.query.q || "").trim();
+  const department = String(req.query.department || "").trim();
+  const managerId = String(req.query.managerId || "").trim();
+  const campus = String(req.query.campus || "").trim();
+  const region = String(req.query.region || "").trim();
+  const payroll = String(req.query.payroll || "").trim();
+  const typeOfExit = String(req.query.typeOfExit || "").trim();
+  const exitPreset = String(req.query.exitPreset || "").trim(); // last_month | past_3_months | past_6_months | past_year
+  const exitFrom = String(req.query.exitFrom || "").trim();      // YYYY-MM-DD
+  const exitTo = String(req.query.exitTo || "").trim();          // YYYY-MM-DD
+  const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+  const reqPer = parseInt(String(req.query.per || ""), 10);
+  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
+
+  const filter: any = { ...instructorScopeFilter(user), status: { $in: EXIT_STATES } };
+  if (department) filter["values.department"] = department;
+  if (managerId) filter.currentManagerId = managerId;
+  if (campus) filter.campus = campus;
+  if (region) filter["values.contribution_region"] = region;
+  if (payroll) filter["values.payroll_entity"] = payroll;
+  if (typeOfExit) filter["exit.typeOfExit"] = typeOfExit;
+  if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
+
+  // Facets (from the full exited scope, so options never disappear when filtering).
+  const exitScope = { ...instructorScopeFilter(user), status: { $in: EXIT_STATES } };
+  const [all, departments, campuses, regions, payrolls, types] = await Promise.all([
+    Instructor.find(filter).sort({ employeeId: 1 }).limit(5000).lean(),
+    Instructor.distinct("values.department", exitScope),
+    Instructor.distinct("campus", exitScope),
+    Instructor.distinct("values.contribution_region", exitScope),
+    Instructor.distinct("values.payroll_entity", exitScope),
+    Instructor.distinct("exit.typeOfExit", exitScope),
+  ]);
+
+  // Exit-date window (preset or custom). `from`/`to` are inclusive day bounds.
+  let from: Date | null = null, to: Date | null = null;
+  const now = new Date();
+  if (exitPreset) {
+    const days = exitPreset === "last_month" ? 30 : exitPreset === "past_3_months" ? 90 : exitPreset === "past_6_months" ? 180 : exitPreset === "past_year" ? 365 : 0;
+    if (days) from = new Date(now.getTime() - days * 86400000);
+  }
+  if (exitFrom) { const d = parseLooseDate(exitFrom); if (d) from = d; }
+  if (exitTo) { const d = parseLooseDate(exitTo); if (d) { d.setHours(23, 59, 59, 999); to = d; } }
+
+  let filtered = all;
+  if (from || to) {
+    filtered = all.filter((r: any) => {
+      const ds = r.exit?.lastWorkingDay || (r.values?.exit_date ? maybeDecrypt(r.values.exit_date) : "");
+      const d = parseLooseDate(String(ds || ""));
+      if (!d) return false; // no parseable exit date → excluded when a date filter is active
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }
+
+  const total = filtered.length;
+  const slice = filtered.slice((page - 1) * PER, page * PER);
+  const mgrIds = [...new Set(slice.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
+  const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
+  const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
+
+  res.json({
+    total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
+    instructors: slice.map((r: any) => toRow(r, mgrName)),
+    facets: {
+      departments: (departments as string[]).filter(Boolean).sort(),
+      campuses: (campuses as string[]).filter(Boolean).sort(),
+      regions: (regions as string[]).filter(Boolean).sort(),
+      payrolls: (payrolls as string[]).filter(Boolean).sort(),
+      types: (types as string[]).filter(Boolean).sort(),
+    },
   });
 });
 
@@ -114,6 +210,53 @@ router.get("/campuses", async (req, res) => {
 router.get("/departments", async (req, res) => {
   const list = await Instructor.distinct("values.department", instructorScopeFilter(req.user!));
   res.json({ departments: (list as string[]).filter(Boolean).sort() });
+});
+
+// ─── Inline cell edit for the Instructor Exited grid (Ops/SM). Routes by `kind`. ──
+const CELL_CORE = new Set(["name", "email", "campus", "uid"]);
+const CELL_EXIT = new Set(["typeOfExit", "reason", "detailedReason", "lastWorkingDay"]);
+router.post("/:id/cell", editGuard, async (req, res) => {
+  const inst: any = await Instructor.findById(req.params.id);
+  if (!inst) return res.status(404).json({ error: "Instructor not found" });
+  const kind = String(req.body?.kind || "");
+  const key = String(req.body?.key || "");
+  const val = req.body?.value == null ? "" : String(req.body.value);
+  const audit = (fieldName: string, oldValue: string, newValue: string, action = "FIELD_EDIT") =>
+    writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action, fieldName, oldValue, newValue, reason: "Exited grid edit" });
+
+  if (kind === "core") {
+    if (!CELL_CORE.has(key)) return res.status(400).json({ error: "Bad field" });
+    if (key === "name") { if (!val.trim()) return res.status(400).json({ error: "Name can't be empty." }); const old = inst.name; inst.name = val.trim(); await inst.save(); await audit("Name", old, inst.name); return res.json({ ok: true }); }
+    if (key === "email") { const e = normEmail(val); if (e && !EMAIL_RE.test(e)) return res.status(400).json({ error: "Invalid email." }); if (e && (await emailConflict(e, inst._id))) return res.status(409).json({ error: "Another instructor already uses this email." }); const old = inst.email || ""; inst.email = e; await inst.save(); await audit("Mail ID", old, e || ""); return res.json({ ok: true }); }
+    const old = (key === "campus" ? inst.campus : inst.uid) || "";
+    inst[key] = val.trim() || null; await inst.save(); await audit(key === "campus" ? "Work Location" : "UID", old, val.trim());
+    return res.json({ ok: true });
+  }
+  if (kind === "manager") {
+    let newId: any = null, newName = "— unassigned —";
+    if (val) { const cm: any = await User.findOne({ _id: val, role: { $in: [Role.CAPABILITY_MANAGER, Role.SENIOR_MANAGER] } }).select("name").lean(); if (!cm) return res.status(400).json({ error: "Pick a valid manager." }); newId = cm._id; newName = cm.name; }
+    const oldName = inst.currentManagerId ? (await User.findById(inst.currentManagerId).select("name").lean())?.name || "" : "";
+    inst.currentManagerId = newId; await inst.save();
+    await audit("Capability Manager", oldName, newName, "MAPPING_CHANGE");
+    return res.json({ ok: true });
+  }
+  if (kind === "exit") {
+    if (!CELL_EXIT.has(key)) return res.status(400).json({ error: "Bad exit field" });
+    if (!inst.exit) inst.exit = {};
+    const old = inst.exit[key] || "";
+    inst.exit[key] = val || null; inst.markModified("exit"); await inst.save();
+    await audit(`Exit: ${key}`, old, val);
+    return res.json({ ok: true });
+  }
+  if (kind === "value") {
+    const def: any = await FieldDefinition.findOne({ key, archivedAt: null, scope: "GLOBAL" }).lean();
+    if (!def) return res.status(404).json({ error: "Unknown field" });
+    const verr = validateValue(def.type, val, { min: def.min, max: def.max, pattern: def.pattern });
+    if (verr) return res.status(400).json({ error: verr });
+    await applyFieldChange({ actor: req.user!, instructorId: String(inst._id), fieldKey: key, fieldLabel: def.label, newValue: val, reason: "Exited grid edit", sensitive: def.visibility === "SENSITIVE" });
+    return res.json({ ok: true });
+  }
+  return res.status(400).json({ error: "Bad kind" });
 });
 
 // Bulk lifecycle status change (Ops/SM).
@@ -160,6 +303,10 @@ router.get("/export.csv", async (req, res) => {
     else if (scope === "exited") baseFilter.status = { $in: EXIT_STATES };
     if (campus) baseFilter.campus = campus;
     if (managerId) baseFilter.currentManagerId = managerId;
+    if (String(req.query.department || "").trim()) baseFilter["values.department"] = String(req.query.department).trim();
+    if (String(req.query.region || "").trim()) baseFilter["values.contribution_region"] = String(req.query.region).trim();
+    if (String(req.query.payroll || "").trim()) baseFilter["values.payroll_entity"] = String(req.query.payroll).trim();
+    if (String(req.query.typeOfExit || "").trim()) baseFilter["exit.typeOfExit"] = String(req.query.typeOfExit).trim();
     if (q) { const rx = new RegExp(escapeRegex(q), "i"); baseFilter.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
     if (!isNaN(minTraining)) baseFilter.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
   }
