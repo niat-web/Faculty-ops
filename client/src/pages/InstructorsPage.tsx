@@ -226,7 +226,7 @@ export default function InstructorsPage() {
           )}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full whitespace-nowrap text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {canManage && <th className="w-10 px-5 py-3"><input type="checkbox" checked={allOnPage} onChange={(e) => { const v = e.target.checked; const next = { ...selected }; rows.forEach((i) => (next[i.id] = v)); setSelected(next); }} /></th>}
@@ -237,12 +237,12 @@ export default function InstructorsPage() {
                 <SortHeader label="Manager" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <SortHeader label="Training" k="training" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <SortHeader label="Status" k="status" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
-                {isOps && <th className="px-5 py-3 text-right">Actions</th>}
+                {isOps && <th className="sticky right-0 z-20 border-l border-slate-100 bg-slate-50 px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((i: any) => (
-                <tr key={i.id} className="hover:bg-slate-50">
+                <tr key={i.id} className="group hover:bg-slate-50">
                   {canManage && <td className="px-5 py-3"><input type="checkbox" checked={!!selected[i.id]} onChange={(e) => setSelected((s) => ({ ...s, [i.id]: e.target.checked }))} /></td>}
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{i.employeeId}</td>
                   <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline">{i.name}</Link></td>
@@ -260,7 +260,7 @@ export default function InstructorsPage() {
                     )}
                   </td>
                   {isOps && (
-                    <td className="px-5 py-3">
+                    <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-5 py-3 group-hover:bg-slate-50">
                       <div className="flex justify-end gap-1">
                         <button onClick={() => setEditing(i)} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
                         <button onClick={() => removeInstructor(i)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>

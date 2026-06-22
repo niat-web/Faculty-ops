@@ -400,7 +400,7 @@ function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
 function AuditTab({ instructorId }: { instructorId: string }) {
   const [entries, setEntries] = useState<any[] | null>(null);
   useEffect(() => { api.get(`/instructors/${instructorId}/audit`).then((r) => setEntries(r.entries)).catch(() => setEntries([])); }, [instructorId]);
-  if (!entries) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  if (!entries) return <div className="py-16" />;
   return (
     <div className="card p-6">
       <h2 className="mb-4 font-semibold">Audit trail</h2>
@@ -437,7 +437,7 @@ function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: bo
     catch (e: any) { toast.error(e.message); }
     finally { setBusy(null); }
   }
-  if (!mails) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  if (!mails) return <div className="py-16" />;
   const badge = (status?: string) => {
     if (status === "SENT") return <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Sent</span>;
     if (status === "FAILED") return <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><AlertCircle className="h-3.5 w-3.5" /> Failed</span>;
@@ -474,7 +474,7 @@ function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: bo
 function HistoryTab({ instructorId }: { instructorId: string }) {
   const [h, setH] = useState<any>(null);
   useEffect(() => { api.get(`/instructors/${instructorId}/history`).then(setH).catch(() => {}); }, [instructorId]);
-  if (!h) return <div className="flex items-center justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-brand-600" /></div>;
+  if (!h) return <div className="py-16" />;
   const stat = (label: string, n: number) => <div className="card flex flex-col p-4"><span className="text-2xl font-bold">{n}</span><span className="text-xs text-slate-500">{label}</span></div>;
   return (
     <div className="space-y-5">

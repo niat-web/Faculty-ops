@@ -1,3 +1,5 @@
+import { progress } from "./progress";
+
 // Thin fetch wrapper — always sends the session cookie, throws on non-2xx.
 export class ApiError extends Error {
   status: number;
@@ -9,15 +11,20 @@ export class ApiError extends Error {
 export const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
 async function request<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}/api${path}`, {
-    credentials: "include",
-    headers: opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
-    ...opts,
-  });
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json") ? await res.json().catch(() => ({})) : await res.text();
-  if (!res.ok) throw new ApiError((data && (data as any).error) || res.statusText, res.status);
-  return data as T;
+  progress.start();
+  try {
+    const res = await fetch(`${API_BASE}/api${path}`, {
+      credentials: "include",
+      headers: opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
+      ...opts,
+    });
+    const ct = res.headers.get("content-type") || "";
+    const data = ct.includes("application/json") ? await res.json().catch(() => ({})) : await res.text();
+    if (!res.ok) throw new ApiError((data && (data as any).error) || res.statusText, res.status);
+    return data as T;
+  } finally {
+    progress.done();
+  }
 }
 
 export const api = {

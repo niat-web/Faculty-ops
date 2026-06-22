@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2 } from "lucide-react";
 import { api } from "../api";
 import { LIFECYCLE_LABEL } from "../auth";
 
@@ -11,7 +10,7 @@ export default function PrintProfilePage() {
   const [p, setP] = useState<any>(null);
   useEffect(() => { let on = true; api.get(`/instructors/${id}`).then((r) => on && setP(r)).catch(() => {}); return () => { on = false; }; }, [id]);
   useEffect(() => { if (!p) return; const t = setTimeout(() => window.print(), 400); return () => clearTimeout(t); }, [p]);
-  if (!p) return <div className="flex min-h-screen items-center justify-center gap-3 text-slate-400"><Loader2 className="h-9 w-9 animate-spin text-brand-600" /></div>;
+  if (!p) return <div className="min-h-screen" />;
   const inst = p.instructor || {};
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
   const moduleKeys: string[] = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);

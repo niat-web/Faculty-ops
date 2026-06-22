@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { Search, GraduationCap, SlidersHorizontal, X, Download, Loader2 } from "lucide-react";
+import { Search, GraduationCap, SlidersHorizontal, X, Download } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useCachedGet } from "../hooks";
@@ -300,18 +300,12 @@ export default function TrainingPage() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr><td colSpan={2 + cols.length} className="px-5 py-16 text-center"><Loader2 className="mx-auto h-7 w-7 animate-spin text-brand-500" /></td></tr>
-            ) : (
-              <>
-                {shown.map((r) => (
-                  <TrainingRow key={r.id} r={r} cols={cols}
-                    editingColKey={edit && edit.id === r.id ? edit.colKey : null}
-                    onEdit={onEdit} onSave={onSave} onCancel={onCancel} editRef={editRef} />
-                ))}
-                {!shown.length && <tr><td colSpan={2 + cols.length} className="px-5 py-8 text-center text-slate-400">No instructors in this track.</td></tr>}
-              </>
-            )}
+            {shown.map((r) => (
+              <TrainingRow key={r.id} r={r} cols={cols}
+                editingColKey={edit && edit.id === r.id ? edit.colKey : null}
+                onEdit={onEdit} onSave={onSave} onCancel={onCancel} editRef={editRef} />
+            ))}
+            {!loading && !shown.length && <tr><td colSpan={2 + cols.length} className="px-5 py-8 text-center text-slate-400">No instructors in this track.</td></tr>}
           </tbody>
         </table>
       </div>

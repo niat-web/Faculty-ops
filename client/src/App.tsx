@@ -1,9 +1,18 @@
-import { Component, Suspense, lazy, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
+import TopProgressBar from "./components/TopProgressBar";
+import { progress } from "./progress";
+
+// Suspense fallback for lazy route chunks — drives the top bar (chunk loads aren't API calls) and
+// renders no in-page spinner.
+function RouteFallback() {
+  useEffect(() => { progress.start(); return () => { progress.done(); }; }, []);
+  return <Loading />;
+}
 // Login/Reset stay eager (entry points); everything else is code-split so each page
 // loads its own chunk on demand → much smaller initial bundle + faster first paint.
 import LoginPage from "./pages/LoginPage";
@@ -90,6 +99,8 @@ function RequireRole({ roles, children }: { roles: string[]; children: JSX.Eleme
 
 export default function App() {
   return (
+    <>
+    <TopProgressBar />
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset" element={<ResetPage />} />
@@ -100,7 +111,7 @@ export default function App() {
           <Protected>
             <AppShell>
               <ErrorBoundary>
-              <Suspense fallback={<Loading />}>
+              <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
@@ -147,5 +158,6 @@ export default function App() {
       />
       <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
+    </>
   );
 }
