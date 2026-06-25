@@ -120,7 +120,8 @@ export default function App() {
               <Routes>
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
-                <Route path="instructors" element={<RequireRole roles={STAFF}><InstructorsPage /></RequireRole>} />
+                {/* Instructors list consolidated into Instructor Master — keep the old path working. */}
+                <Route path="instructors" element={<Navigate to="/app/instructors/master" replace />} />
                 <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/exited" element={<RequireRole roles={STAFF}><InstructorExitedPage /></RequireRole>} />
                 <Route path="instructors/roles" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />

@@ -3,6 +3,13 @@ node_modules/
 uploads/
 backups/
 .env
+.env.local
+.env.*.local
+.env.development.local
+.env.production.local
 .mongo-memory/
 *.log
 .DS_Store
+.env.example
+.env.local
+server/.env

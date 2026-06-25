@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, X } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X } from "lucide-react";
+import Papa from "papaparse";
 import { api, API_BASE } from "../api";
-import { ROLE_LABEL, useAuth } from "../auth";
+import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
+import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import Loading from "../components/Loading";
 import ScrollSelect from "../components/ScrollSelect";
@@ -20,6 +23,11 @@ export default function InstructorMasterPage() {
   const { user } = useAuth();
   const isOps = user?.role === "OPS_ADMIN";
   const toast = useToast();
+  const confirm = useConfirm();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [importing, setImporting] = useState<any[] | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -79,6 +87,17 @@ export default function InstructorMasterPage() {
   function openDrawer() { setDraft(applied); setDrawer(true); }
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
   function clearAll() { setApplied(EMPTY); setDraft(EMPTY); setPage(1); }
+  function reload() { setReloadKey((k) => k + 1); }
+
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => setImporting(r.data as any[]) });
+    e.target.value = "";
+  }
+  async function removeInstructor(row: any) {
+    if (!(await confirm({ title: "Delete instructor?", message: `Delete ${row.name} (${row.employeeId})? This cannot be undone.` }))) return;
+    try { await api.del(`/instructors/${row.id}`); toast.success("Instructor deleted."); reload(); } catch (e: any) { toast.error(e.message); }
+  }
 
   async function save(row: any, col: Column, raw: string) {
     setEdit(null);
@@ -125,6 +144,9 @@ export default function InstructorMasterPage() {
           </button>
           {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
           <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</a>
+          {isOps && <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm"><Upload className="h-4 w-4" /> Import CSV</button>}
+          {isOps && <button onClick={() => setAdding(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add instructor</button>}
+          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
         </div>
       </div>
 
@@ -150,9 +172,15 @@ export default function InstructorMasterPage() {
             <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {meta.columns.map((c, i) => (
-                  <SortHeader key={c.key} label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                    className={`sticky top-0 bg-slate-50 px-3 py-3 font-semibold ${i === 0 ? "left-0 z-30" : i === 1 ? "left-[120px] z-30" : "z-20"}`} />
+                  <Fragment key={c.key}>
+                    <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
+                      className={`sticky top-0 bg-slate-50 px-3 py-3 font-semibold ${i === 0 ? "left-0 z-30" : i === 1 ? "left-[120px] z-30" : "z-20"}`} />
+                    {/* Migrated from the Instructors list: Campus + Training quick-view columns, right after Name. */}
+                    {i === 1 && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold" />}
+                    {i === 1 && <th className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
+                  </Fragment>
                 ))}
+                {isOps && <th className="sticky right-0 top-0 z-30 border-l border-slate-100 bg-slate-50 px-3 py-3 text-right font-semibold">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -163,9 +191,14 @@ export default function InstructorMasterPage() {
                     const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
                     const isEditing = edit?.id === row.id && edit?.key === c.key;
                     const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
+                    // Employee ID + Name open the instructor details view (migrated from the Instructors list).
+                    const isLink = c.key === "employeeId" || c.key === "name";
                     return (
-                      <td key={c.key} className={`px-3 py-2 ${sticky} ${i === 0 ? "font-medium" : ""}`} style={i === 0 ? { minWidth: 120 } : i === 1 ? { minWidth: 160 } : undefined}>
-                        {isEditing ? (
+                      <Fragment key={c.key}>
+                      <td className={`px-3 py-2 ${sticky} ${i === 0 ? "font-medium" : ""}`} style={i === 0 ? { minWidth: 120 } : i === 1 ? { minWidth: 160 } : undefined}>
+                        {isLink ? (
+                          <Link to={`/app/instructors/${row.id}`} className={`block max-w-[280px] truncate px-2 py-1 font-medium text-brand-700 hover:underline ${c.key === "employeeId" ? "font-mono text-xs" : ""}`} title={String(display)}>{display}</Link>
+                        ) : isEditing ? (
                           <CellEditor col={c} managers={meta.managers} value={c.source === "manager" ? (row.managerId || "") : String(row[c.key] ?? "")} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
                         ) : (
                           <button
@@ -179,17 +212,44 @@ export default function InstructorMasterPage() {
                           </button>
                         )}
                       </td>
+                      {/* Campus + Training quick-view columns (migrated from the Instructors list). */}
+                      {i === 1 && (
+                        <td className="px-3 py-2 text-slate-500">{row.campus || <span className="text-slate-300">—</span>}</td>
+                      )}
+                      {i === 1 && (
+                        <td className="px-3 py-2">
+                          {row.training == null ? <span className="text-slate-300">—</span> : (
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(row.training), 100)}%` }} /></div>
+                              <span className="text-xs text-slate-500">{row.training}%</span>
+                            </div>
+                          )}
+                        </td>
+                      )}
+                      </Fragment>
                     );
                   })}
+                  {isOps && (
+                    <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-3 py-2 text-right group-hover:bg-slate-50">
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => setEditing(row)} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
+                        <button onClick={() => removeInstructor(row)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={meta.columns.length} className="px-5 py-10 text-center text-slate-400">No instructors match these filters.</td></tr>}
+              {!rows.length && <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0)} className="px-5 py-10 text-center text-slate-400">No instructors match these filters.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
       <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
+
+      {adding && <AddInstructorModal managers={meta.managers} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
+      {editing && <EditInstructorModal inst={editing} managers={meta.managers} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
+      {importing && <ImportModal rows={importing} onClose={() => setImporting(null)} onDone={() => { setImporting(null); reload(); }} />}
 
       {/* Right-side filter drawer */}
       {drawer && (
@@ -246,5 +306,115 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
       onBlur={(e) => onCommit(e.target.value)}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }}
     />
+  );
+}
+
+// Add a new instructor — migrated from the Instructors page (POST /instructors).
+function AddInstructorModal({ managers, onClose, onDone }: { managers: { id: string; name: string }[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState({ employeeId: "", name: "", email: "", campus: "", status: "ONBOARDING", managerId: "" });
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  async function save() {
+    setBusy(true); setErr(null);
+    try { await api.post("/instructors", { ...f, managerId: f.managerId || null }); onDone(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title="Add instructor" onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div><label className="label">Employee ID</label><input className="input" value={f.employeeId} onChange={(e) => set("employeeId", e.target.value)} /></div>
+        <div><label className="label">Name</label><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} /></div>
+        <div><label className="label">Email</label><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
+        <div><label className="label">Campus</label><input className="input" value={f.campus} onChange={(e) => set("campus", e.target.value)} /></div>
+        <div><label className="label">Capability Manager</label>
+          <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => set("managerId", v)}
+            options={[{ value: "", label: "— Unassigned —" }, ...(managers || []).map((c) => ({ value: c.id, label: c.name }))]} />
+        </div>
+        <div><label className="label">Status</label><select className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Create"}</button></div>
+      </div>
+    </Modal>
+  );
+}
+
+// Edit an instructor's core fields — migrated from the Instructors page (PATCH /instructors/:id).
+function EditInstructorModal({ inst, managers, onClose, onDone }: { inst: any; managers: { id: string; name: string }[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState({ name: inst.name || "", email: inst.email || "", campus: inst.campus || "", status: inst.status || "ONBOARDING", managerId: inst.managerId || "" });
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  async function save() {
+    setBusy(true); setErr(null);
+    try { await api.patch(`/instructors/${inst.id}`, { ...f, managerId: f.managerId || null }); onDone(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <Modal title={`Edit ${inst.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div><label className="label">Employee ID</label><input className="input bg-slate-50" value={inst.employeeId} disabled /></div>
+        <div><label className="label">Name</label><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} /></div>
+        <div><label className="label">Email</label><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
+        <div><label className="label">Campus</label><input className="input" value={f.campus} onChange={(e) => set("campus", e.target.value)} /></div>
+        <div><label className="label">Capability Manager</label>
+          <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => set("managerId", v)}
+            options={[{ value: "", label: "— Unassigned —" }, ...(managers || []).map((c) => ({ value: c.id, label: c.name }))]} />
+        </div>
+        <div><label className="label">Status</label><select className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
+      </div>
+    </Modal>
+  );
+}
+
+// CSV import — migrated from the Instructors page (POST /instructors/import).
+function ImportModal({ rows, onClose, onDone }: { rows: any[]; onClose: () => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const cols = rows.length ? Object.keys(rows[0]) : [];
+  async function go() {
+    setBusy(true); setErr(null);
+    try { const r = await api.post("/instructors/import", { rows }); setResult(r); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  function downloadTemplate() {
+    const csv = Papa.unparse([{ employeeId: "EMP001", name: "Jane Doe", email: "jane@org.in", campus: "Hyderabad", status: "Onboarding", manager: "" }]);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "instructors-template.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  return (
+    <Modal title="Import instructors from CSV" onClose={onClose} wide>
+      {result ? (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Imported: {result.created} created · {result.updated} updated · {result.skipped} skipped.</div>
+          {result.errors?.length > 0 && (
+            <div className="max-h-48 overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="mb-1 font-semibold">{result.errors.length} row(s) skipped:</div>
+              <ul className="space-y-0.5">{result.errors.map((e: any, i: number) => <li key={i}>Row {e.row}: {e.error}</li>)}</ul>
+            </div>
+          )}
+          <div className="flex justify-end"><button onClick={onDone} className="btn btn-primary btn-sm">Done</button></div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">{rows.length} row(s) parsed. Matched/created by <b>employeeId</b>; a <b>manager</b> column assigns a Capability Manager by name; columns matching field labels become values.</p>
+            <button onClick={downloadTemplate} className="btn btn-ghost btn-sm shrink-0"><Download className="h-4 w-4" /> Template</button>
+          </div>
+          <div className="max-h-60 overflow-auto rounded-lg border border-slate-200">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-left text-slate-400"><tr>{cols.map((c) => <th key={c} className="px-3 py-2">{c}</th>)}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.slice(0, 8).map((r: any, i: number) => <tr key={i}>{cols.map((c) => <td key={c} className="px-3 py-1.5 text-slate-600">{String(r[c] ?? "")}</td>)}</tr>)}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > 8 && <p className="text-xs text-slate-400">…and {rows.length - 8} more.</p>}
+          <div className="flex justify-end gap-2"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={go} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Importing…" : `Import ${rows.length} row(s)`}</button></div>
+        </div>
+      )}
+    </Modal>
   );
 }

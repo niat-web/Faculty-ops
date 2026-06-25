@@ -10,7 +10,6 @@ const NAV: any[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
   { label: "Instructors", icon: Users2, roles: STAFF, children: [
-    { to: "/app/instructors", label: "Instructors", end: true },
     { to: "/app/instructors/master", label: "Instructor Master" },
     { to: "/app/instructors/exited", label: "Instructor Exited" },
     { to: "/app/instructors/roles", label: "Roles", roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
