@@ -119,9 +119,11 @@ router.get("/", guard, async (req, res) => {
 
   const valueKeys = (await getActiveMasterColumns()).filter((c) => c.source === "value").map((c) => c.key);
   const instructors = rows.map((r: any) => {
+    const pct = r.values?.primary_pct;
     const row: Record<string, any> = {
       id: String(r._id),
-      employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "",
+      employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
+      training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
       managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "",
     };
