@@ -23,6 +23,7 @@ export default function RequestsPage() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<any>(null); // request being decided/commented
+  const [activeBatch, setActiveBatch] = useState<any>(null); // batch being decided
   const [newReq, setNewReq] = useState(false); // "New request" modal
   const [hq, setHq] = useState(""); // history search
   const [hApplied, setHApplied] = useState<HFilters>(H_EMPTY);
@@ -38,6 +39,10 @@ export default function RequestsPage() {
     if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
     try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
   }
+  async function removeBatch(b: any) {
+    if (!(await confirm({ title: "Delete request?", message: `Withdraw this pending batch of ${b.items.length} change(s)? Nothing will change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
+    try { await api.del(`/requests/batch/${b.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
+  }
   // When arriving via a unique link, open exactly that request.
   useEffect(() => {
     if (!focusId || !data) return;
@@ -46,6 +51,8 @@ export default function RequestsPage() {
   }, [focusId, data]);
 
   const all: any[] = data?.requests || [];
+  const batches: any[] = data?.batches || [];
+  const pendingBatches = batches.filter((b) => b.status === "PENDING");
   const pending = all.filter((r) => r.status === "PENDING");
   const histAll = useMemo(() => all.filter((r) => r.status !== "PENDING"), [all]);
   const fieldOpts = useMemo(() => [...new Set(histAll.map((r) => r.fieldLabel).filter(Boolean))].sort(), [histAll]);
@@ -79,6 +86,47 @@ export default function RequestsPage() {
       </div>
 
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
+
+      {/* Pending batch requests (multi-field submissions from CM/SM) */}
+      {pendingBatches.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-semibold">Pending batch changes ({pendingBatches.length})</h2>
+          {pendingBatches.map((b) => {
+            const instCount = new Set(b.items.map((i: any) => i.instructorId)).size;
+            return (
+              <div key={b.id} className="card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="chip chip-necessary">pending</span>
+                      <span className="text-sm font-semibold text-slate-800">{b.items.length} change(s) · {instCount} instructor(s)</span>
+                    </div>
+                    {b.reason && <div className="mt-1 text-xs text-slate-500">Reason: {b.reason}</div>}
+                    <div className="mt-1 text-[11px] text-slate-400">Requested by {b.requesterName} · {new Date(b.createdAt).toLocaleString()}</div>
+                    <ul className="mt-2 max-h-48 space-y-1 overflow-auto border-l-2 border-slate-100 pl-3 text-xs">
+                      {b.items.map((it: any, i: number) => (
+                        <li key={i}>
+                          <Link to={`/app/instructors/${it.instructorId}`} className="font-medium text-brand-700 hover:underline">{it.instructorName}</Link>
+                          {" · "}<span className="text-slate-600">{it.fieldLabel}:</span> <span className="text-slate-400 line-through">{it.oldValue || "—"}</span> → <span className="text-slate-800">{it.newValue || "—"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {b.decidable && (
+                      <>
+                        <button onClick={() => setActiveBatch({ ...b, mode: "APPROVE" })} className="btn btn-success btn-sm"><Check className="h-4 w-4" /> Approve all</button>
+                        <button onClick={() => setActiveBatch({ ...b, mode: "REJECT" })} className="btn btn-danger btn-sm"><X className="h-4 w-4" /> Reject all</button>
+                      </>
+                    )}
+                    {b.deletable && <button onClick={() => removeBatch(b)} title="Delete request" className="btn btn-ghost btn-sm text-rose-600 hover:text-rose-700"><Trash2 className="h-4 w-4" /></button>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {/* Pending */}
       <section className="space-y-3">
@@ -158,6 +206,7 @@ export default function RequestsPage() {
       </section>
 
       {active && <DecideModal req={active} onClose={() => setActive(null)} onDone={() => { setActive(null); load(); }} />}
+      {activeBatch && <BatchDecideModal batch={activeBatch} onClose={() => setActiveBatch(null)} onDone={() => { setActiveBatch(null); load(); }} />}
       {newReq && <NewRequestModal onClose={() => setNewReq(false)} onDone={() => { setNewReq(false); load(); }} />}
 
       {/* History filter drawer */}
@@ -261,6 +310,32 @@ function NewRequestModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         </div>
       </div>
     </Modal>
+  );
+}
+
+function BatchDecideModal({ batch, onClose, onDone }: any) {
+  const [comment, setComment] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const approve = batch.mode === "APPROVE";
+  async function go() {
+    setBusy(true); setErr(null);
+    try { await api.post(`/requests/batch/${batch.id}/decide`, { decision: batch.mode, comment }); onDone(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 py-16" onMouseDown={onClose}>
+      <div className="card w-full max-w-md p-5" onMouseDown={(e) => e.stopPropagation()}>
+        <h2 className="font-semibold">{approve ? "Approve batch" : "Reject batch"}</h2>
+        <p className="mt-1 text-sm text-slate-500">{approve ? "Apply" : "Reject"} all {batch.items.length} change(s) from {batch.requesterName}.</p>
+        {err && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <textarea className="input mt-3" rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Optional note…" />
+        <div className="mt-3 flex justify-end gap-2">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button disabled={busy} onClick={go} className={`btn btn-sm disabled:opacity-50 ${approve ? "btn-success" : "btn-danger"}`}>{busy ? "Saving…" : approve ? "Approve all" : "Reject all"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

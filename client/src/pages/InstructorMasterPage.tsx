@@ -1,18 +1,20 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
+import { useBatchEdit } from "../batchEdit";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import Loading from "../components/Loading";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
+import InstructorDetailDrawer from "../components/InstructorDetailDrawer";
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
 type Meta = { columns: Column[]; managers: { id: string; name: string }[]; filters: { departments: string[]; payrolls: string[]; regions: string[]; campuses: string[] } };
@@ -22,8 +24,10 @@ const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [],
 export default function InstructorMasterPage() {
   const { user } = useAuth();
   const isOps = user?.role === "OPS_ADMIN";
+  const canBatch = user?.role === "CAPABILITY_MANAGER" || user?.role === "SENIOR_MANAGER"; // batch-submit flow (Ops edits directly)
   const toast = useToast();
   const confirm = useConfirm();
+  const batch = useBatchEdit();
   const fileRef = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -45,6 +49,33 @@ export default function InstructorMasterPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [edit, setEdit] = useState<{ id: string; key: string } | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null); // open instructor in the right-side drawer
+
+  // Multi-select (bulk) mode — checkbox column + selection toolbar (Edit for all staff; Delete Ops-only).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const pageIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleSelectAll = () => setSelected((s) => { const n = new Set(s); if (allOnPage) pageIds.forEach((id) => n.delete(id)); else pageIds.forEach((id) => n.add(id)); return n; });
+  function exitSelect() { setSelectMode(false); setSelected(new Set()); }
+  // Selecting rows + Edit → enter batch-edit mode scoped to those instructors and open the first.
+  function startBatchEdit() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    batch.start(ids);
+    setDetailId(ids[0]);
+    setSelectMode(false);
+  }
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!(await confirm({ title: `Delete ${ids.length} instructor(s)?`, message: `This permanently deletes ${ids.length} selected instructor(s). This cannot be undone.`, confirmText: "Delete", danger: true }))) return;
+    let ok = 0, fail = 0;
+    for (const id of ids) { try { await api.del(`/instructors/${id}`); ok++; } catch { fail++; } }
+    toast[fail ? "error" : "success"](`${ok} deleted${fail ? `, ${fail} failed` : ""}.`);
+    exitSelect(); reload();
+  }
 
   // Role filter (deep-linked from the Roles page): /app/instructors/master?role=OPS_ADMIN
   const [searchParams, setSearchParams] = useSearchParams();
@@ -53,6 +84,31 @@ export default function InstructorMasterPage() {
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
+
+  // Sticky header during PAGE scroll: the page (<main>) scrolls vertically while the table keeps
+  // its own horizontal scroll. CSS sticky can't pin the header to the page through an overflow-x
+  // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wrapTop = wrap.offsetTop; // table wrapper's offset within <main>'s scroll content
+      const y = scroller.scrollTop - wrapTop;
+      // Pin the header once the wrapper's top scrolls above the viewport; release at the bottom.
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      const shift = Math.max(0, Math.min(y, maxShift));
+      thead.style.transform = `translateY(${shift}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [meta, rows.length]);
 
   // Build the query string shared by the list fetch and the CSV export.
   const sort = useSort();
@@ -83,6 +139,19 @@ export default function InstructorMasterPage() {
   const pages = Math.max(1, Math.ceil(total / per));
   const managerName = useMemo(() => Object.fromEntries((meta?.managers || []).map((m) => [m.id, m.name])), [meta]);
   const activeCount = Object.values(applied).filter((a) => a.length).length;
+
+  // Display order: Name FIRST (sticky, clickable), Employee ID SECOND (not sticky, plain text).
+  // Backend column config is untouched (CSV export etc. keep their own order).
+  const displayColumns = useMemo(() => {
+    const cols = [...(meta?.columns || [])];
+    const nameIdx = cols.findIndex((c) => c.key === "name");
+    const empIdx = cols.findIndex((c) => c.key === "employeeId");
+    if (nameIdx > -1 && empIdx > -1 && empIdx < nameIdx) {
+      const [emp] = cols.splice(empIdx, 1);
+      cols.splice(cols.findIndex((c) => c.key === "name") + 1, 0, emp); // put Employee ID right after Name
+    }
+    return cols;
+  }, [meta]);
 
   function openDrawer() { setDraft(applied); setDrawer(true); }
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
@@ -121,7 +190,7 @@ export default function InstructorMasterPage() {
   if (!meta) return <Loading />;
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Instructor Master</h1>
@@ -144,6 +213,7 @@ export default function InstructorMasterPage() {
           </button>
           {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
           <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</a>
+          <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
           {isOps && <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm"><Upload className="h-4 w-4" /> Import CSV</button>}
           {isOps && <button onClick={() => setAdding(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add instructor</button>}
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
@@ -152,7 +222,19 @@ export default function InstructorMasterPage() {
 
       {err &&<div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => setReloadKey((k) => k + 1)} className="btn btn-ghost btn-sm">Retry</button></div>}
 
-      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Selection toolbar — actions depend on role (Edit for all staff; Delete Ops-only). */}
+      {selectMode && selected.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5">
+          <span className="text-sm font-medium text-brand-800">{selected.size} selected</span>
+          <div className="flex items-center gap-2">
+            {(isOps || canBatch) && <button onClick={startBatchEdit} className="btn btn-primary btn-sm"><Pencil className="h-4 w-4" /> Edit</button>}
+            {isOps && <button onClick={bulkDelete} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /> Delete</button>}
+            <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">Clear</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card flex flex-col">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <span className="text-sm font-medium text-slate-500">{total} instructor(s)</span>
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
@@ -167,37 +249,48 @@ export default function InstructorMasterPage() {
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-auto">
+        <div ref={wrapRef} className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                {meta.columns.map((c, i) => (
+                {selectMode && (
+                  <th className="z-20 bg-slate-50 px-3 py-3">
+                    <input type="checkbox" checked={allOnPage} onChange={toggleSelectAll} title="Select all on this page" className="h-4 w-4 cursor-pointer rounded border-slate-300" />
+                  </th>
+                )}
+                {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`sticky top-0 bg-slate-50 px-3 py-3 font-semibold ${i === 0 ? "left-0 z-30" : i === 1 ? "left-[120px] z-30" : "z-20"}`} />
-                    {/* Migrated from the Instructors list: Campus + Training quick-view columns, right after Name. */}
-                    {i === 1 && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold" />}
-                    {i === 1 && <th className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
+                      className={`bg-slate-50 px-3 py-3 font-semibold ${c.key === "name" ? "sticky left-0 z-30" : "z-20"}`} />
+                    {/* Campus + Training quick-view columns, right after Name. */}
+                    {c.key === "name" && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />}
+                    {c.key === "name" && <th className="z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
                   </Fragment>
                 ))}
-                {isOps && <th className="sticky right-0 top-0 z-30 border-l border-slate-100 bg-slate-50 px-3 py-3 text-right font-semibold">Actions</th>}
+                {isOps && <th className="sticky right-0 z-30 border-l border-slate-100 bg-slate-50 px-3 py-3 text-right font-semibold">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
-                <tr key={row.id} className="group hover:bg-slate-50">
-                  {meta.columns.map((c, i) => {
-                    const sticky = i === 0 ? "sticky left-0 z-10 bg-white group-hover:bg-slate-50" : i === 1 ? "sticky left-[120px] z-10 bg-white group-hover:bg-slate-50" : "";
+                <tr key={row.id} className={`group hover:bg-slate-50 ${selected.has(row.id) ? "bg-brand-50/50" : ""}`}>
+                  {selectMode && (
+                    <td className="px-3 py-2">
+                      <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" />
+                    </td>
+                  )}
+                  {displayColumns.map((c) => {
+                    // Only Name is sticky while horizontally scrolling.
+                    const sticky = c.key === "name" ? "sticky left-0 z-10 bg-white group-hover:bg-slate-50" : "";
                     const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
                     const isEditing = edit?.id === row.id && edit?.key === c.key;
                     const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
-                    // Employee ID + Name open the instructor details view (migrated from the Instructors list).
-                    const isLink = c.key === "employeeId" || c.key === "name";
+                    // Only Name opens the instructor details drawer (and is the only blue/clickable cell).
+                    const isLink = c.key === "name";
                     return (
                       <Fragment key={c.key}>
-                      <td className={`px-3 py-2 ${sticky} ${i === 0 ? "font-medium" : ""}`} style={i === 0 ? { minWidth: 120 } : i === 1 ? { minWidth: 160 } : undefined}>
+                      <td className={`px-3 py-2 ${sticky} ${c.key === "name" ? "font-medium" : ""}`} style={c.key === "name" ? { minWidth: 160 } : c.key === "employeeId" ? { minWidth: 120 } : undefined}>
                         {isLink ? (
-                          <Link to={`/app/instructors/${row.id}`} className={`block max-w-[280px] truncate px-2 py-1 font-medium text-brand-700 hover:underline ${c.key === "employeeId" ? "font-mono text-xs" : ""}`} title={String(display)}>{display}</Link>
+                          <button type="button" onClick={() => setDetailId(row.id)} className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={String(display)}>{display}</button>
                         ) : isEditing ? (
                           <CellEditor col={c} managers={meta.managers} value={c.source === "manager" ? (row.managerId || "") : String(row[c.key] ?? "")} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
                         ) : (
@@ -205,18 +298,18 @@ export default function InstructorMasterPage() {
                             type="button"
                             disabled={!editable}
                             onClick={() => editable && setEdit({ id: row.id, key: c.key })}
-                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""}`}
+                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""} ${c.key === "employeeId" ? "font-mono text-xs" : ""}`}
                             title={typeof display === "string" ? display : ""}
                           >
                             {display}
                           </button>
                         )}
                       </td>
-                      {/* Campus + Training quick-view columns (migrated from the Instructors list). */}
-                      {i === 1 && (
+                      {/* Campus + Training quick-view columns, right after Name. */}
+                      {c.key === "name" && (
                         <td className="px-3 py-2 text-slate-500">{row.campus || <span className="text-slate-300">—</span>}</td>
                       )}
-                      {i === 1 && (
+                      {c.key === "name" && (
                         <td className="px-3 py-2">
                           {row.training == null ? <span className="text-slate-300">—</span> : (
                             <div className="flex items-center gap-2">
@@ -239,13 +332,15 @@ export default function InstructorMasterPage() {
                   )}
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0)} className="px-5 py-10 text-center text-slate-400">No instructors match these filters.</td></tr>}
+              {!rows.length && <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0) + (selectMode ? 1 : 0)} className="px-5 py-10 text-center text-slate-400">No instructors match these filters.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
       <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
+
+      {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 
       {adding && <AddInstructorModal managers={meta.managers} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {editing && <EditInstructorModal inst={editing} managers={meta.managers} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}

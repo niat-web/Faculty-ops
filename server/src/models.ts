@@ -181,6 +181,33 @@ EditRequestSchema.index({ approverId: 1, status: 1 });
 EditRequestSchema.index({ requesterId: 1, status: 1 });
 
 // ---------------------------------------------------------------------------
+// EditRequestBatch — a SINGLE change request bundling many field edits (across one or
+// more instructors), raised by a CM/SM and approved/rejected as a whole by an Ops Admin.
+// Lets the requester edit any number of fields/instructors freely, then submit them all at once.
+const BatchItemSchema = new Schema(
+  {
+    instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", required: true },
+    instructorName: String,
+    fieldKey: String, fieldLabel: String, oldValue: String, newValue: String,
+  },
+  { _id: true }
+);
+const EditRequestBatchSchema = new Schema(
+  {
+    items: { type: [BatchItemSchema], default: [] },
+    reason: { type: String, default: "" },
+    status: { type: String, default: "PENDING" }, // PENDING | APPROVED | REJECTED
+    requesterId: { type: Schema.Types.ObjectId, ref: "User" }, requesterName: String, requesterRole: String,
+    approverId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    decisionComment: { type: String, default: null },
+    decidedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+EditRequestBatchSchema.index({ approverId: 1, status: 1 });
+EditRequestBatchSchema.index({ requesterId: 1, status: 1 });
+
+// ---------------------------------------------------------------------------
 const AuditLogSchema = new Schema(
   {
     instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", default: null },
@@ -276,6 +303,7 @@ const InstructorMailSchema = new Schema(
 InstructorMailSchema.index({ instructorId: 1, kind: 1, createdAt: -1 });
 
 export const EditRequest = compile("EditRequest", EditRequestSchema);
+export const EditRequestBatch = compile("EditRequestBatch", EditRequestBatchSchema);
 export const InstructorMail = compile("InstructorMail", InstructorMailSchema);
 export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);

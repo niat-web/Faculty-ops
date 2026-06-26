@@ -191,13 +191,13 @@ export default function InstructorProfilePage() {
   );
 }
 
-function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
+export function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
 
 function Field({ label, value }: { label: string; value: any }) {
   return <div className="grid grid-cols-[200px_1fr] items-center gap-3 py-2"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
 }
 
-function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
+export function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
   const [value, setValue] = useState(field.value ?? "");
   const [reason, setReason] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -244,7 +244,7 @@ function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
   );
 }
 
-function StatusModal({ current, instructorId, onClose, onDone }: any) {
+export function StatusModal({ current, instructorId, onClose, onDone }: any) {
   const [status, setStatus] = useState(current);
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -265,7 +265,7 @@ function StatusModal({ current, instructorId, onClose, onDone }: any) {
   );
 }
 
-function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
+export function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
   const toast = useToast();
   const modules = skills.moduleStatus || [];
   const tone = (s: string) => { const t = (s || "").toLowerCase(); if (t.includes("complete")) return "bg-emerald-50 text-emerald-700"; if (t.includes("progress")) return "bg-amber-50 text-amber-700"; if (t.includes("hold")) return "bg-slate-100 text-slate-600"; if (t.includes("not started")) return "bg-rose-50 text-rose-700"; return "bg-slate-100 text-slate-600"; };
@@ -295,7 +295,7 @@ function SkillsTab({ skills, instructorId, canEdit, onChange }: any) {
   );
 }
 
-function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
+export function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
   const toast = useToast();
   const [f, setF] = useState({ lastWorkingDay: exit.lastWorkingDay || "", typeOfExit: exit.typeOfExit || "", reason: exit.reason || "", detailedReason: exit.detailedReason || "" });
   const [busy, setBusy] = useState(false);
@@ -330,7 +330,7 @@ function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
   );
 }
 
-function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
+export function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
   const toast = useToast();
   const confirm = useConfirm();
   const [body, setBody] = useState("");
@@ -367,7 +367,7 @@ function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
   );
 }
 
-function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
+export function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
   const toast = useToast();
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
@@ -404,7 +404,7 @@ function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
   );
 }
 
-function AuditTab({ instructorId }: { instructorId: string }) {
+export function AuditTab({ instructorId }: { instructorId: string }) {
   const [entries, setEntries] = useState<any[] | null>(null);
   useEffect(() => { api.get(`/instructors/${instructorId}/audit`).then((r) => setEntries(r.entries)).catch(() => setEntries([])); }, [instructorId]);
   if (!entries) return <div className="py-16" />;
@@ -432,7 +432,7 @@ function AuditTab({ instructorId }: { instructorId: string }) {
 }
 
 // Lifecycle emails to the instructor — status of each + resend (honours the admin on/off toggles).
-function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: boolean }) {
+export function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: boolean }) {
   const toast = useToast();
   const [mails, setMails] = useState<any[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -478,7 +478,7 @@ function MailsTab({ instructorId, canSend }: { instructorId: string; canSend: bo
   );
 }
 
-function HistoryTab({ instructorId }: { instructorId: string }) {
+export function HistoryTab({ instructorId }: { instructorId: string }) {
   const [h, setH] = useState<any>(null);
   useEffect(() => { api.get(`/instructors/${instructorId}/history`).then(setH).catch(() => {}); }, [instructorId]);
   if (!h) return <div className="py-16" />;

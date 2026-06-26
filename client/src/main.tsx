@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./auth";
 import { ToastProvider } from "./toast";
 import { ConfirmProvider } from "./confirm";
+import { BatchEditProvider } from "./batchEdit";
 import App from "./App";
 import "./index.css";
 
@@ -13,7 +14,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <ToastProvider>
         <ConfirmProvider>
           <AuthProvider>
-            <App />
+            <BatchEditProvider>
+              <App />
+            </BatchEditProvider>
           </AuthProvider>
         </ConfirmProvider>
       </ToastProvider>

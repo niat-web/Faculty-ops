@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { EditRequest, FieldDefinition, Instructor, User } from "../models";
+import { EditRequest, EditRequestBatch, FieldDefinition, Instructor, User } from "../models";
 import { Role } from "../enums";
 import { canApproveRequests, canAccessInstructor } from "../lib/rbac";
 import { applyFieldChange, notify, writeAudit, validateValue } from "../lib/services";
@@ -34,6 +34,14 @@ router.get("/", async (req, res) => {
   else if (u.role === Role.CAPABILITY_MANAGER) q.requesterId = u.id;
   // Ops Admin sees all
   const rows = await EditRequest.find(q).sort({ createdAt: -1 }).limit(200).lean();
+
+  // Batch requests visible to the same viewer (Ops sees all; SM sees approve+own; CM sees own).
+  const bq: any = {};
+  if (status) bq.status = status;
+  if (u.role === Role.SENIOR_MANAGER) bq.$or = [{ approverId: u.id }, { requesterId: u.id }];
+  else if (u.role === Role.CAPABILITY_MANAGER) bq.requesterId = u.id;
+  const batches = await EditRequestBatch.find(bq).sort({ createdAt: -1 }).limit(200).lean();
+
   res.json({
     requests: rows.map((r: any) => ({
       id: String(r._id), instructorId: String(r.instructorId), instructorName: r.instructorName,
@@ -44,7 +52,108 @@ router.get("/", async (req, res) => {
       deletable: String(r.requesterId) === u.id && r.status === "PENDING", // requester may withdraw their own pending request
       createdAt: r.createdAt, comments: (r.comments || []).map((c: any) => ({ body: c.body, authorName: c.authorName, createdAt: c.createdAt })),
     })),
+    batches: batches.map((b: any) => ({
+      id: String(b._id), reason: b.reason, status: b.status, requesterName: b.requesterName, requesterRole: b.requesterRole,
+      decisionComment: b.decisionComment, createdAt: b.createdAt,
+      decidable: isOps || String(b.approverId) === u.id,
+      deletable: String(b.requesterId) === u.id && b.status === "PENDING",
+      items: (b.items || []).map((it: any) => ({ instructorId: String(it.instructorId), instructorName: it.instructorName, fieldLabel: it.fieldLabel, oldValue: it.oldValue, newValue: it.newValue })),
+    })),
   });
+});
+
+// Submit a BATCH of field edits (one or more instructors) as a single request → routed to an Ops Admin.
+// Used by CM/SM "multi-select / submit changes" flow. Ops Admins edit directly, so they don't use this.
+router.post("/batch", async (req, res) => {
+  const u = req.user!;
+  if (!([Role.CAPABILITY_MANAGER, Role.SENIOR_MANAGER] as string[]).includes(u.role)) return res.status(403).json({ error: "Only Capability/Senior Managers submit batch changes." });
+  const reason = String(req.body?.reason || "").trim();
+  const rawItems: any[] = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!rawItems.length) return res.status(400).json({ error: "No changes to submit." });
+  if (rawItems.length > 500) return res.status(400).json({ error: "Too many changes in one batch (max 500)." });
+
+  // Validate every item: scope on its instructor + value against the field definition.
+  const instCache = new Map<string, any>();
+  const defCache = new Map<string, any>();
+  const items: any[] = [];
+  for (const it of rawItems) {
+    const instructorId = String(it?.instructorId || "");
+    const fieldKey = String(it?.fieldKey || "");
+    if (!instructorId || !fieldKey) return res.status(400).json({ error: "Each change needs an instructor and field." });
+    if (!(await canAccessInstructor(u, instructorId))) return res.status(403).json({ error: "Out of scope for one of the selected instructors." });
+    let inst = instCache.get(instructorId);
+    if (inst === undefined) { inst = await Instructor.findById(instructorId).lean(); instCache.set(instructorId, inst); }
+    if (!inst) return res.status(404).json({ error: "Instructor not found." });
+    let def = defCache.get(fieldKey);
+    if (def === undefined) { def = await FieldDefinition.findOne({ key: fieldKey, archivedAt: null }).lean(); defCache.set(fieldKey, def); }
+    if (!def) return res.status(404).json({ error: `Unknown field: ${fieldKey}` });
+    const newValue = String(it?.newValue ?? "");
+    const verr = validateValue(def.type, newValue, { min: def.min, max: def.max, pattern: def.pattern });
+    if (verr) return res.status(400).json({ error: `${def.label} (${inst.name}): ${verr}` });
+    items.push({
+      instructorId, instructorName: inst.name, fieldKey, fieldLabel: def.label,
+      oldValue: maybeDecrypt((inst.values || {})[fieldKey]) || "", newValue,
+    });
+  }
+
+  // Route to an Ops Admin approver.
+  const approver: any = await User.findOne({ role: Role.OPS_ADMIN, active: true, _id: { $ne: u.id } }).select("_id").lean();
+  if (!approver) return res.status(400).json({ error: "No Ops Admin available to approve." });
+
+  const b: any = await EditRequestBatch.create({
+    items, reason, status: "PENDING", requesterId: u.id, requesterName: u.name, requesterRole: u.role, approverId: approver._id,
+  });
+  const link = `/app/requests`;
+  const instCount = new Set(items.map((i) => i.instructorId)).size;
+  const summary = `${items.length} change${items.length > 1 ? "s" : ""} across ${instCount} instructor${instCount > 1 ? "s" : ""}`;
+  // Notify every active Ops Admin (the assigned approver + the rest, each honouring their own toggle).
+  const ops = await User.find({ role: Role.OPS_ADMIN, active: true }).select("_id").lean();
+  await Promise.all(ops.map((o: any) => notify(String(o._id), {
+    type: "EDIT_REQUEST_SUBMITTED",
+    emailKey: String(o._id) === String(approver._id) ? "REQUEST_SUBMITTED" : "REQUEST_SUBMITTED_OPS",
+    title: `New batch change request from ${u.name}`, body: summary, link,
+  })));
+  res.json({ ok: true, id: String(b._id) });
+});
+
+// Approve / reject a whole batch (Ops Admin, or the assigned SM approver). All-or-nothing.
+router.post("/batch/:id/decide", async (req, res) => {
+  const u = req.user!;
+  const isOps = u.role === Role.OPS_ADMIN;
+  if (!canApproveRequests(u) && !isOps) return res.status(403).json({ error: "Only Senior Managers or the Super Admin can decide" });
+  const decision = String(req.body?.decision || "");
+  const comment = String(req.body?.comment || "").trim() || null;
+  const b: any = await EditRequestBatch.findById(req.params.id);
+  if (!b) return res.status(404).json({ error: "Request not found" });
+  if (!isOps && String(b.approverId) !== u.id) return res.status(403).json({ error: "Not your request to decide" });
+  if (b.status !== "PENDING") return res.status(409).json({ error: "Already decided" });
+
+  if (decision === "APPROVE") {
+    // Apply every item. Each applyFieldChange re-reads the real oldValue + writes its own audit row.
+    for (const it of b.items) {
+      try {
+        await applyFieldChange({ actor: u, instructorId: String(it.instructorId), fieldKey: it.fieldKey, fieldLabel: it.fieldLabel, oldValue: it.oldValue, newValue: it.newValue, reason: b.reason || "Batch edit" });
+      } catch (e: any) { console.error("[batch] apply failed:", it.fieldKey, e?.message); }
+    }
+    b.status = "APPROVED"; b.decisionComment = comment; b.decidedAt = new Date(); await b.save();
+    await notify(String(b.requesterId), { type: "EDIT_REQUEST_APPROVED", title: "Your batch change request was approved", body: `${b.items.length} change(s) applied${comment ? " — " + comment : ""}`, link: "/app/requests" });
+  } else if (decision === "REJECT") {
+    b.status = "REJECTED"; b.decisionComment = comment; b.decidedAt = new Date(); await b.save();
+    await notify(String(b.requesterId), { type: "EDIT_REQUEST_REJECTED", title: "Your batch change request was rejected", body: comment || "No comment provided", link: "/app/requests" });
+  } else return res.status(400).json({ error: "Bad decision" });
+  res.json({ ok: true });
+});
+
+// Withdraw (delete) a PENDING batch — requester only. Nothing was applied, so nothing to revert.
+router.delete("/batch/:id", async (req, res) => {
+  const u = req.user!;
+  const b: any = await EditRequestBatch.findById(req.params.id);
+  if (!b) return res.status(404).json({ error: "Request not found" });
+  if (String(b.requesterId) !== u.id) return res.status(403).json({ error: "You can only delete your own requests." });
+  if (b.status !== "PENDING") return res.status(409).json({ error: "Only pending requests can be deleted." });
+  if (b.approverId) await notify(String(b.approverId), { type: "EDIT_REQUEST_REJECTED", title: `${u.name} withdrew a batch change request`, body: `${b.items.length} change(s)`, link: "/app/requests", email: false });
+  await b.deleteOne();
+  res.json({ ok: true });
 });
 
 // Capability Manager submits a change request (with a mandatory proof file) → routed to their Senior Manager.

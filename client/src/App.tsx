@@ -5,6 +5,7 @@ import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
 import TopProgressBar from "./components/TopProgressBar";
+import BatchEditBar from "./components/BatchEditBar";
 import { progress } from "./progress";
 import { lazyWithReload as lazy, isChunkError, reloadOnce } from "./lazyWithReload";
 
@@ -115,6 +116,7 @@ export default function App() {
         element={
           <Protected>
             <AppShell>
+              <BatchEditBar />
               <ErrorBoundary>
               <Suspense fallback={<RouteFallback />}>
               <Routes>
