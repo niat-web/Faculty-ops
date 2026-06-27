@@ -1,7 +1,8 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { Search, GraduationCap, SlidersHorizontal, X, Download } from "lucide-react";
+import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, Check } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useCachedGet } from "../hooks";
@@ -57,6 +58,8 @@ function PredEditor({ val, onSave, onCancel }: { val: string; onSave: (v: string
 
 // Each track is its own URL so only that track's rows are fetched (smaller payload, faster load).
 export const TRACK_SLUG: Record<string, string> = { tech: "tech-stats", math_aptitude: "mathematics-aptitude-stats", english: "english-stats" };
+// Per-track icon for the segmented switcher (falls back to GraduationCap).
+const TRACK_ICON: Record<string, typeof Code2> = { tech: Code2, math_aptitude: Sigma, english: Languages };
 const SLUG_TRACK: Record<string, string> = { "tech-stats": "tech", "mathematics-aptitude-stats": "math_aptitude", "english-stats": "english" };
 const EMPTY_FILTERS = { department: "", primary_track: "", secondary_track: "", ongoing_track: "", startFrom: "", startTo: "", deadlineFrom: "", deadlineTo: "", primaryMin: "", primaryMax: "", secondaryMin: "", secondaryMax: "" };
 
@@ -262,8 +265,11 @@ export default function TrainingPage() {
   return (
     <div className="flex flex-col space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Instructors Training Stats</h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Training Stats</h1>
+          <span className="text-2xl font-light text-slate-300">·</span>
+          {/* Track is chosen here, folded into the title — no separate tab strip. */}
+          <TrackDropdown tracks={tracks} activeKey={tabKey} onSelect={goTrack} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -281,15 +287,7 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {tracks.map((t) => (
-            <button key={t.key} onClick={() => goTrack(t.key)} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${tabKey === t.key ? "bg-brand-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>
-              {t.label} <span className="opacity-70">({t.count})</span>
-            </button>
-          ))}
-        </div>
-
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
           {[["completed", "Completed"], ["progress", "In Progress"], ["hold", "On Hold"], ["notstarted", "Not Started"]].map(([k, l]) => (
             <span key={k} className="flex items-center gap-1.5"><span className={`inline-block h-3 w-3 rounded ${TONE[k]}`} /> {l}</span>
@@ -390,6 +388,89 @@ export default function TrainingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Track chooser folded into the page title — a sleek pill dropdown (icon · label · count ▾).
+function TrackDropdown({ tracks, activeKey, onSelect }: { tracks: any[]; activeKey: string; onSelect: (key: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; minWidth: number } | null>(null);
+
+  const active = tracks.find((t) => t.key === activeKey) || tracks[0];
+  const ActiveIcon = (active && TRACK_ICON[active.key]) || GraduationCap;
+
+  const place = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ left: r.left, top: r.bottom + 6, minWidth: Math.max(r.width, 240) });
+  }, []);
+
+  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const reposition = () => place();
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, place]);
+
+  if (!active) return null;
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={() => setOpen((o) => !o)}
+        className={`group flex items-center gap-2.5 rounded-xl border px-3.5 py-1.5 text-lg font-bold transition ${open ? "border-brand-300 bg-brand-50 text-brand-700 ring-2 ring-brand-100" : "border-slate-200 bg-white text-slate-800 hover:border-brand-200 hover:bg-brand-50/40"}`}
+      >
+        <ActiveIcon className="h-5 w-5 text-brand-600" />
+        <span>{active.label}</span>
+        <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-brand-100 px-2 text-xs font-bold text-brand-700">{active.count}</span>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", left: pos.left, top: pos.top, minWidth: pos.minWidth }}
+          className="z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+        >
+          {tracks.map((t) => {
+            const Icon = TRACK_ICON[t.key] || GraduationCap;
+            const isActive = t.key === activeKey;
+            return (
+              <button
+                key={t.key}
+                onClick={() => { onSelect(t.key); setOpen(false); }}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50"}`}
+              >
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-brand-100 text-brand-600" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></span>
+                <span className="flex-1 font-semibold">{t.label}</span>
+                <span className={`inline-flex h-5 min-w-[24px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${isActive ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-500"}`}>{t.count}</span>
+                {isActive && <Check className="h-4 w-4 shrink-0 text-brand-600" />}
+              </button>
+            );
+          })}
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
