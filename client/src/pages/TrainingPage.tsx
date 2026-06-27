@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { Search, GraduationCap, SlidersHorizontal, X, Download } from "lucide-react";
@@ -133,9 +133,10 @@ export default function TrainingPage() {
   const [pageSize, setPageSize] = useState(50);
   const [edit, setEdit] = useState<any>(null); // { id, colKey }
   const editRef = useRef<HTMLSelectElement | HTMLInputElement | null>(null);
-  // The header is two rows; the 2nd row must stick just below the 1st. Measure the 1st row's height.
-  const headRow1Ref = useRef<HTMLTableRowElement | null>(null);
-  const [headRow1H, setHeadRow1H] = useState(34);
+  // Page-scroll sticky header: the page (<main>) scrolls vertically while the table keeps its own
+  // horizontal scroll. We translate the <thead> down by the page's scrollTop to keep it pinned.
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const data: any[] = resp?.rows || [];
   const columns: Record<string, any[]> = resp?.columns || {};
@@ -151,13 +152,23 @@ export default function TrainingPage() {
     try { el.showPicker?.(); } catch { /* not supported — autoFocus still applies */ }
   }, [edit]);
 
-  // Keep the 2nd header row pinned exactly below the 1st (height varies with content/zoom).
-  useLayoutEffect(() => {
-    const measure = () => { if (headRow1Ref.current) setHeadRow1H(headRow1Ref.current.offsetHeight); };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [tabKey, columns, loading]);
+  // Pin the header to the PAGE during vertical scroll (table keeps its own horizontal scroll).
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const y = scroller.scrollTop - wrap.offsetTop;
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [tabKey, columns, loading, resp, page, pageSize]);
 
   const cols: any[] = columns[tabKey] || [];
   // Distinct Capability Managers (for the top filter) + per-track column option sets (for the drawer).
@@ -242,12 +253,14 @@ export default function TrainingPage() {
   if (!resp && loading) return <Loading />;
   if (err && !resp) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
 
-  const head = "sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-slate-600";
-  const frozenHead = "sticky top-0 z-30 border-b border-slate-200 bg-slate-50 text-slate-600";
+  // Vertical pinning is handled by translating the <thead> on page scroll; these classes keep the
+  // backgrounds/borders, and the frozen ID/Name headers stay horizontally sticky via `left`.
+  const head = "z-10 border-b border-slate-200 bg-slate-50 text-slate-600";
+  const frozenHead = "sticky z-30 border-b border-slate-200 bg-slate-50 text-slate-600";
   const grouped = segs.filter((s) => s.group);
 
   return (
-    <div className="flex h-full flex-col space-y-4">
+    <div className="flex flex-col space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Instructors Training Stats</h1>
@@ -284,10 +297,10 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      <div className="card min-h-0 flex-1 overflow-auto p-0">
+      <div ref={wrapRef} className="card overflow-x-auto p-0">
         <table className="border-separate border-spacing-0 text-xs">
-          <thead>
-            <tr ref={headRow1Ref}>
+          <thead ref={theadRef} className="relative z-30">
+            <tr>
               <th rowSpan={2} className={`${frozenHead} px-3 py-2 text-left font-semibold`} style={{ left: 0, width: ID_W, minWidth: ID_W }}>Employee ID</th>
               <th rowSpan={2} className={`${frozenHead} whitespace-nowrap px-3 py-2 text-left font-semibold`} style={{ left: ID_W, minWidth: NAME_W }}>Name</th>
               {segs.map((s, i) => s.group
@@ -296,7 +309,7 @@ export default function TrainingPage() {
               )}
             </tr>
             <tr>
-              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${head} whitespace-nowrap px-2 py-2 text-center font-medium`} style={{ minWidth: 110, top: headRow1H }}><div className="leading-tight">{c.label}</div></th>)}
+              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${head} whitespace-nowrap px-2 py-2 text-center font-medium`} style={{ minWidth: 110 }}><div className="leading-tight">{c.label}</div></th>)}
             </tr>
           </thead>
           <tbody>
