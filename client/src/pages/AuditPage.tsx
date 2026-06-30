@@ -67,7 +67,7 @@ export default function AuditPage() {
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
           </button>
-          {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
+          {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
           <a href={`${API_BASE}/api/audit/export.csv?${query}`} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</a>
         </div>
       </div>

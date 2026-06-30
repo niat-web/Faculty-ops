@@ -171,7 +171,7 @@ export default function InstructorsPage() {
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeFilterCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeFilterCount}</span>}
           </button>
-          {activeFilterCount > 0 && <button onClick={clearFilters} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
+          {activeFilterCount > 0 && <button onClick={clearFilters} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
           {isOps && <button onClick={() => setAdding(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add instructor</button>}
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
         </div>

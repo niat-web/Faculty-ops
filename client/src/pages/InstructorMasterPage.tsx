@@ -7,7 +7,6 @@ import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import { useBatchEdit } from "../batchEdit";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import Loading from "../components/Loading";
@@ -33,10 +32,8 @@ function filtersFromSearch(): Filters {
 export default function InstructorMasterPage() {
   const { user } = useAuth();
   const isOps = user?.role === "OPS_ADMIN";
-  const canBatch = user?.role === "CAPABILITY_MANAGER" || user?.role === "SENIOR_MANAGER"; // batch-submit flow (Ops edits directly)
   const toast = useToast();
   const confirm = useConfirm();
-  const batch = useBatchEdit();
   const fileRef = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -62,20 +59,13 @@ export default function InstructorMasterPage() {
 
   // Multi-select (bulk) mode — checkbox column + selection toolbar (Edit for all staff; Delete Ops-only).
   const [selectMode, setSelectMode] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false); // bulk-edit common-fields modal
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const pageIds = useMemo(() => rows.map((r) => r.id), [rows]);
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleSelectAll = () => setSelected((s) => { const n = new Set(s); if (allOnPage) pageIds.forEach((id) => n.delete(id)); else pageIds.forEach((id) => n.add(id)); return n; });
   function exitSelect() { setSelectMode(false); setSelected(new Set()); }
-  // Selecting rows + Edit → enter batch-edit mode scoped to those instructors and open the first.
-  function startBatchEdit() {
-    const ids = Array.from(selected);
-    if (!ids.length) return;
-    batch.start(ids);
-    setDetailId(ids[0]);
-    setSelectMode(false);
-  }
   async function bulkDelete() {
     const ids = Array.from(selected);
     if (!ids.length) return;
@@ -230,7 +220,7 @@ export default function InstructorMasterPage() {
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
           </button>
-          {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
+          {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
           <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</a>
           <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
           {isOps && <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm"><Upload className="h-4 w-4" /> Import CSV</button>}
@@ -246,7 +236,7 @@ export default function InstructorMasterPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5">
           <span className="text-sm font-medium text-brand-800">{selected.size} selected</span>
           <div className="flex items-center gap-2">
-            {(isOps || canBatch) && <button onClick={startBatchEdit} className="btn btn-primary btn-sm"><Pencil className="h-4 w-4" /> Edit</button>}
+            <button onClick={() => setBulkOpen(true)} className="btn btn-primary btn-sm"><Pencil className="h-4 w-4" /> Edit</button>
             {isOps && <button onClick={bulkDelete} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /> Delete</button>}
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">Clear</button>
           </div>
@@ -273,14 +263,14 @@ export default function InstructorMasterPage() {
             <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {selectMode && (
-                  <th className="z-20 bg-slate-50 px-3 py-3">
+                  <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] bg-slate-50 px-2 py-3">
                     <input type="checkbox" checked={allOnPage} onChange={toggleSelectAll} title="Select all on this page" className="h-4 w-4 cursor-pointer rounded border-slate-300" />
                   </th>
                 )}
                 {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`bg-slate-50 px-3 py-3 font-semibold ${c.key === "name" ? "sticky left-0 z-30" : "z-20"}`} />
+                      className={`bg-slate-50 px-3 py-3 font-semibold ${c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-30` : "z-20"}`} />
                     {/* Campus + Training quick-view columns, right after Name. */}
                     {c.key === "name" && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />}
                     {c.key === "name" && <th className="z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
@@ -293,13 +283,13 @@ export default function InstructorMasterPage() {
               {rows.map((row) => (
                 <tr key={row.id} className={`group hover:bg-slate-50 ${selected.has(row.id) ? "bg-brand-50/50" : ""}`}>
                   {selectMode && (
-                    <td className="px-3 py-2">
+                    <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-white px-2 py-2 group-hover:bg-slate-50">
                       <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" />
                     </td>
                   )}
                   {displayColumns.map((c) => {
-                    // Only Name is sticky while horizontally scrolling.
-                    const sticky = c.key === "name" ? "sticky left-0 z-10 bg-white group-hover:bg-slate-50" : "";
+                    // Only Name is sticky while horizontally scrolling (offset right of the checkbox column in multi-select).
+                    const sticky = c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 bg-white group-hover:bg-slate-50` : "";
                     const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
                     const isEditing = edit?.id === row.id && edit?.key === c.key;
                     const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
@@ -364,6 +354,15 @@ export default function InstructorMasterPage() {
       {adding && <AddInstructorModal managers={meta.managers} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {editing && <EditInstructorModal inst={editing} managers={meta.managers} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
       {importing && <ImportModal rows={importing} onClose={() => setImporting(null)} onDone={() => { setImporting(null); reload(); }} />}
+      {bulkOpen && (
+        <BulkEditModal
+          ids={Array.from(selected)}
+          columns={meta.columns}
+          managers={meta.managers}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => { setBulkOpen(false); exitSelect(); reload(); }}
+        />
+      )}
 
       {/* Right-side filter drawer */}
       {drawer && (
@@ -531,4 +530,79 @@ function ImportModal({ rows, onClose, onDone }: { rows: any[]; onClose: () => vo
       )}
     </Modal>
   );
+}
+
+// Identity / contact columns are per-person and never make sense to set in bulk (kept in sync with the
+// server's BULK_DENY). Everything else editable (Work Location, Contribution, Department, Capability
+// Manager, Payroll, Role, …) can be applied to all selected instructors at once.
+const BULK_DENY = new Set(["employeeId", "name", "email", "uid", "phone", "university_mail"]);
+
+// Bulk-edit common fields across all selected instructors (POST /master/bulk).
+// Only the fields the user ticks are sent — the rest are left untouched on every instructor.
+function BulkEditModal({ ids, columns, managers, onClose, onDone }: { ids: string[]; columns: Column[]; managers: { id: string; name: string }[]; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const editable = useMemo(() => columns.filter((c) => c.editable && !BULK_DENY.has(c.key)), [columns]);
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (k: string) => setEnabled((p) => ({ ...p, [k]: !p[k] }));
+  const setVal = (k: string, v: string) => setValues((p) => ({ ...p, [k]: v }));
+  const chosen = editable.filter((c) => enabled[c.key]);
+
+  async function apply() {
+    const changes = chosen.map((c) => ({ key: c.key, value: values[c.key] ?? "" }));
+    if (!changes.length) { setErr("Pick at least one field to update."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.post("/master/bulk", { ids, changes });
+      toast.success(`Updated ${r.fields} field(s) on ${r.updated} instructor(s)${r.failed ? `, ${r.failed} failed` : ""}.`);
+      onDone();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title={`Bulk edit ${ids.length} instructor(s)`} onClose={onClose} wide>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <p className="text-sm text-slate-500">Tick the common fields to change and set a new value. Each ticked field is applied to <b>all {ids.length}</b> selected instructor(s); identity fields (Name, Employee ID, Mail, Phone) aren't bulk-editable. A blank value clears that field.</p>
+        <div className="max-h-[55vh] space-y-1.5 overflow-y-auto pr-1">
+          {editable.map((c) => {
+            const on = !!enabled[c.key];
+            return (
+              <div key={c.key} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${on ? "border-brand-300 bg-brand-50/40" : "border-slate-200"}`}>
+                <label className="flex w-52 shrink-0 cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                  <input type="checkbox" checked={on} onChange={() => toggle(c.key)} className="h-4 w-4 cursor-pointer rounded border-slate-300" />
+                  {c.label}
+                </label>
+                <div className="flex-1">
+                  {on ? <BulkValueInput col={c} managers={managers} value={values[c.key] ?? ""} onChange={(v) => setVal(c.key, v)} /> : <span className="text-xs text-slate-400">— unchanged —</span>}
+                </div>
+              </div>
+            );
+          })}
+          {!editable.length && <p className="text-sm text-slate-400">No bulk-editable fields are configured.</p>}
+        </div>
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-xs text-slate-500">{chosen.length} field(s) selected</span>
+          <div className="flex gap-2"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy || !chosen.length} onClick={apply} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Applying…" : `Apply to ${ids.length}`}</button></div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Type-aware value input for one bulk field (manager picker / dropdown / date / number / text).
+function BulkValueInput({ col, managers, value, onChange }: { col: Column; managers: { id: string; name: string }[]; value: string; onChange: (v: string) => void }) {
+  if (col.source === "manager") {
+    return <ScrollSelect value={value} placeholder="— Unassigned —" onChange={onChange}
+      options={[{ value: "", label: "— Unassigned —" }, ...managers.map((m) => ({ value: m.id, label: m.name }))]} />;
+  }
+  if (col.type === "DROPDOWN") {
+    const opts = col.options || [];
+    return <ScrollSelect value={value} placeholder="— select —" onChange={onChange}
+      options={[{ value: "", label: "— select —" }, ...opts.map((o) => ({ value: o, label: o }))]} />;
+  }
+  return <input className="input h-9 text-sm" type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"} value={value} onChange={(e) => onChange(e.target.value)} placeholder="New value…" />;
 }

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 import Logo from "./Logo";
@@ -36,6 +36,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // Sidebar collapse (icons-only) — persisted so it survives reloads.
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar-collapsed") === "1");
+  useEffect(() => { localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0"); }, [collapsed]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,17 +76,39 @@ export default function AppShell({ children }: { children: ReactNode }) {
   return (
     // Full-height shell: the sidebar stays fixed; only <main> scrolls.
     <div className="flex h-screen overflow-hidden">
-      <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4">
-        <Link to="/app" className="mb-6 flex items-center gap-2 px-2">
-          <Logo size={38} className="shrink-0 drop-shadow-sm" />
-          <span><span className="block text-sm font-bold leading-tight">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
-        </Link>
+      <aside className={`flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white py-4 transition-all duration-200 ${collapsed ? "w-16 px-2" : "w-60 px-3"}`}>
+        {collapsed ? (
+          <div className="mb-6 flex flex-col items-center gap-3">
+            <button onClick={() => setCollapsed(false)} title="Expand sidebar" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+              <PanelLeftOpen className="h-5 w-5" />
+            </button>
+            <Link to="/app" title="FacultyOps"><Logo size={32} className="shrink-0 drop-shadow-sm" /></Link>
+          </div>
+        ) : (
+          <div className="mb-6 flex items-center justify-between gap-2 px-2">
+            <Link to="/app" className="flex items-center gap-2 overflow-hidden">
+              <Logo size={38} className="shrink-0 drop-shadow-sm" />
+              <span><span className="block text-sm font-bold leading-tight">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
+            </Link>
+            <button onClick={() => setCollapsed(true)} title="Collapse sidebar" className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+              <PanelLeftClose className="h-5 w-5" />
+            </button>
+          </div>
+        )}
         <nav className="flex-1 space-y-1 overflow-y-auto">
           {items.map((n) => {
             if (n.children) {
               const children = n.children.filter((c: any) => !c.roles || c.roles.includes(user.role));
               const childActive = children.some((c: any) => location.pathname.startsWith(c.to));
               const open = openGroups[n.label] ?? childActive; // auto-open when a child is active
+              // Collapsed: a single icon button that expands the sidebar and opens this group.
+              if (collapsed) {
+                return (
+                  <button key={n.label} onClick={() => { setCollapsed(false); setOpenGroups((g) => ({ ...g, [n.label]: true })); }} title={n.label} className={`nav-link w-full justify-center px-0 ${childActive ? "nav-link-active" : ""}`}>
+                    <n.icon className="h-5 w-5" />
+                  </button>
+                );
+              }
               return (
                 <div key={n.label}>
                   <button onClick={() => setOpenGroups((g) => ({ ...g, [n.label]: !open }))} className={`nav-link w-full text-left ${childActive ? "nav-link-active" : ""}`}>
@@ -101,8 +126,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
               );
             }
             return (
-              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}>
-                <n.icon className="h-4 w-4" /> <span className="flex-1">{n.label}</span>
+              <NavLink key={n.to} to={n.to} end={n.end} title={collapsed ? n.label : undefined} className={({ isActive }) => `nav-link ${collapsed ? "justify-center px-0" : ""} ${isActive ? "nav-link-active" : ""}`}>
+                <n.icon className="h-4 w-4 shrink-0" /> {!collapsed && <span className="flex-1">{n.label}</span>}
               </NavLink>
             );
           })}
@@ -110,13 +135,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         {/* Profile row → opens a popup menu to the right with Edit profile / Notifications / Logout */}
         <div ref={menuRef} className="relative mt-4 border-t border-slate-100 pt-3">
-          <button onClick={() => setMenuOpen((o) => !o)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100">
-            <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">
+          <button onClick={() => setMenuOpen((o) => !o)} title={collapsed ? user.name : undefined} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100 ${collapsed ? "justify-center" : ""}`}>
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-100 font-bold text-brand-700">
               {user.name.charAt(0)}
               {unread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500" />}
             </span>
-            <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{user.name}</div><div className="text-[11px] text-slate-400">{ROLE_LABEL[user.role]}</div></div>
-            <ChevronRight className={`h-4 w-4 text-slate-400 transition ${menuOpen ? "rotate-90" : ""}`} />
+            {!collapsed && <>
+              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{user.name}</div><div className="text-[11px] text-slate-400">{ROLE_LABEL[user.role]}</div></div>
+              <ChevronRight className={`h-4 w-4 text-slate-400 transition ${menuOpen ? "rotate-90" : ""}`} />
+            </>}
           </button>
 
           {menuOpen && (

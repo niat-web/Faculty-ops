@@ -256,6 +256,70 @@ router.post("/cell", guard, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Bulk edit: set common fields across many selected instructors at once ──
+// Identity / contact columns are intentionally NOT bulk-editable (these are per-person and would be
+// nonsensical to set in bulk). Everything else editable is allowed (Work Location, Contribution, Dept,
+// Capability Manager, Payroll, Role, …). Applies directly with audit — same mechanism as inline cell edits.
+const BULK_DENY = new Set(["employeeId", "name", "email", "uid", "phone", "university_mail"]);
+
+async function applyBulkCell(user: any, col: any, instructorId: string, val: string) {
+  if (col.source === "value") {
+    await applyFieldChange({ actor: user, instructorId, fieldKey: col.key, fieldLabel: col.label, newValue: val, reason: "Bulk edit" });
+    return;
+  }
+  const inst: any = await Instructor.findById(instructorId);
+  if (!inst) throw Object.assign(new Error("Instructor not found"), { status: 404 });
+  if (col.source === "manager") {
+    let newId: any = null, newName = "— unassigned —";
+    if (val) { const cm: any = await User.findById(val).select("name").lean(); if (cm) { newId = cm._id; newName = cm.name; } }
+    const oldName = inst.currentManagerId ? (await User.findById(inst.currentManagerId).select("name").lean())?.name || "" : "";
+    inst.currentManagerId = newId; await inst.save();
+    await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: user.id, actorName: user.name, actorRole: user.role, action: "MAPPING_CHANGE", fieldName: "Capability Manager", oldValue: oldName, newValue: newName, reason: "Bulk edit" });
+    return;
+  }
+  if (col.key === "campus") {
+    const oldValue = inst.campus || ""; inst.campus = val.trim() || null; await inst.save();
+    await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: user.id, actorName: user.name, actorRole: user.role, action: "FIELD_EDIT", fieldName: col.label, oldValue, newValue: val, reason: "Bulk edit" });
+    return;
+  }
+  throw Object.assign(new Error(`Unsupported bulk column: ${col.label}`), { status: 400 });
+}
+
+router.post("/bulk", guard, async (req, res) => {
+  const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  const changes: { key: string; value: string }[] = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  if (!ids.length) return res.status(400).json({ error: "No instructors selected." });
+  if (!changes.length) return res.status(400).json({ error: "Pick at least one field to update." });
+
+  const cols = await getActiveMasterColumns();
+  // Validate every requested column up front so a bad field fails fast (before touching any instructor).
+  const ops: { col: any; value: string }[] = [];
+  for (const ch of changes) {
+    const col = cols.find((c) => c.key === String(ch.key));
+    if (!col) return res.status(400).json({ error: `Unknown column: ${ch.key}` });
+    if (!col.editable || BULK_DENY.has(col.key)) return res.status(400).json({ error: `“${col.label}” can't be bulk-edited.` });
+    const val = ch.value == null ? "" : String(ch.value);
+    if (col.type === "DATE" || col.type === "NUMBER") { const verr = validateValue(col.type, val); if (verr) return res.status(400).json({ error: `${col.label}: ${verr}` }); }
+    if (col.source === "manager" && val) {
+      const cm: any = await User.findOne({ _id: val, role: Role.CAPABILITY_MANAGER, active: true }).select("_id").lean();
+      if (!cm) return res.status(400).json({ error: "Pick an active Capability Manager." });
+    }
+    ops.push({ col, value: val });
+  }
+  await ensureMasterFields();
+
+  let updated = 0;
+  const errors: { id: string; error: string }[] = [];
+  for (const id of ids) {
+    if (!(await canAccessInstructor(req.user!, id))) { errors.push({ id, error: "Out of scope" }); continue; }
+    try {
+      for (const { col, value } of ops) await applyBulkCell(req.user!, col, id, value);
+      updated++;
+    } catch (e: any) { errors.push({ id, error: e?.message || "Failed" }); }
+  }
+  res.json({ ok: true, updated, failed: errors.length, fields: ops.length, errors: errors.slice(0, 20) });
+});
+
 // ─── Admin: manage Instructor Master columns (Ops only) ────────────────────
 const colAudit = (req: any, action: string, name: string, val = "") =>
   writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action, fieldName: name, newValue: val, reason: "Master column" });

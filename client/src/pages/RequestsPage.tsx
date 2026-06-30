@@ -178,7 +178,7 @@ export default function RequestsPage() {
               <SlidersHorizontal className="h-4 w-4" /> Filters
               {hActive > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{hActive}</span>}
             </button>
-            {hActive > 0 && <button onClick={clearHFilters} className="text-sm font-medium text-slate-500 hover:text-rose-600">Clear filters</button>}
+            {hActive > 0 && <button onClick={clearHFilters} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
             <button onClick={exportHistory} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</button>
           </div>
         </div>
