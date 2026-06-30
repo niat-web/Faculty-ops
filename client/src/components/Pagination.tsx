@@ -1,4 +1,4 @@
-export const PER_OPTIONS = [50, 100, 200, 500];
+export const PER_OPTIONS = [50, 100, 200, 500, 1000];
 
 // Standard list footer: page-size dropdown on the left, page nav on the right.
 export default function Pagination({ page, pages, per, total, onPage, onPer }: {
@@ -9,7 +9,7 @@ export default function Pagination({ page, pages, per, total, onPage, onPer }: {
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
       <div className="flex items-center gap-2">
         <select value={per} onChange={(e) => onPer(Number(e.target.value))} className="input h-8 w-28 py-1 text-xs">
-          {PER_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
+          {PER_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
         {total != null && <span className="text-xs">{total} total</span>}
       </div>

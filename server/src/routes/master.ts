@@ -93,7 +93,7 @@ router.get("/", guard, async (req, res) => {
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
-  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
+  const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
 
   // base = everything except the lifecycle/scope condition (used for the bucket counts).
   const base: any = { ...instructorScopeFilter(req.user!) };

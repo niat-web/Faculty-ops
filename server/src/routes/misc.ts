@@ -85,7 +85,7 @@ router.get("/audit", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
-  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
+  const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
   const filter = await buildAuditFilter(req);
   const [total, rows] = await Promise.all([
     AuditLog.countDocuments(filter),

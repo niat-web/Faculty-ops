@@ -101,7 +101,7 @@ router.get("/", async (req, res) => {
   const minTraining = parseInt(String(req.query.minTraining || ""), 10);
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
-  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
+  const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
 
   // Scope-independent base (everything except the status/scope condition) — used for the bucket counts.
   const scope = String(req.query.scope || "").trim();
@@ -155,7 +155,7 @@ router.get("/exited", async (req, res) => {
   const exitTo = String(req.query.exitTo || "").trim();          // YYYY-MM-DD
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
-  const PER = [50, 100, 200, 500].includes(reqPer) ? reqPer : 50;
+  const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
 
   const filter: any = { ...instructorScopeFilter(user), status: { $in: EXIT_STATES } };
   if (department.length) filter["values.department"] = inOrEq(department);
