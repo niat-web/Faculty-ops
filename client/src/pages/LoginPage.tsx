@@ -22,11 +22,13 @@ export default function LoginPage() {
   const [needs2fa, setNeeds2fa] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [googleOn, setGoogleOn] = useState(false);
+  // Optimistic: show the Google button immediately (cached / default on) so it doesn't pop in
+  // after the async status check. The check below only flips it OFF if Google is unconfigured.
+  const [googleOn, setGoogleOn] = useState(() => localStorage.getItem("fo_google") !== "0");
   const [params] = useSearchParams();
 
   useEffect(() => {
-    api.get("/auth/google/status").then((r) => setGoogleOn(r.enabled)).catch(() => {});
+    api.get("/auth/google/status").then((r) => { setGoogleOn(r.enabled); localStorage.setItem("fo_google", r.enabled ? "1" : "0"); }).catch(() => {});
     const e = params.get("error"); if (e) setErr(GOOGLE_ERR[e] || "Sign-in failed.");
   }, []);
 
