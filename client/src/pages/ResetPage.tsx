@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import Logo from "../components/Logo";
 
 export default function ResetPage() {
   const [params] = useSearchParams();
@@ -25,7 +26,14 @@ export default function ResetPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="relative min-h-screen bg-slate-50">
+      {/* Brand — pinned to the top-left of the page */}
+      <div className="absolute left-6 top-6 z-10 flex items-center gap-2">
+        <Logo size={40} className="shrink-0" />
+        <span><span className="block text-lg font-bold leading-tight text-slate-900">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
+      </div>
+
+      <div className="flex min-h-screen items-center justify-center px-6 py-24">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-bold">{setup ? "Set your password" : "Reset password"}</h1>
         {done ? (
@@ -45,6 +53,7 @@ export default function ResetPage() {
           </form>
         )}
         <p className="mt-6 text-center text-sm text-slate-500"><Link to="/login" className="text-brand-600 hover:underline">Back to sign in</Link></p>
+      </div>
       </div>
     </div>
   );
