@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import Logo from "../components/Logo";
@@ -13,6 +14,8 @@ export default function ResetPage() {
   const linkEmail = params.get("email") || ""; // present on set-password links → enables auto sign-in
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -71,8 +74,18 @@ export default function ResetPage() {
           <div className="mt-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">This link is invalid or has already been used — set-password links work only once. <Link to="/reset" className="font-medium underline">Request a new link</Link>.</div>
         ) : token ? (
           <form onSubmit={setPw} className="mt-6 space-y-4">
-            <div><label className="label">New password</label><input className="input" type="password" minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus /></div>
-            <div><label className="label">Confirm password</label><input className="input" type="password" minLength={8} placeholder="Re-enter your password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required /></div>
+            <div><label className="label">New password</label>
+              <div className="relative">
+                <input className="input pr-10" type={showPw ? "text" : "password"} minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
+                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+            </div>
+            <div><label className="label">Confirm password</label>
+              <div className="relative">
+                <input className="input pr-10" type={showConfirm ? "text" : "password"} minLength={8} placeholder="Re-enter your password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+                <button type="button" onClick={() => setShowConfirm((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+              </div>
+            </div>
             {err && <p className="text-sm text-rose-600">{err}</p>}
             <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Saving…" : "Save password"}</button>
           </form>
