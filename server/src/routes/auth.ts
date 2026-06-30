@@ -175,6 +175,15 @@ router.post("/forgot", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Check whether a reset/set-password token is still valid — WITHOUT consuming it.
+// Lets the page show an "expired / already used" state on load instead of the form.
+router.get("/reset/check", async (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) return res.json({ valid: false });
+  const user = await User.findOne({ resetTokenHash: hashResetToken(token), resetTokenExp: { $gt: new Date() } }).select("_id").lean();
+  res.json({ valid: !!user });
+});
+
 // Complete a password set/reset using the emailed token.
 router.post("/reset", async (req, res) => {
   const token = String(req.body?.token || "");

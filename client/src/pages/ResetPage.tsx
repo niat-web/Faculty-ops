@@ -1,22 +1,49 @@
-import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import Logo from "../components/Logo";
 
 export default function ResetPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const { login } = useAuth();
   const token = params.get("token") || "";
   const setup = params.get("setup") === "1";
+  const linkEmail = params.get("email") || ""; // present on set-password links → enables auto sign-in
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState("");
+  // Validate the link on load so a used/expired one shows a message instead of the form.
+  const [tokenState, setTokenState] = useState<"checking" | "valid" | "invalid">(token ? "checking" : "valid");
+
+  useEffect(() => {
+    if (!token) return;
+    api.get(`/auth/reset/check?token=${encodeURIComponent(token)}`)
+      .then((r) => setTokenState(r.valid ? "valid" : "invalid"))
+      .catch(() => setTokenState("invalid"));
+  }, [token]);
 
   async function setPw(e: React.FormEvent) {
     e.preventDefault(); setErr(null);
-    try { await api.post("/auth/reset", { token, password }); setDone(true); }
-    catch (e: any) { setErr(e.message); }
+    if (password !== confirm) { setErr("Passwords do not match."); return; }
+    setBusy(true);
+    try {
+      await api.post("/auth/reset", { token, password });
+      // Password is set — sign the user straight in and drop them on the dashboard.
+      if (linkEmail) {
+        try {
+          const r = await login(linkEmail, password);
+          if (!r.twoFactorRequired) { navigate("/app"); return; } // 2FA users finish on /login
+        } catch { /* fall back to manual sign-in below */ }
+      }
+      setDone(true);
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
   }
   async function forgot(e: React.FormEvent) {
     e.preventDefault(); setErr(null);
@@ -38,11 +65,16 @@ export default function ResetPage() {
         <h1 className="text-2xl font-bold">{setup ? "Set your password" : "Reset password"}</h1>
         {done ? (
           <div className="mt-6 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Password set. <Link to="/login" className="font-medium underline">Sign in</Link>.</div>
+        ) : token && tokenState === "checking" ? (
+          <p className="mt-6 text-sm text-slate-500">Checking your link…</p>
+        ) : token && tokenState === "invalid" ? (
+          <div className="mt-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">This link is invalid or has already been used — set-password links work only once. <Link to="/reset" className="font-medium underline">Request a new link</Link>.</div>
         ) : token ? (
           <form onSubmit={setPw} className="mt-6 space-y-4">
-            <div><label className="label">New password</label><input className="input" type="password" minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+            <div><label className="label">New password</label><input className="input" type="password" minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus /></div>
+            <div><label className="label">Confirm password</label><input className="input" type="password" minLength={8} placeholder="Re-enter your password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required /></div>
             {err && <p className="text-sm text-rose-600">{err}</p>}
-            <button className="btn btn-primary w-full">Save password</button>
+            <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Saving…" : "Save password"}</button>
           </form>
         ) : sent ? (
           <div className="mt-6 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">If that email exists, a reset link has been sent (valid 1 hour).</div>
