@@ -227,7 +227,7 @@ export default function OrgPage() {
                     {expanded && cms.length > 0 && (
                       <div className="flex flex-col gap-3">
                         {cms.map((cm) => (
-                          <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(`/app/instructors?managerId=${cm.id}`)}
+                          <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(`/app/instructors/master?managerId=${cm.id}`)}
                             className="group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
                             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>

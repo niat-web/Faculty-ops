@@ -1,5 +1,5 @@
 import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
@@ -95,6 +95,13 @@ function BlockedScreen({ message, onLogout }: { message: string; onLogout: () =>
   );
 }
 
+// Redirect the legacy /app/instructors path to the master grid, KEEPING the query string so
+// deep-links like ?managerId=… (org chart, mapping) and ?campus=… (dashboard) still apply their filter.
+function RedirectToMaster() {
+  const { search } = useLocation();
+  return <Navigate to={`/app/instructors/master${search}`} replace />;
+}
+
 // Route-level role gate — matches the sidebar's visibility so direct-URL navigation can't reach pages a role shouldn't see.
 const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 function RequireRole({ roles, children }: { roles: string[]; children: JSX.Element }) {
@@ -122,8 +129,9 @@ export default function App() {
               <Routes>
                 <Route index element={<DashboardPage />} />
                 <Route path="my-stats" element={<RequireRole roles={["INSTRUCTOR"]}><MyStatsPage /></RequireRole>} />
-                {/* Instructors list consolidated into Instructor Master — keep the old path working. */}
-                <Route path="instructors" element={<Navigate to="/app/instructors/master" replace />} />
+                {/* Instructors list consolidated into Instructor Master — keep the old path working.
+                    Preserve the query string so deep-links (?managerId / ?campus / …) still filter. */}
+                <Route path="instructors" element={<RedirectToMaster />} />
                 <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/exited" element={<RequireRole roles={STAFF}><InstructorExitedPage /></RequireRole>} />
                 <Route path="instructors/roles" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />

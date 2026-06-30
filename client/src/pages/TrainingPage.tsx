@@ -437,11 +437,11 @@ function TrackDropdown({ tracks, activeKey, onSelect }: { tracks: any[]; activeK
       <button
         ref={triggerRef}
         onClick={() => setOpen((o) => !o)}
-        className={`group flex items-center gap-2.5 rounded-xl border px-3.5 py-1.5 text-lg font-bold transition ${open ? "border-brand-300 bg-brand-50 text-brand-700 ring-2 ring-brand-100" : "border-slate-200 bg-white text-slate-800 hover:border-brand-200 hover:bg-brand-50/40"}`}
+        className={`group flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${open ? "border-brand-300 bg-brand-50 text-brand-700 ring-2 ring-brand-100" : "border-slate-300 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50/40"}`}
       >
-        <ActiveIcon className="h-5 w-5 text-brand-600" />
+        <ActiveIcon className="h-4 w-4 text-brand-600" />
         <span>{active.label}</span>
-        <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-brand-100 px-2 text-xs font-bold text-brand-700">{active.count}</span>
+        <span className="inline-flex h-5 min-w-[22px] items-center justify-center rounded-full bg-brand-100 px-1.5 text-[11px] font-bold text-brand-700">{active.count}</span>
         <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -449,7 +449,7 @@ function TrackDropdown({ tracks, activeKey, onSelect }: { tracks: any[]; activeK
         <div
           ref={menuRef}
           style={{ position: "fixed", left: pos.left, top: pos.top, minWidth: pos.minWidth }}
-          className="z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+          className="z-[60] overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
         >
           {tracks.map((t) => {
             const Icon = TRACK_ICON[t.key] || GraduationCap;
@@ -458,11 +458,11 @@ function TrackDropdown({ tracks, activeKey, onSelect }: { tracks: any[]; activeK
               <button
                 key={t.key}
                 onClick={() => { onSelect(t.key); setOpen(false); }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50"}`}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition ${isActive ? "bg-brand-50 text-brand-700" : "text-slate-700 hover:bg-slate-50"}`}
               >
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-brand-100 text-brand-600" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></span>
-                <span className="flex-1 font-semibold">{t.label}</span>
-                <span className={`inline-flex h-5 min-w-[24px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${isActive ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-500"}`}>{t.count}</span>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-brand-100 text-brand-600" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></span>
+                <span className="flex-1 font-medium">{t.label}</span>
+                <span className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${isActive ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-500"}`}>{t.count}</span>
                 {isActive && <Check className="h-4 w-4 shrink-0 text-brand-600" />}
               </button>
             );
