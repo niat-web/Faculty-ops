@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
 import { ROLE_LABEL } from "../auth";
@@ -53,6 +53,10 @@ export default function UsersPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const sort = useSort();
+  // Page-scroll sticky header: the page (<main>) scrolls vertically while the table keeps its own
+  // horizontal scroll. We translate the <thead> down by the page's scrollTop to keep it pinned.
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   function load() { setReloadKey((k) => k + 1); }
   useEffect(() => {
     const ac = new AbortController();
@@ -66,6 +70,24 @@ export default function UsersPage() {
     api.get(`/users?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
   }, [dq, applied, page, per, reloadKey, sort.sort, sort.dir]);
+
+  // Pin the header to the PAGE during vertical scroll (table keeps its own horizontal scroll).
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const y = scroller.scrollTop - wrap.offsetTop;
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [data]);
 
   const activeCount = Object.values(applied).filter(Boolean).length;
   function openDrawer() { setDraft(applied); setDrawer(true); }
@@ -88,7 +110,7 @@ export default function UsersPage() {
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
 
   return (
-    <div className="flex h-full flex-col space-y-5">
+    <div className="flex flex-col space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Users <span className="text-base font-medium text-slate-400">· {data?.total ?? "…"}</span></h1>
         <div className="flex flex-wrap items-center gap-2">
@@ -109,10 +131,10 @@ export default function UsersPage() {
       {msg && <div className={`card px-4 py-2 text-sm ${msg.ok ? "border-brand-200 bg-brand-50 text-brand-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
-      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-auto">
+      <div className="card overflow-hidden">
+        <div ref={wrapRef} className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:sticky [&_th]:top-0 [&_th]:z-20 [&_th]:bg-slate-50">
+            <thead ref={theadRef} className="relative z-20 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:bg-slate-50">
               <tr>
                 <SortHeader label="Name" k="name" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <SortHeader label="Email" k="email" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
