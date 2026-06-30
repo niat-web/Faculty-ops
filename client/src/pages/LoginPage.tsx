@@ -45,12 +45,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-2">
-          <Logo size={44} className="shrink-0 drop-shadow-sm" />
-          <span><span className="block text-lg font-bold leading-tight">FacultyOps</span><span className="block text-xs uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
-        </div>
+    <div className="relative min-h-screen bg-slate-50">
+      {/* Brand — pinned to the top-left of the page */}
+      <div className="absolute left-6 top-6 z-10 flex items-center gap-2">
+        <Logo size={40} className="shrink-0" />
+        <span><span className="block text-lg font-bold leading-tight text-slate-900">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
+      </div>
+
+      {/* Sign-in form — centered in the page */}
+      <div className="flex min-h-screen items-center justify-center px-6 py-24">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-bold">Sign in</h1>
         <p className="mt-1 text-sm text-slate-500">Welcome back — sign in to continue.</p>
         <form onSubmit={submit} className="mt-6 space-y-4">
