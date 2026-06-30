@@ -42,7 +42,7 @@ export default function ManagerDistributionPage() {
               {filtered.map((i) => (
                 <tr key={i.managerId || "na"} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800">
-                    {i.managerId ? <Link to={`/app/instructors?managerId=${i.managerId}`} className="text-brand-700 hover:underline">{i.manager}</Link> : <span className="text-slate-500">{i.manager}</span>}
+                    {i.managerId ? <Link to={`/app/instructors/master?managerId=${i.managerId}`} className="text-brand-700 hover:underline">{i.manager}</Link> : <span className="text-slate-500">{i.manager}</span>}
                   </td>
                   <td className="px-5 py-3 text-right"><span className="chip chip-status">{i.count}</span></td>
                 </tr>

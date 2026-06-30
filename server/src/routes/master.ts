@@ -24,6 +24,13 @@ const COL_TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
 // Non-teaching departments — excluded when filtering to the Instructor role (kept in sync with instructors.ts).
 const NON_INSTRUCTOR_DEPTS = ["Instructors - Delivery Support (Ops and Central managers)", "Product Team"];
 
+// The dynamic "Contribution" field key (resolved by label, e.g. "contribution") — for drill-down
+// from the Contribution page. Mirrors contribField() in contribution.ts.
+async function contribKey(): Promise<string | null> {
+  const f: any = await FieldDefinition.findOne({ label: { $regex: /^contribution$/i }, archivedAt: null }).select("key").lean();
+  return f?.key || null;
+}
+
 // Role filter (from the Roles page): map a role to an `email` Mongo condition. A record's role =
 // the role of the User matching its email; "INSTRUCTOR" = any record whose email is NOT a staff user.
 async function roleEmailCondition(role: string): Promise<any | null> {
@@ -82,6 +89,7 @@ router.get("/", guard, async (req, res) => {
   const payrolls = listParam(req.query.payroll);
   const regions = listParam(req.query.region);
   const campuses = listParam(req.query.campus);
+  const contributions = listParam(req.query.contribution);
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -94,6 +102,7 @@ router.get("/", guard, async (req, res) => {
   if (payrolls.length) base["values.payroll_entity"] = inOrEq(payrolls);
   if (regions.length) base["values.contribution_region"] = inOrEq(regions);
   if (campuses.length) base.campus = inOrEq(campuses);
+  if (contributions.length) { const ck = await contribKey(); if (ck) base[`values.${ck}`] = inOrEq(contributions); }
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
   const role = String(req.query.role || "").trim();
   if (role) {
@@ -142,6 +151,7 @@ router.get("/export.csv", guard, async (req, res) => {
   if (req.query.payroll) filter["values.payroll_entity"] = String(req.query.payroll);
   if (req.query.region) filter["values.contribution_region"] = String(req.query.region);
   if (req.query.campus) filter.campus = String(req.query.campus);
+  if (req.query.contribution) { const ck = await contribKey(); if (ck) filter[`values.${ck}`] = String(req.query.contribution); }
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); filter.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
   const role = String(req.query.role || "").trim();
   if (role) {

@@ -21,6 +21,15 @@ type Meta = { columns: Column[]; managers: { id: string; name: string }[]; filte
 type Filters = { managerId: string[]; department: string[]; payroll: string[]; region: string[]; campus: string[] };
 const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [], campus: [] };
 
+// Deep-link filters from the URL (e.g. the Contribution pages link to
+// /app/instructors/master?campus=X / ?managerId=Y). Read once on mount so click-throughs
+// land on the master grid with the filter already applied.
+function filtersFromSearch(): Filters {
+  const p = new URLSearchParams(window.location.search);
+  const arr = (k: string) => (p.get(k) || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return { managerId: arr("managerId"), department: arr("department"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus") };
+}
+
 export default function InstructorMasterPage() {
   const { user } = useAuth();
   const isOps = user?.role === "OPS_ADMIN";
@@ -39,8 +48,8 @@ export default function InstructorMasterPage() {
 
   const [q, setQ] = useState("");
   const dq = useDebouncedValue(q, 300);
-  const [applied, setApplied] = useState<Filters>(EMPTY);
-  const [draft, setDraft] = useState<Filters>(EMPTY);
+  const [applied, setApplied] = useState<Filters>(filtersFromSearch);
+  const [draft, setDraft] = useState<Filters>(filtersFromSearch);
   const [drawer, setDrawer] = useState(false);
   const [scope, setScope] = useState<"active" | "all" | "exited">("active");
   const [counts, setCounts] = useState<{ all: number; active: number; exited: number }>({ all: 0, active: 0, exited: 0 });
@@ -78,10 +87,13 @@ export default function InstructorMasterPage() {
   }
 
   // Role filter (deep-linked from the Roles page): /app/instructors/master?role=OPS_ADMIN
+  // Contribution filter (deep-linked from the Contribution page): ?contribution=<value>
   const [searchParams, setSearchParams] = useSearchParams();
   const [role, setRole] = useState(searchParams.get("role") || "");
-  useEffect(() => { setRole(searchParams.get("role") || ""); setPage(1); }, [searchParams]);
+  const [contribution, setContribution] = useState(searchParams.get("contribution") || "");
+  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
+  function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
@@ -116,6 +128,7 @@ export default function InstructorMasterPage() {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
     if (role) p.set("role", role);
+    if (contribution) p.set("contribution", contribution);
     if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
     if (applied.department.length) p.set("department", applied.department.join(","));
     if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
@@ -124,7 +137,7 @@ export default function InstructorMasterPage() {
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role, sort.sort, sort.dir]);
+  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -205,6 +218,12 @@ export default function InstructorMasterPage() {
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
               Role: {ROLE_LABEL[role] || role}
               <button onClick={clearRole} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear role filter"><X className="h-3 w-3" /></button>
+            </span>
+          )}
+          {contribution && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+              Contribution: {contribution}
+              <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
             </span>
           )}
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
