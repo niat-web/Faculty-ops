@@ -16,7 +16,8 @@ router.get("/dashboard", async (req, res) => res.json(await dashboardData(req.us
 // Org chart tree: Org → Senior Managers → their Capability Managers.
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
-  const [sms, cms, counts, totalInstructors] = await Promise.all([
+  const [ops, sms, cms, counts, totalInstructors] = await Promise.all([
+    User.find({ role: Role.OPS_ADMIN, active: true }).select("name email").sort({ name: 1 }).lean(),
     User.find({ role: Role.SENIOR_MANAGER, active: true }).select("name").sort({ name: 1 }).lean(),
     User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name managerId").sort({ name: 1 }).lean(),
     Instructor.aggregate([{ $group: { _id: "$currentManagerId", n: { $sum: 1 } } }]),
@@ -25,6 +26,7 @@ router.get("/org", async (req, res) => {
   const countByCm = Object.fromEntries(counts.map((c: any) => [String(c._id), c.n]));
   res.json({
     totalInstructors, totalManagers: sms.length + cms.length,
+    opsAdmins: ops.map((o: any) => ({ id: String(o._id), name: o.name, email: o.email })),
     seniors: sms.map((s: any) => ({
       id: String(s._id), name: s.name,
       capabilityManagers: cms.filter((c: any) => String(c.managerId) === String(s._id)).map((c: any) => ({ id: String(c._id), name: c.name, reportees: countByCm[String(c._id)] || 0 })),

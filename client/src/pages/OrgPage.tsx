@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Building2, Users2, UserCog, ArrowRight, ChevronDown, ChevronRight, UserX, Plus, Minus, Maximize2, Download } from "lucide-react";
+import { Search, Building2, Users2, UserCog, ArrowRight, ChevronDown, ChevronRight, UserX, Plus, Minus, Maximize2, Download, ShieldCheck } from "lucide-react";
 import { toPng } from "html-to-image";
 import { useCachedGet } from "../hooks";
 import { useToast } from "../toast";
@@ -15,6 +15,8 @@ const BRANCH = [
   { hex: "#ec4899", avatar: "bg-pink-100 text-pink-700", chip: "bg-pink-50 text-pink-700" },
 ];
 const AMBER = { hex: "#f59e0b", avatar: "bg-amber-100 text-amber-700", chip: "bg-amber-50 text-amber-700" };
+// Ops Admins branch — distinct indigo accent to read as "organization-wide admins".
+const OPS_ACCENT = { hex: "#4f46e5", avatar: "bg-indigo-100 text-indigo-700", chip: "bg-indigo-50 text-indigo-700" };
 
 const MIN_ZOOM = 0.3, MAX_ZOOM = 2.2;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -42,6 +44,7 @@ export default function OrgPage() {
 
   const seniors: any[] = raw?.seniors || [];
   const unassigned: any[] = raw?.unassignedCMs || [];
+  const opsAdmins: any[] = raw?.opsAdmins || [];
   const needle = q.trim().toLowerCase();
   const cmTotal = seniors.reduce((n, s) => n + (s.capabilityManagers?.length || 0), 0) + unassigned.length;
 
@@ -56,14 +59,17 @@ export default function OrgPage() {
       .filter(Boolean) as any[];
   }, [seniors, needle]);
 
-  // Branch list = senior managers (+ an "Unassigned" branch when not searching).
+  // Branch list = an "Ops Admins" group (top) + senior managers (+ an "Unassigned" branch), when not searching.
   const branches = useMemo(() => {
     const list = filtered.map((s, i) => ({ ...s, _id: s.id, accent: BRANCH[i % BRANCH.length] }));
+    if (!needle && opsAdmins.length) list.unshift({ _id: "OPS", name: "Ops Admins", capabilityManagers: opsAdmins, accent: OPS_ACCENT, _ops: true } as any);
     if (!needle && unassigned.length) list.push({ _id: "UNASSIGNED", name: "Unassigned", capabilityManagers: unassigned, accent: AMBER, _unassigned: true } as any);
     return list;
-  }, [filtered, unassigned, needle]);
+  }, [filtered, unassigned, opsAdmins, needle]);
 
-  const isOpen = (id: string) => (needle ? true : open[id] ?? true); // expanded by default; search forces open
+  // Expanded by default; search forces open. The Ops Admins group is collapsed by default so its
+  // (often long) list doesn't crowd the Senior Manager → Capability Manager tree — click to expand.
+  const isOpen = (id: string) => (needle ? true : open[id] ?? (id === "OPS" ? false : true));
 
   // Draw curved connectors between the measured node boxes. Coordinates are divided by the
   // current zoom so they stay in the chart's UN-scaled layout space (the SVG lives inside the
@@ -148,13 +154,59 @@ export default function OrgPage() {
   const setAll = (v: boolean) => setOpen(Object.fromEntries(branches.map((b: any) => [b._id, v])));
   const instr = (b: any) => (b.capabilityManagers || []).reduce((n: number, c: any) => n + (c.reportees || 0), 0);
 
+  // Split branches: the Ops Admins group renders in its own node/cards columns (2 & 3);
+  // Senior Managers (+ Unassigned) render in columns 4 & 5.
+  const opsBranch = branches.find((b: any) => b._ops);
+  const mgrBranches = branches.filter((b: any) => !b._ops);
+
+  // A manager/group node card (Ops Admins, Senior Manager, or Unassigned).
+  const renderNode = (b: any) => {
+    const cms: any[] = b.capabilityManagers || [];
+    const expanded = isOpen(b._id);
+    return (
+      <div ref={setNode(b._id)} className="w-64 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2.5 px-3.5 py-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${b.accent.avatar}`}>{b._unassigned ? <UserX className="h-5 w-5" /> : b._ops ? <ShieldCheck className="h-5 w-5" /> : b.name.charAt(0)}</span>
+          <div className="min-w-0 flex-1"><div className="truncate font-semibold text-slate-800">{b.name}</div><div className="text-[11px] text-slate-400">{b._unassigned ? "No Senior Manager" : b._ops ? "Organization admins" : "Senior Manager"}</div></div>
+          {cms.length > 0 && (
+            <button onClick={() => toggle(b._id)} title={expanded ? "Collapse" : "Expand"} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600">
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 border-t border-slate-100 px-3.5 py-2 text-[11px]">
+          {b._ops ? (
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${b.accent.chip}`}><ShieldCheck className="h-3 w-3" /> {cms.length} Admin{cms.length === 1 ? "" : "s"}</span>
+          ) : (
+            <>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${b.accent.chip}`}><UserCog className="h-3 w-3" /> {cms.length} CM</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"><Users2 className="h-3 w-3" /> {instr(b)}</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // A child card — an Ops Admin (static) or a Capability Manager (click → filtered master grid).
+  const renderChild = (b: any, cm: any) => b._ops ? (
+    <div key={cm.id} ref={setNode(cm.id)} className="flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${b.accent.avatar}`}>{cm.name.charAt(0)}</span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">Ops Admin</span></span>
+    </div>
+  ) : (
+    <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(`/app/instructors/master?managerId=${cm.id}`)}
+      className="group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>
+      <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
+    </button>
+  );
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Org Chart</h1>
-          <p className="text-sm text-slate-500">Organization → Senior Managers → Capability Managers. Drag to pan, scroll to zoom, click a manager to open their reportees.</p>
-        </div>
+        <h1 className="text-2xl font-bold">Org Chart</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setAll(true)} className="btn btn-ghost btn-sm">Expand all</button>
           <button onClick={() => setAll(false)} className="btn btn-ghost btn-sm">Collapse all</button>
@@ -185,7 +237,7 @@ export default function OrgPage() {
               {paths.map((p, i) => <path key={i} d={p.d} fill="none" stroke={p.color} strokeWidth={2.5} strokeOpacity={0.5} strokeLinecap="round" />)}
             </svg>
 
-            {/* Level 0 — Organization */}
+            {/* Column 1 — Organization */}
             <div ref={setNode("ORG")} className="relative z-10 w-56 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-600 text-white shadow-md">
               <div className="flex items-center gap-3 px-4 py-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20"><Building2 className="h-5 w-5" /></span>
@@ -198,43 +250,27 @@ export default function OrgPage() {
               </div>
             </div>
 
-            {/* Level 1 + 2 — branches stacked vertically; each SM sits beside its CM column */}
+            {/* Columns 2 & 3 — Ops Admins node + (when expanded) their name cards */}
+            {opsBranch && (
+              <div className="relative z-10 flex items-center gap-20">
+                {renderNode(opsBranch)}
+                {isOpen("OPS") && (opsBranch.capabilityManagers || []).length > 0 && (
+                  <div className="flex flex-col gap-3">{(opsBranch.capabilityManagers || []).map((o: any) => renderChild(opsBranch, o))}</div>
+                )}
+              </div>
+            )}
+
+            {/* Columns 4 & 5 — Senior Managers + their Capability Managers (each SM aligns with its CM column) */}
             <div className="relative z-10 flex flex-col gap-6">
-              {branches.length === 0 && <div className="px-6 py-4 text-sm text-slate-400">No managers match "{q}".</div>}
-              {branches.map((b: any) => {
+              {mgrBranches.length === 0 && <div className="px-6 py-4 text-sm text-slate-400">No managers match "{q}".</div>}
+              {mgrBranches.map((b: any) => {
                 const cms: any[] = b.capabilityManagers || [];
                 const expanded = isOpen(b._id);
                 return (
                   <div key={b._id} className="flex items-center gap-20">
-                    {/* Senior Manager (or Unassigned) node */}
-                    <div ref={setNode(b._id)} className="w-64 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-                      <div className="flex items-center gap-2.5 px-3.5 py-3">
-                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${b.accent.avatar}`}>{b._unassigned ? <UserX className="h-5 w-5" /> : b.name.charAt(0)}</span>
-                        <div className="min-w-0 flex-1"><div className="truncate font-semibold text-slate-800">{b.name}</div><div className="text-[11px] text-slate-400">{b._unassigned ? "No Senior Manager" : "Senior Manager"}</div></div>
-                        {cms.length > 0 && (
-                          <button onClick={() => toggle(b._id)} title={expanded ? "Collapse" : "Expand"} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600">
-                            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex gap-2 border-t border-slate-100 px-3.5 py-2 text-[11px]">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${b.accent.chip}`}><UserCog className="h-3 w-3" /> {cms.length} CM</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"><Users2 className="h-3 w-3" /> {instr(b)}</span>
-                      </div>
-                    </div>
-
-                    {/* Capability Managers column */}
+                    {renderNode(b)}
                     {expanded && cms.length > 0 && (
-                      <div className="flex flex-col gap-3">
-                        {cms.map((cm) => (
-                          <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(`/app/instructors/master?managerId=${cm.id}`)}
-                            className="group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
-                            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>
-                            <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
-                          </button>
-                        ))}
-                      </div>
+                      <div className="flex flex-col gap-3">{cms.map((cm) => renderChild(b, cm))}</div>
                     )}
                   </div>
                 );
