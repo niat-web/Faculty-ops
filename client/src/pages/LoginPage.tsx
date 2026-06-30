@@ -79,6 +79,7 @@ export default function LoginPage() {
           </>
         )}
         <p className="mt-4 text-center text-sm text-slate-500"><Link to="/reset" className="text-brand-600 hover:underline">Forgot / set password</Link></p>
+        </div>
       </div>
     </div>
   );
