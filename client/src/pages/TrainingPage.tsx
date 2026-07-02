@@ -230,6 +230,9 @@ export default function TrainingPage() {
   const [edit, setEdit] = useState<any>(null); // { id, colKey }
   const editRef = useRef<HTMLSelectElement | HTMLInputElement | null>(null);
   const syncToastRef = useRef<string>("");
+  // Sticky header during PAGE scroll: the page (<main>) scrolls vertically while the table keeps
+  // its own horizontal scroll. CSS sticky can't pin the header to the page through an overflow-x
+  // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -300,6 +303,26 @@ export default function TrainingPage() {
   const safePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
 
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wrapTop = wrap.offsetTop; // table wrapper's offset within <main>'s scroll content
+      const y = scroller.scrollTop - wrapTop;
+      // Pin the header once the wrapper's top scrolls above the viewport; release at the bottom.
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      const shift = Math.max(0, Math.min(y, maxShift));
+      thead.style.transform = `translateY(${shift}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [resp, tabKey, shown.length]);
+
   const onEdit = useCallback((id: string, colKey: string) => setEdit({ id, colKey }), []);
   const onCancel = useCallback(() => setEdit(null), []);
   const onSave = useCallback(async (row: any, col: any, value: string) => {
@@ -358,9 +381,9 @@ export default function TrainingPage() {
   const grouped = segs.filter((s) => s.group);
 
   return (
-    // Fill <main> so the grid gets its OWN scroll area; the toolbar stays static at the top.
-    <div className="flex h-full flex-col gap-3">
-      {/* Toolbar — static at the top of the page; only the grid below scrolls. */}
+    // Normal page flow (like Master/Users): the PAGE (<main>) scrolls vertically, the card only
+    // scrolls horizontally, and the pagination sits below the full table at the bottom of the page.
+    <div className="flex flex-col gap-3">
       <div className="shrink-0">
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -394,9 +417,9 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      <div ref={wrapRef} className="card min-h-0 flex-1 overflow-auto p-0">
+      <div ref={wrapRef} className="card overflow-x-auto p-0">
         <table className="border-separate border-spacing-0 text-xs">
-          <thead ref={theadRef} className="sticky top-0 z-30">
+          <thead ref={theadRef} className="relative z-30">
             <tr>
               <th rowSpan={2} className={`${frozenHead} px-3 py-2 text-left font-semibold`} style={{ left: 0, width: ID_W, minWidth: ID_W }}>Employee ID</th>
               <th rowSpan={2} className={`${frozenHead} whitespace-nowrap border-r border-slate-200 px-3 py-2 text-left font-semibold`} style={{ left: ID_W, minWidth: NAME_W }}>Name</th>
