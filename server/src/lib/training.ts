@@ -57,6 +57,46 @@ export function tabForInstructor(values: any = {}, moduleStatus: any = {}, liveT
 
 export const STATUS_OPTIONS = ["Completed", "In Progress", "On Hold", "Not Started"];
 
+export const COURSE_ID_BY_TRAINING_LABEL: Record<string, string> = {
+  "AI for Finance": "85dac56985f54205b71ae86327f39b92",
+  "Advanced Aptitude": "8024ea95e38e40f89664aaada968168f",
+  "Applied Communicative English": "e27acac864114f34abdeec3948e91e96",
+  "Communicative English Advanced": "bfd0a2efeb934e4bbc1c9acac895d6a4",
+  "Communicative English Applied": "e27acac864114f34abdeec3948e91e96",
+  "Communicative English Foundation": "968bccdcf5e04348af889db506d49c9a",
+  "DSA": "bb04e38a723e4bbfbf99ec43992bb31c",
+  "Data Analytics Foundations": "58aeb728b2524b0897c478cb22e8acdc",
+  "Data Foundation": "58aeb728b2524b0897c478cb22e8acdc",
+  "Deep Learning": "8347d32f770a49579696335a4eec5828",
+  "Developer Foundation": "33a457452b2a4d60bc1683ca731081f3",
+  "Developer Foundations": "33a457452b2a4d60bc1683ca731081f3",
+  "Gen AI": "b9811b34585b47e0a0be65f1081a74f2",
+  "Generative AI": "b9811b34585b47e0a0be65f1081a74f2",
+  "JavaScript Essentials": "7e0446da981d4faab02df4dc605dba66",
+  "LLM": "8874b64282db42748d71b9940316db8d",
+  "Language Analytics": "7288e9d8992549758490a8a87b8b3dd9",
+  "Logical Reasoning": "ef795b8b487e44b38acc3b8a28353043",
+  "ML": "919bb576966a48dfa1e0b8b071fc7f69",
+  "Machine Learning": "919bb576966a48dfa1e0b8b071fc7f69",
+  "Machine Learning & AI Projects": "611beb92cdf746fd8f4a8b794dbc7b71",
+  "Mathematics for Computer Science": "70850c6b459c4134a16c3e42d46eb794",
+  "Mathematics for Computer science": "70850c6b459c4134a16c3e42d46eb794",
+  "Modern Responsive UI": "1d571a66be1e49cda17f5b3b22d6d751",
+  "MongoDB": "a5777f9b1a9c42a5aab70182e80efca2",
+  "NLP": "74536befa3df4e8aa2958b727fa2f2b6",
+  "Node JS": "d82d6905669442c48c0cbd2c887c1b53",
+  "Numerical Ability": "0bbea1fb25bc402db0d472112198d5da",
+  "Probability & Statistics": "39ddb075b7e8448abac2b89baa4fb3f4",
+  "Probability and Statistics": "39ddb075b7e8448abac2b89baa4fb3f4",
+  "Python": "b76ff0b83180494fa9a80e89c56421b1",
+  "Quanitative Aptitude": "97671af2f44f4eed978cd65d5c0c55c9",
+  "Quantitative Aptitude": "97671af2f44f4eed978cd65d5c0c55c9",
+  "React JS": "f7b58b9d1a424a6681020bad28f37483",
+  "Responsive Design": "62e43c70ee744afe8d1c26ca9c22947a",
+  "SQL": "d3cb79d46f31424cb0f8cddbdf68659f",
+  "Static Web": "6d41f35076d543379be03fe0b26b1b26",
+};
+
 export const TRACK_META = [
   { key: "tech", label: "Tech" },
   { key: "math_aptitude", label: "Mathematical & Aptitude" },
@@ -155,7 +195,7 @@ export async function seedTrainingColumns() {
       let order = 0;
       for (const c of CONTEXT_SEED) { const m = ctxColMeta(tab.key, c.key, c.type, c.options || []); docs.push({ track: tab.key, group: "Context", label: c.label, key: c.key, storage: "value", type: m.type, options: m.options, order: order++ }); }
       // STATUS columns carry their (editable) option set so admins can rename/add statuses.
-      for (const g of tab.groups) for (const m of g.modules) docs.push({ track: tab.key, group: g.name, label: m, key: m, storage: "module", type: "STATUS", options: [...STATUS_OPTIONS], order: order++ });
+      for (const g of tab.groups) for (const m of g.modules) docs.push({ track: tab.key, group: g.name, label: m, key: m, courseId: COURSE_ID_BY_TRAINING_LABEL[m] || "", storage: "module", type: "STATUS", options: [...STATUS_OPTIONS], order: order++ });
       for (const s of summaryColumnsFor(tab.key)) docs.push({ track: tab.key, group: s.group, label: s.label, key: s.key, storage: "value", type: s.type, options: s.options, order: order++ });
     }
     if (docs.length) await TrainingColumn.insertMany(docs);
@@ -178,6 +218,12 @@ export async function seedTrainingColumns() {
       for (const key of ["primary_track", "secondary_track", "ongoing_track"] as const) {
         await TrainingColumn.updateMany({ track: trackKey, key, type: { $ne: "DROPDOWN" } }, { $set: { type: "DROPDOWN", options: t[key] } });
       }
+    }
+    for (const [label, courseId] of Object.entries(COURSE_ID_BY_TRAINING_LABEL)) {
+      await TrainingColumn.updateMany(
+        { label, storage: "module", $or: [{ courseId: { $exists: false } }, { courseId: "" }, { courseId: null }] },
+        { $set: { courseId } }
+      );
     }
     _backfilled = true;
   }

@@ -75,7 +75,9 @@ export default function RolesPage() {
                 {matches.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500">{m.employeeId}</td>
-                    <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${m.id}`} className="text-brand-700 hover:underline">{m.name}</Link></td>
+                    <td className="px-5 py-3 font-medium">
+                      <Link to={m.staffOnly ? `/app/instructors/master?role=${m.role}` : `/app/instructors/${m.id}`} className="text-brand-700 hover:underline">{m.name}</Link>
+                    </td>
                     <td className="px-5 py-3 text-slate-500">{m.email || "—"}</td>
                     <td className="px-5 py-3"><span className="chip chip-gray">{ROLE_LABEL[m.role] || m.role}</span></td>
                   </tr>

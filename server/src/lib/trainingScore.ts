@@ -3,10 +3,10 @@
 // Mirrors the Google-Sheet formulas. Keep IN SYNC with client/src/trainingScore.ts.
 
 // Keys whose values are COMPUTED (never stored-as-edited / never editable in the grid).
-// Predicted Completion is now a MANUAL date (editable in the grid), so it's NOT auto-computed.
 export const COMPUTED_KEYS = [
   "primary_pct", "secondary_pct",
-  "health_status", "secondary_health_status",
+  "health_status", "predicted_completion",
+  "secondary_health_status", "secondary_predicted_completion",
 ] as const;
 
 // Module membership per sub-track (matches the training taxonomy / sheet columns).
@@ -18,16 +18,23 @@ const DSML = ["ML", "Supervised Learning", "Deep Learning", "ML Projects", "NLP"
 const ALL_TECH = [...FE, ...BE, ...DSA, ...GENAI]; // 19 — note: excludes DSML, per the sheet
 const APT = ["Quanitative Aptitude", "Numerical Ability", "Logical Reasoning", "Advanced Aptitude"];
 const MATHS = ["Mathematics for Computer science", "Probability and Statistics", "Linear Algebra and Calculus"];
+const MATH_CS_ALL = [...APT, ...MATHS];
 const ENG = ["Communicative English Foundation", "Communicative English Advanced", "Communicative English Applied", "Language Analytics"];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// status string → numeric weight (handles the emoji-prefixed values).
+// status string → numeric weight (0..1).
+// Live BigQuery cells embed the real completion %, e.g. "In Progress (99%)" → 0.99,
+// so a near-done module counts as near-done. Manual cells (no %) fall back to the
+// coarse status bucket: Completed=1, In Progress=0.5, On Hold=0.2, else 0.
 function score(status: string): number {
-  const s = String(status || "").toLowerCase();
-  if (s.includes("complet")) return 1;
-  if (s.includes("progress")) return 0.5;
-  if (s.includes("hold")) return 0.2;
+  const s = String(status || "");
+  const m = s.match(/\((\d+(?:\.\d+)?)\s*%\)/);
+  if (m) return Math.max(0, Math.min(1, Number(m[1]) / 100));
+  const l = s.toLowerCase();
+  if (l.includes("complet")) return 1;
+  if (l.includes("progress")) return 0.5;
+  if (l.includes("hold")) return 0.2;
   return 0;
 }
 function avg(mods: string[], ms: Record<string, string>): number {
@@ -38,7 +45,9 @@ function avg(mods: string[], ms: Record<string, string>): number {
 const norm = (s: any) => String(s || "").trim().toLowerCase();
 
 // Percent (0..1) for a given track + sub-track name. null = not applicable (blank cell).
-function pctFor(track: string, trackName: string, ms: Record<string, string>): number | null {
+// `isSecondary` matches the sheet's split rule for "Mathematics for Computer science":
+// as a PRIMARY track it's the 7-module average; as a SECONDARY track it's the single module.
+function pctFor(track: string, trackName: string, ms: Record<string, string>, isSecondary = false): number | null {
   const t = norm(trackName);
   if (!t || t === "na") return null;
   if (track === "tech") {
@@ -53,7 +62,8 @@ function pctFor(track: string, trackName: string, ms: Record<string, string>): n
   if (track === "math_aptitude") {
     if (t === "aptitude") return avg(APT, ms);
     if (t === "mathematics") return avg(MATHS, ms);
-    if (t === "mathematics for computer science") return score(ms["Mathematics for Computer science"] || "");
+    if (t === "mathematics for computer science")
+      return isSecondary ? score(ms["Mathematics for Computer science"] || "") : avg(MATH_CS_ALL, ms);
     return null;
   }
   if (track === "english") return avg(ENG, ms); // English has only a primary track
@@ -108,7 +118,7 @@ export function computeSummary(values: Record<string, string>, moduleStatus: Rec
   const startMs = parseMs(values.ongoing_start || "");
   const deadlineMs = parseMs(values.track_deadline || "");
   const primaryPct = pctFor(track, values.primary_track || "", ms);
-  const secondaryPct = pctFor(track, values.secondary_track || "", ms);
+  const secondaryPct = pctFor(track, values.secondary_track || "", ms, true);
   return {
     primaryPct,
     secondaryPct,
@@ -119,16 +129,18 @@ export function computeSummary(values: Record<string, string>, moduleStatus: Rec
   };
 }
 
-const pctStr = (p: number | null) => (p == null ? "" : String(Math.round(p * 100)));
+// Store one-decimal % (e.g. "66.7"), matching the source sheet instead of a rounded "67".
+const pctStr = (p: number | null) => (p == null ? "" : (p * 100).toFixed(1));
 
 // Map a computed key → its stored string form (pct as 0..100 integer; others as text).
 export function summaryStored(s: TrainingSummary): Record<string, string> {
-  // Predicted Completion is no longer auto-managed (it's a manual DATE the admin edits in the grid),
   // so it's intentionally excluded here — recompute won't overwrite the user's chosen date.
   return {
     primary_pct: pctStr(s.primaryPct),
     secondary_pct: pctStr(s.secondaryPct),
     health_status: s.primaryHealth,
+    predicted_completion: s.primaryPredicted,
     secondary_health_status: s.secondaryHealth,
+    secondary_predicted_completion: s.secondaryPredicted,
   };
 }

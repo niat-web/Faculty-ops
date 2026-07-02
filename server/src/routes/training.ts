@@ -2,18 +2,21 @@ import { Router } from "express";
 import { Instructor, User, FieldDefinition, TrainingColumn } from "../models";
 import { Role } from "../enums";
 import { instructorScopeFilter, canAccessInstructor } from "../lib/rbac";
-import { tabForInstructor, TRACK_META, seedTrainingColumns, STATUS_OPTIONS } from "../lib/training";
+import { COURSE_ID_BY_TRAINING_LABEL, tabForInstructor, TRACK_META, seedTrainingColumns, STATUS_OPTIONS } from "../lib/training";
 import { computeSummary, summaryStored, COMPUTED_KEYS } from "../lib/trainingScore";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
 import { writeAudit } from "../lib/services";
 import { requireUser } from "../middleware";
+import { fetchTrainingProgress } from "../lib/bigqueryTraining";
 
 const router = Router();
 router.use(requireUser());
 const STAFF = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const staffGuard = (req: any, res: any, next: any) => (STAFF.includes(req.user.role) ? next() : res.status(403).json({ error: "Forbidden" }));
 const opsGuard = (req: any, res: any, next: any) => (req.user.role === Role.OPS_ADMIN ? next() : res.status(403).json({ error: "Only the Super Admin can manage training columns" }));
-const colOut = (c: any) => ({ id: String(c._id), track: c.track, group: c.group || "", label: c.label, key: c.key, storage: c.storage, type: c.type, options: c.options || [], order: c.order });
+const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
+const MULTI_KEYS = new Set(["sem1", "sem2"]); // accept several options (newline/comma-joined)
+const colOut = (c: any) => ({ id: String(c._id), track: c.track, group: c.group || "", label: c.label, key: c.key, courseId: c.courseId || "", storage: c.storage, type: c.type, options: c.options || [], order: c.order });
 
 async function loadColumns() {
   await seedTrainingColumns();
@@ -47,12 +50,13 @@ router.get("/", staffGuard, async (req, res) => {
   // Optional ?track= → build (and return) ROWS for only that track. Counts for all tracks are still
   // computed (cheap) so the tabs show totals, but the big rows payload is just the requested track.
   const wantTrack = String(req.query.track || "").trim();
+  const summaryOnly = String(req.query.summaryOnly || "") === "1"; // return only the BigQuery sync status (for the Dynamic Fields page)
   const cols = await loadColumns();
   const live = liveTrackKeys(cols as any[]);
   const sensitiveKeys = new Set((await FieldDefinition.find({ visibility: "SENSITIVE", archivedAt: null }).select("key").lean()).map((f: any) => f.key));
   const valueKeys = [...new Set((cols as any[]).filter((c) => c.storage === "value").map((c) => c.key))];
 
-  const docs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name currentManagerId values moduleStatus").lean();
+  const docs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
   const mgrIds = [...new Set(docs.map((d: any) => d.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
@@ -70,14 +74,31 @@ router.get("/", staffGuard, async (req, res) => {
     for (const k of valueKeys) vals[k] = (sensitiveKeys.has(k) ? maybeDecrypt(values[k]) : values[k]) ?? "";
     // Summary cells are always computed live from the dropdowns — never trust stale stored numbers.
     Object.assign(vals, summaryStored(computeSummary(vals, moduleStatus, tab)));
-    rows.push({ id: String(d._id), tab, employeeId: d.employeeId, name: d.name, manager: d.currentManagerId ? (mgrName[String(d.currentManagerId)] || "—") : "—", values: vals, moduleStatus });
+    rows.push({ id: String(d._id), tab, employeeId: d.employeeId, email: d.email || "", uid: d.uid || "", name: d.name, manager: d.currentManagerId ? (mgrName[String(d.currentManagerId)] || "—") : "—", values: vals, moduleStatus });
   }
   rows.sort((a, b) => (a.employeeId || "").localeCompare(b.employeeId || ""));
 
   const columns: Record<string, any[]> = {};
   for (const c of cols as any[]) (columns[c.track] ||= []).push(colOut(c));
+  const syncCols = (cols as any[]).filter((c) => c.storage === "module" && c.courseId && !MANUAL_MODULE_KEYS.has(c.key) && (!wantTrack || c.track === wantTrack));
+  const progress = await fetchTrainingProgress(
+    syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
+    rows.map((r) => ({ id: r.id, employeeId: r.employeeId, email: r.email, uid: r.uid }))
+  );
+  if (summaryOnly) return res.json({ progressSync: progress });
+  for (const row of rows) {
+    const updates = progress.ok ? progress.cells[row.id] : null;
+    const nextStatus = { ...row.moduleStatus };
+    for (const col of syncCols) {
+      if (updates?.[col.key]) nextStatus[col.key] = updates[col.key];
+      else delete nextStatus[col.key];
+    }
+    row.moduleStatus = nextStatus;
+    Object.assign(row.values, summaryStored(computeSummary(row.values, row.moduleStatus, row.tab)));
+  }
+  for (const row of rows) { delete row.email; delete row.uid; }
   const tracks = TRACK_META.map((t) => ({ ...t, count: trackCount[t.key] || 0, columns: (columns[t.key] || []).length }));
-  res.json({ rows, columns, tracks, role: req.user!.role, canDelete: req.user!.role === Role.OPS_ADMIN });
+  res.json({ rows, columns, tracks, role: req.user!.role, canDelete: req.user!.role === Role.OPS_ADMIN, progressSync: progress });
 });
 
 // Track list (for the Dynamic Fields → Training Stats section).
@@ -135,13 +156,15 @@ router.post("/columns", opsGuard, async (req, res) => {
   if (!String(label || "").trim()) return res.status(400).json({ error: "Label is required" });
   if (!["STATUS", "DROPDOWN", "TEXT", "NUMBER", "DATE"].includes(type)) return res.status(400).json({ error: "Bad type" });
   const store = storage === "module" || storage === "value" ? storage : (type === "STATUS" ? "module" : "value");
-  const key = String(req.body?.key || "").trim() || (store === "module" ? String(label).trim() : String(label).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""));
+  const cleanLabel = String(label).trim();
+  const key = String(req.body?.key || "").trim() || (store === "module" ? cleanLabel : cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""));
+  const courseId = String(req.body?.courseId ?? (store === "module" ? COURSE_ID_BY_TRAINING_LABEL[cleanLabel] || "" : "")).trim();
   if (/[.$]/.test(key)) return res.status(400).json({ error: "The label can't contain '.' or '$'." });
   if (await TrainingColumn.findOne({ track, key, archivedAt: null })) return res.status(409).json({ error: "A column with that name already exists in this track." });
   const last = await TrainingColumn.findOne({ track }).sort({ order: -1 }).select("order").lean();
   try {
     const col = await TrainingColumn.create({
-      track, group: String(group || "").trim(), label: String(label).trim(), key, storage: store, type,
+      track, group: String(group || "").trim(), label: cleanLabel, key, courseId, storage: store, type,
       options: cleanOptions(type, options),
       order: ((last as any)?.order ?? -1) + 1,
     });
@@ -156,8 +179,9 @@ router.post("/columns", opsGuard, async (req, res) => {
 router.patch("/columns/:id", opsGuard, async (req, res) => {
   const col: any = await TrainingColumn.findById(req.params.id);
   if (!col) return res.status(404).json({ error: "Not found" });
-  const { label, group, type, options } = req.body || {};
+  const { label, group, type, options, courseId } = req.body || {};
   if (typeof label === "string" && label.trim()) col.label = label.trim();
+  if (typeof courseId === "string") col.courseId = courseId.trim();
   if (typeof group === "string") col.group = group.trim();
   if (type && ["STATUS", "DROPDOWN", "TEXT", "NUMBER", "DATE"].includes(type)) col.type = type;
   if (options !== undefined || type) col.options = cleanOptions(col.type, options !== undefined ? options : col.options);
@@ -194,6 +218,9 @@ router.post("/", staffGuard, async (req, res) => {
   // The key MUST be a real training column (prevents writing arbitrary/sensitive keys here).
   const col: any = await TrainingColumn.findOne({ key, storage: target, archivedAt: null, ...(track ? { track } : {}) }).lean();
   if (!col) return res.status(400).json({ error: "Unknown training column" });
+  if (target === "module" && col.courseId && !MANUAL_MODULE_KEYS.has(col.key)) {
+    return res.status(400).json({ error: "This course status is synced from BigQuery and can't be edited manually." });
+  }
   const clean = String(value ?? "").trim();
   const inst: any = await Instructor.findById(instructorId);
   if (!inst) return res.status(404).json({ error: "Not found" });
@@ -201,8 +228,15 @@ router.post("/", staffGuard, async (req, res) => {
   // Department) stays selectable/saveable; only NEW values must match the options. (Medium bug)
   const current = target === "module" ? inst.moduleStatus.get(key) : maybeDecrypt(inst.values.get(key));
   if (!(clean && String(clean) === String(current ?? ""))) {
-    const verr = validateCell(col.type, col.options || [], clean);
-    if (verr) return res.status(400).json({ error: verr });
+    if (MULTI_KEYS.has(key) && col.type === "DROPDOWN") {
+      // Multi-select: validate each chosen option against the column's option set.
+      const opts = optsFor(col.type, col.options || []);
+      const parts = clean.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
+      if (clean && parts.some((p) => !opts.includes(p))) return res.status(400).json({ error: "Value is not an allowed option." });
+    } else {
+      const verr = validateCell(col.type, col.options || [], clean);
+      if (verr) return res.status(400).json({ error: verr });
+    }
   }
 
   let auditField = col.label;
