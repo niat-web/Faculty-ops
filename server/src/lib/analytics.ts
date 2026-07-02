@@ -1,22 +1,71 @@
-import { Instructor, EditRequest, User, AuditLog } from "../models";
+import { Instructor, EditRequest, User, AuditLog, TrainingColumn } from "../models";
 import { Role, LIFECYCLE_LABEL } from "../enums";
 import type { SessionUser } from "./rbac";
 import { instructorScopeFilter } from "./rbac";
 import { maybeDecrypt } from "./crypto";
+import { tabForInstructor } from "./training";
+import { computeSummary, type TrainingSummary } from "./trainingScore";
+import { fetchTrainingProgress } from "./bigqueryTraining";
 
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
+type DocWithSummary = any & { liveTraining?: TrainingSummary | null; livePrimaryPct?: number | null };
+const dayMs = 24 * 60 * 60 * 1000;
+
+async function attachLiveTrainingSummaries(docs: DocWithSummary[]) {
+  if (!docs.length) return;
+  const moduleCols: any[] = await TrainingColumn.find({ archivedAt: null, storage: "module" }).select("track key courseId").lean();
+  const live: Record<string, string[]> = {};
+  for (const c of moduleCols) (live[c.track] ||= []).push(c.key);
+  const syncCols = moduleCols.filter((c) => c.courseId && !MANUAL_MODULE_KEYS.has(c.key));
+  const progress = await fetchTrainingProgress(
+    syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
+    docs.map((d) => ({ id: String(d._id), employeeId: d.employeeId, email: d.email, uid: d.uid }))
+  );
+  for (const d of docs) {
+    const values = d.values || {};
+    const tab = tabForInstructor(values, d.moduleStatus || {}, live);
+    if (!tab) continue;
+    const ms = { ...(d.moduleStatus || {}) };
+    const updates = progress.ok ? progress.cells[String(d._id)] : null;
+    for (const col of syncCols) {
+      if (updates?.[col.key]) ms[col.key] = updates[col.key];
+      else delete ms[col.key];
+    }
+    const summary = computeSummary(values, ms, tab);
+    d.liveTraining = summary;
+    d.livePrimaryPct = summary.primaryPct == null ? null : Math.round(summary.primaryPct * 100);
+  }
+}
+
+function daysUntil(date: any) {
+  const t = Date.parse(String(date || ""));
+  if (isNaN(t)) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((t - today.getTime()) / dayMs);
+}
+
+function gapDays(predicted: string, deadline: any) {
+  if (!predicted || predicted === "Completed" || predicted === "N/A") return 0;
+  const p = Date.parse(predicted.replace(/-/g, " "));
+  const d = Date.parse(String(deadline || ""));
+  if (isNaN(p) || isNaN(d)) return 0;
+  return Math.abs(Math.round((p - d) / dayMs));
+}
 
 // Role-aware dashboard payload (KPIs + chart series + role-specific lists).
 export async function dashboardData(user: SessionUser) {
   const scope = instructorScopeFilter(user);
   // Pull the scoped instructors once and compute most series in memory (mirrors the old app).
   // Deterministic order so an instructor with a duplicate email always resolves to the same self-record.
-  const docs: any[] = await Instructor.find(scope).select("employeeId name status campus currentManagerId values createdAt").sort({ createdAt: -1 }).lean();
+  const docs: DocWithSummary[] = await Instructor.find(scope).select("employeeId name email uid status campus currentManagerId values moduleStatus createdAt").sort({ createdAt: -1 }).lean();
+  await attachLiveTrainingSummaries(docs);
 
   const total = docs.length;
   const campuses = new Set(docs.map((d) => (d.campus || "").trim()).filter(Boolean)).size;
-  const trainingVals = docs.map((d) => num(maybeDecrypt(d.values?.primary_pct))).filter((n): n is number => n != null);
+  const trainingVals = docs.map((d) => d.livePrimaryPct ?? num(maybeDecrypt(d.values?.primary_pct))).filter((n): n is number => n != null);
   const avgTraining = trainingVals.length ? Math.round(trainingVals.reduce((a, b) => a + b, 0) / trainingVals.length) : 0;
   const exited = docs.filter((d) => d.status === "EXITED").length;
   const exiting = docs.filter((d) => d.status === "EXITED" || d.status === "EXIT_IN_PROGRESS").length;
@@ -77,7 +126,25 @@ export async function dashboardData(user: SessionUser) {
 
   // ── Capability Manager: reportee progress + upcoming deadlines ──
   if (user.role === Role.CAPABILITY_MANAGER) {
-    charts.reporteeProgress = docs.map((d) => ({ id: String(d._id), name: d.name, status: d.status, value: num(maybeDecrypt(d.values?.primary_pct)) || 0 })).sort((a, b) => b.value - a.value);
+    charts.reporteeProgress = docs.map((d) => ({ id: String(d._id), name: d.name, status: d.status, value: (d.livePrimaryPct ?? num(maybeDecrypt(d.values?.primary_pct))) || 0 })).sort((a, b) => b.value - a.value);
+    payload.interventions = docs
+      .map((d) => {
+        const health = d.liveTraining?.primaryHealth || maybeDecrypt(d.values?.health_status) || "";
+        const predicted = d.liveTraining?.primaryPredicted || maybeDecrypt(d.values?.predicted_completion) || "";
+        const deadline = maybeDecrypt(d.values?.track_deadline) || "";
+        return {
+          id: String(d._id),
+          name: d.name,
+          employeeId: d.employeeId,
+          health,
+          daysToDeadline: daysUntil(deadline),
+          predictedCompletion: predicted || "—",
+          gapDays: gapDays(predicted, deadline),
+        };
+      })
+      .filter((r) => /at risk|overdue/i.test(r.health))
+      .sort((a, b) => (b.gapDays || 0) - (a.gapDays || 0))
+      .slice(0, 8);
     const today = new Date(); const horizon = new Date(today.getTime() + 30 * 24 * 3600 * 1000);
     payload.deadlines = docs
       .map((d) => ({ id: String(d._id), name: d.name, employeeId: d.employeeId, date: maybeDecrypt(d.values?.track_deadline) }))
@@ -93,7 +160,7 @@ export async function dashboardData(user: SessionUser) {
       if (me.currentManagerId) { const m: any = await User.findById(me.currentManagerId).select("name").lean(); manager = m?.name || null; }
       payload.me = {
         id: String(me._id), employeeId: me.employeeId, status: me.status, campus: me.campus,
-        training: num(maybeDecrypt(me.values?.primary_pct)) || 0,
+        training: (me.livePrimaryPct ?? num(maybeDecrypt(me.values?.primary_pct))) || 0,
         review: maybeDecrypt(me.values?.review_score) || null,
         track: maybeDecrypt(me.values?.primary_track) || null,
         deadline: maybeDecrypt(me.values?.track_deadline) || null,

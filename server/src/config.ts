@@ -12,6 +12,12 @@ export const config = {
   appUrl: (process.env.APP_URL || "http://localhost:5173").replace(/\/$/, ""),
   cronSecret: process.env.CRON_SECRET || "",
   retentionDays: Number(process.env.RETENTION_DAYS || 0),
+  bigQuery: {
+    credentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
+    projectId: process.env.BIGQUERY_PROJECT_ID || "",
+    dataset: process.env.BIGQUERY_DATASET || "",
+    table: process.env.BIGQUERY_TABLE || "",
+  },
   isProd,
 };
 

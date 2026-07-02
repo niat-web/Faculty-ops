@@ -125,6 +125,7 @@ const TrainingColumnSchema = new Schema(
     group: { type: String, default: "" },               // section header (e.g. "Frontend Development")
     label: { type: String, required: true },            // column header
     key: { type: String, required: true },              // storage key (moduleStatus key or values key)
+    courseId: { type: String, default: "" },            // external learning DB course id (settings metadata)
     storage: { type: String, default: "module" },       // "module" | "value"
     type: { type: String, default: "STATUS" },          // STATUS | DROPDOWN | TEXT | NUMBER | DATE
     options: { type: [String], default: [] },           // for DROPDOWN

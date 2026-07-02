@@ -13,3 +13,4 @@ backups/
 .env.example
 .env.local
 server/.env
+server/secrets/

@@ -2,10 +2,10 @@
 // %, Health and Predicted Completion cells update instantly when a dropdown
 // changes (no reload). MUST stay in sync with server/src/lib/trainingScore.ts.
 
-// Predicted Completion is now a MANUAL date (editable in the grid), so it's NOT auto-computed.
 export const COMPUTED_KEYS = [
   "primary_pct", "secondary_pct",
-  "health_status", "secondary_health_status",
+  "health_status", "predicted_completion",
+  "secondary_health_status", "secondary_predicted_completion",
 ] as const;
 
 const FE = ["Static Web", "Responsive Design", "Modern Responsive UI", "JavaScript Sprint", "JavaScript Essentials", "React JS", "Frontend Projects"];
@@ -16,14 +16,20 @@ const DSML = ["ML", "Supervised Learning", "Deep Learning", "ML Projects", "NLP"
 const ALL_TECH = [...FE, ...BE, ...DSA, ...GENAI];
 const APT = ["Quanitative Aptitude", "Numerical Ability", "Logical Reasoning", "Advanced Aptitude"];
 const MATHS = ["Mathematics for Computer science", "Probability and Statistics", "Linear Algebra and Calculus"];
+const MATH_CS_ALL = [...APT, ...MATHS];
 const ENG = ["Communicative English Foundation", "Communicative English Advanced", "Communicative English Applied", "Language Analytics"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// Live BigQuery cells embed the real completion %, e.g. "In Progress (99%)" → 0.99.
+// Manual cells (no %) fall back to the coarse bucket. MUST match server/src/lib/trainingScore.ts.
 function score(status: string): number {
-  const s = String(status || "").toLowerCase();
-  if (s.includes("complet")) return 1;
-  if (s.includes("progress")) return 0.5;
-  if (s.includes("hold")) return 0.2;
+  const s = String(status || "");
+  const m = s.match(/\((\d+(?:\.\d+)?)\s*%\)/);
+  if (m) return Math.max(0, Math.min(1, Number(m[1]) / 100));
+  const l = s.toLowerCase();
+  if (l.includes("complet")) return 1;
+  if (l.includes("progress")) return 0.5;
+  if (l.includes("hold")) return 0.2;
   return 0;
 }
 function avg(mods: string[], ms: Record<string, string>): number {
@@ -33,7 +39,9 @@ function avg(mods: string[], ms: Record<string, string>): number {
 }
 const norm = (s: any) => String(s || "").trim().toLowerCase();
 
-function pctFor(track: string, trackName: string, ms: Record<string, string>): number | null {
+// `isSecondary` matches the sheet's split rule for "Mathematics for Computer science":
+// PRIMARY = 7-module average; SECONDARY = the single module. MUST match the server.
+function pctFor(track: string, trackName: string, ms: Record<string, string>, isSecondary = false): number | null {
   const t = norm(trackName);
   if (!t || t === "na") return null;
   if (track === "tech") {
@@ -48,7 +56,8 @@ function pctFor(track: string, trackName: string, ms: Record<string, string>): n
   if (track === "math_aptitude") {
     if (t === "aptitude") return avg(APT, ms);
     if (t === "mathematics") return avg(MATHS, ms);
-    if (t === "mathematics for computer science") return score(ms["Mathematics for Computer science"] || "");
+    if (t === "mathematics for computer science")
+      return isSecondary ? score(ms["Mathematics for Computer science"] || "") : avg(MATH_CS_ALL, ms);
     return null;
   }
   if (track === "english") return avg(ENG, ms);
@@ -94,7 +103,7 @@ export function computeSummary(values: Record<string, string>, moduleStatus: Rec
   const startMs = parseMs(values.ongoing_start || "");
   const deadlineMs = parseMs(values.track_deadline || "");
   const primaryPct = pctFor(track, values.primary_track || "", ms);
-  const secondaryPct = pctFor(track, values.secondary_track || "", ms);
+  const secondaryPct = pctFor(track, values.secondary_track || "", ms, true);
   return {
     primaryPct, secondaryPct,
     primaryHealth: health(primaryPct, startMs, deadlineMs, now),
@@ -116,7 +125,8 @@ export function healthTone(text: string): string {
 
 // Display text + optional tone for a computed cell, by its column key.
 export function summaryCell(key: string, s: TrainingSummary): { text: string; tone?: string } {
-  const pct = (p: number | null) => (p == null ? "—" : `${Math.round(p * 100)}%`);
+  // One-decimal %, matching the source sheet (e.g. 66.7%, not a rounded 67%).
+  const pct = (p: number | null) => (p == null ? "—" : `${(p * 100).toFixed(1)}%`);
   switch (key) {
     case "primary_pct": return { text: pct(s.primaryPct) };
     case "secondary_pct": return { text: pct(s.secondaryPct) };

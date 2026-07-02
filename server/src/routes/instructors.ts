@@ -241,15 +241,15 @@ router.get("/exited", async (req, res) => {
 router.get("/roles", async (req, res) => {
   const scopeF = instructorScopeFilter(req.user!);
   const q = String(req.query.q || "").trim();
-  const staff = await User.find({ role: { $in: [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER] } }).select("email role").lean();
+  const staff = await User.find({ role: { $in: [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER] }, active: true }).select("name email role").lean();
   const byRole: Record<string, string[]> = { OPS_ADMIN: [], SENIOR_MANAGER: [], CAPABILITY_MANAGER: [] };
   const roleByEmail: Record<string, string> = {};
   for (const u of staff as any[]) { const e = (u.email || "").toLowerCase(); if (!e) continue; byRole[u.role]?.push(e); roleByEmail[e] = u.role; }
   const staffEmails = [...byRole.OPS_ADMIN, ...byRole.SENIOR_MANAGER, ...byRole.CAPABILITY_MANAGER];
   const [ops, sm, cm, instr] = await Promise.all([
-    Instructor.countDocuments({ ...scopeF, email: { $in: byRole.OPS_ADMIN } }),
-    Instructor.countDocuments({ ...scopeF, email: { $in: byRole.SENIOR_MANAGER } }),
-    Instructor.countDocuments({ ...scopeF, email: { $in: byRole.CAPABILITY_MANAGER } }),
+    User.countDocuments({ role: Role.OPS_ADMIN, active: true }),
+    User.countDocuments({ role: Role.SENIOR_MANAGER, active: true }),
+    User.countDocuments({ role: Role.CAPABILITY_MANAGER, active: true }),
     // Instructor = ACTIVE teaching only: not exited, not a staff user, not a non-teaching department.
     Instructor.countDocuments({ ...scopeF, status: { $nin: EXIT_STATES }, email: { $nin: staffEmails }, "values.department": { $nin: NON_INSTRUCTOR_DEPTS } }),
   ]);
@@ -259,8 +259,21 @@ router.get("/roles", async (req, res) => {
   let matches: any[] = [];
   if (q) {
     const rx = new RegExp(escapeRegex(q), "i");
-    const found = await Instructor.find({ ...scopeF, $or: [{ name: rx }, { employeeId: rx }, { email: rx }] }).select("employeeId name email").limit(25).lean();
-    matches = (found as any[]).map((f) => ({ id: String(f._id), employeeId: f.employeeId, name: f.name, email: f.email || "", role: roleByEmail[(f.email || "").toLowerCase()] || "INSTRUCTOR" }));
+    const [found, foundStaff] = await Promise.all([
+      Instructor.find({ ...scopeF, $or: [{ name: rx }, { employeeId: rx }, { email: rx }] }).select("employeeId name email").limit(25).lean(),
+      User.find({ role: { $in: [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER] }, active: true, $or: [{ name: rx }, { email: rx }] }).select("name email role").limit(25).lean(),
+    ]);
+    const seen = new Set<string>();
+    matches = [
+      ...(foundStaff as any[]).map((u) => {
+        const email = (u.email || "").toLowerCase();
+        seen.add(email);
+        return { id: String(u._id), employeeId: "", name: u.name, email: u.email || "", role: u.role, staffOnly: true };
+      }),
+      ...(found as any[])
+        .filter((f) => !seen.has((f.email || "").toLowerCase()))
+        .map((f) => ({ id: String(f._id), employeeId: f.employeeId, name: f.name, email: f.email || "", role: roleByEmail[(f.email || "").toLowerCase()] || "INSTRUCTOR" })),
+    ].slice(0, 25);
   }
   res.json({ counts, total, matches });
 });

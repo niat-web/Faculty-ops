@@ -57,6 +57,39 @@ function RecentlyAdded({ list }: { list: any[] }) {
     </ul>
   );
 }
+function InterventionList({ list }: { list: any[] }) {
+  if (!list?.length) return <Empty label="No at-risk or overdue learners" />;
+  const tone = (health: string) => /overdue/i.test(health) ? "bg-slate-100 text-slate-700" : "bg-rose-50 text-rose-700";
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+          <tr>
+            <th className="px-2 py-2">Learner</th>
+            <th className="px-2 py-2">Health</th>
+            <th className="px-2 py-2 text-right">Days</th>
+            <th className="px-2 py-2">Predicted</th>
+            <th className="px-2 py-2 text-right">Gap</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {list.map((r) => (
+            <tr key={r.id}>
+              <td className="px-2 py-2">
+                <Link to={`/app/instructors/${r.id}`} className="font-medium text-slate-800 hover:text-brand-600">{r.name}</Link>
+                <div className="font-mono text-[11px] text-slate-400">{r.employeeId}</div>
+              </td>
+              <td className="px-2 py-2"><span className={`chip ${tone(r.health)}`}>{r.health}</span></td>
+              <td className="px-2 py-2 text-right text-slate-600">{r.daysToDeadline ?? "—"}</td>
+              <td className="px-2 py-2 text-slate-600">{r.predictedCompletion || "—"}</td>
+              <td className="px-2 py-2 text-right font-medium text-slate-800">{r.gapDays || 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /* ════════════════════════════ Ops Admin ════════════════════════════ */
 function AdminDash({ d, first }: any) {
@@ -188,7 +221,6 @@ function CapabilityDash({ d, first }: any) {
   const prog = c.reporteeProgress || [];
   const onTrack = prog.filter((r: any) => r.value >= 80).length;
   const top = prog.slice(0, 5);
-  const needs = [...prog].sort((a: any, b: any) => a.value - b.value).slice(0, 5);
 
   return (
     <div className="space-y-5">
@@ -210,7 +242,7 @@ function CapabilityDash({ d, first }: any) {
           </div>
         </Panel>
         <Panel title="Top performers" sub="Highest completion" icon={Trophy}><Leaderboard items={top} color="#22c55e" unit="%" to={(it) => `/app/instructors/${it.id}`} /></Panel>
-        <Panel title="Needs attention" sub="Lowest completion" icon={AlertTriangle}><Leaderboard items={needs} color="#f59e0b" unit="%" to={(it) => `/app/instructors/${it.id}`} /></Panel>
+        <Panel title="Learners requiring immediate attention" sub="At Risk + Overdue" icon={AlertTriangle}><InterventionList list={d.interventions || []} /></Panel>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">

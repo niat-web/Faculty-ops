@@ -3,7 +3,7 @@ import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 
 type Kind = "success" | "error" | "info";
 interface Toast { id: number; kind: Kind; text: string }
-interface ToastCtx { show: (text: string, kind?: Kind) => void; success: (t: string) => void; error: (t: string) => void; info: (t: string) => void }
+interface ToastCtx { show: (text: string, kind?: Kind, ms?: number) => void; success: (t: string, ms?: number) => void; error: (t: string, ms?: number) => void; info: (t: string, ms?: number) => void }
 
 const Ctx = createContext<ToastCtx>(null as any);
 let seq = 1;
@@ -11,12 +11,12 @@ let seq = 1;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const remove = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
-  const show = useCallback((text: string, kind: Kind = "info") => {
+  const show = useCallback((text: string, kind: Kind = "info", ms = 4500) => {
     const id = seq++;
     setToasts((t) => [...t, { id, kind, text }]);
-    setTimeout(() => remove(id), 4500);
+    setTimeout(() => remove(id), ms);
   }, [remove]);
-  const value: ToastCtx = { show, success: (t) => show(t, "success"), error: (t) => show(t, "error"), info: (t) => show(t, "info") };
+  const value: ToastCtx = { show, success: (t, ms) => show(t, "success", ms), error: (t, ms) => show(t, "error", ms), info: (t, ms) => show(t, "info", ms) };
 
   const Icon = { success: CheckCircle2, error: AlertCircle, info: Info };
   const tone: Record<Kind, string> = { success: "border-emerald-200 bg-emerald-50 text-emerald-800", error: "border-rose-200 bg-rose-50 text-rose-800", info: "border-brand-200 bg-brand-50 text-brand-800" };
@@ -24,7 +24,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
+      <div className="fixed right-4 top-4 z-[100] flex w-80 flex-col gap-2">
         {toasts.map((t) => {
           const I = Icon[t.kind];
           return (
