@@ -32,14 +32,30 @@ const pick = (cols: string[], candidates: string[]) => {
   return "";
 };
 
+// GOOGLE_APPLICATION_CREDENTIALS may be a file PATH (local dev) OR the service-account JSON itself
+// (or base64 of it) — the latter is what cloud hosts like Northflank need, since env vars can't be files.
+function credentialOpts(raw: string): { keyFilename?: string; credentials?: any } {
+  const cred = String(raw || "").trim();
+  let jsonText = "";
+  if (cred.startsWith("{")) jsonText = cred; // inline JSON
+  else if (cred.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(cred)) {
+    // base64-encoded JSON (safest for env vars — avoids newline/escaping issues)
+    try { const decoded = Buffer.from(cred, "base64").toString("utf8"); if (decoded.trim().startsWith("{")) jsonText = decoded; } catch { /* not base64 */ }
+  }
+  if (jsonText) {
+    try { return { credentials: JSON.parse(jsonText) }; }
+    catch { throw new Error("BigQuery credentials JSON is invalid (check escaping — base64 is recommended)."); }
+  }
+  // Otherwise treat it as a path to a key file (local dev).
+  const keyFilename = path.resolve(process.cwd(), cred);
+  if (!fs.existsSync(keyFilename)) throw new Error(`BigQuery credentials file not found at ${keyFilename} (set GOOGLE_APPLICATION_CREDENTIALS to the JSON/base64 for cloud hosts).`);
+  return { keyFilename };
+}
+
 function client() {
   const opts: any = {};
   if (config.bigQuery.projectId) opts.projectId = config.bigQuery.projectId;
-  if (config.bigQuery.credentials) {
-    const keyFilename = path.resolve(process.cwd(), config.bigQuery.credentials);
-    if (!fs.existsSync(keyFilename)) throw new Error("BigQuery credentials file was not found.");
-    opts.keyFilename = keyFilename;
-  }
+  if (config.bigQuery.credentials) Object.assign(opts, credentialOpts(config.bigQuery.credentials));
   return new BigQuery(opts);
 }
 
