@@ -7,6 +7,7 @@ import { escapeRegex } from "../lib/text";
 import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
+import { attachLiveTrainingSummaries } from "../lib/analytics";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -127,12 +128,15 @@ router.get("/", guard, async (req, res) => {
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
 
   const valueKeys = (await getActiveMasterColumns()).filter((c) => c.source === "value").map((c) => c.key);
+  // TRAINING % is computed LIVE from BigQuery (like the Training Stats page) so it reflects the latest
+  // module progress, not the last-saved value. Falls back to the stored primary_pct for non-training rows.
+  await attachLiveTrainingSummaries(rows as any[]);
   const instructors = rows.map((r: any) => {
     const pct = r.values?.primary_pct;
     const row: Record<string, any> = {
       id: String(r._id),
       employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
-      training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
+      training: r.livePrimaryPct != null ? r.livePrimaryPct : (pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null),
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
       managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "",
     };

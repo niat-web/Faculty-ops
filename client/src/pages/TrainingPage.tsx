@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, Check, Inbox } from "lucide-react";
+import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, ChevronLeft, ChevronRight, Check, Inbox } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useCachedGet } from "../hooks";
@@ -131,6 +131,85 @@ function healthMeta(text: string): { label: string; dot: string; cls: string } {
   return { label, dot: "bg-slate-400", cls: "bg-slate-100 text-slate-600 ring-slate-200" };
 }
 
+const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const toISODate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Parse a stored value as a LOCAL date (avoids the UTC off-by-one that `new Date("YYYY-MM-DD")` causes).
+function parseDateVal(v: string): Date | null {
+  if (!v) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v).trim());
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const t = Date.parse(v);
+  return isNaN(t) ? null : new Date(t);
+}
+
+// Compact inline calendar popover for DATE cells — portaled, so the cell width never changes on click.
+function DatePopover({ value, onSave, onCancel }: { value: string; onSave: (v: string) => void; onCancel: () => void }) {
+  const parsed = parseDateVal(value);
+  const selISO = parsed ? toISODate(parsed) : "";
+  const [view, setView] = useState<{ y: number; m: number }>(() => { const d = parsed || new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const W = 236;
+  const place = () => {
+    const el = anchorRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const placeAbove = window.innerHeight - r.bottom - 8 < 290;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8));
+    setPos(placeAbove ? { left, bottom: window.innerHeight - r.top + 4 } : { left, top: r.bottom + 4 });
+  };
+  useLayoutEffect(() => { place(); /* eslint-disable-next-line */ }, [view]);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => { const t = e.target as Node; if (menuRef.current?.contains(t) || anchorRef.current?.contains(t)) return; onCancel(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    const reposition = (e?: Event) => { if (e && menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return; place(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); window.removeEventListener("scroll", reposition, true); window.removeEventListener("resize", reposition); };
+  }, [onCancel]);
+  const firstWeekday = new Date(view.y, view.m, 1).getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const todayISO = toISODate(new Date());
+  const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const prevM = () => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
+  const nextM = () => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
+  return (
+    <div ref={anchorRef} className="flex min-h-[36px] w-full items-center justify-center px-1.5 text-[11px]">
+      <span className={selISO ? "text-slate-700" : "text-slate-400"}>{value || "Select"}</span>
+      {pos && createPortal(
+        <div ref={menuRef} style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: W }}
+          className="z-[60] rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+          <div className="mb-1.5 flex items-center justify-between">
+            <button type="button" onClick={prevM} className="rounded p-1 text-slate-500 transition hover:bg-slate-100"><ChevronLeft className="h-4 w-4" /></button>
+            <div className="text-[12px] font-semibold text-slate-700">{MONTHS3[view.m]} {view.y}</div>
+            <button type="button" onClick={nextM} className="rounded p-1 text-slate-500 transition hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button>
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {WEEKDAYS.map((w) => <div key={w} className="py-0.5 text-center text-[9px] font-medium uppercase tracking-wide text-slate-400">{w}</div>)}
+            {cells.map((d, i) => {
+              if (d === null) return <div key={i} />;
+              const iso = toISODate(new Date(view.y, view.m, d));
+              const isSel = iso === selISO, isToday = iso === todayISO;
+              return (
+                <button key={i} type="button" onClick={() => onSave(iso)}
+                  className={`rounded py-1 text-center text-[11px] transition ${isSel ? "bg-brand-600 font-semibold text-white" : isToday ? "bg-brand-50 font-medium text-brand-700" : "text-slate-700 hover:bg-slate-100"}`}>{d}</button>
+              );
+            })}
+          </div>
+          <div className="mt-1.5 flex items-center justify-between border-t border-slate-100 pt-1.5">
+            <button type="button" onClick={() => onSave(todayISO)} className="rounded px-1.5 py-0.5 text-[11px] font-medium text-brand-600 transition hover:bg-brand-50">Today</button>
+            <button type="button" onClick={() => onSave("")} className="rounded px-1.5 py-0.5 text-[11px] text-slate-400 transition hover:text-rose-600">Clear</button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 // One grid row, memoised so editing a cell only re-renders THIS row (keeps the dropdown instant).
 const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, onSave, onCancel, editRef }: {
   r: any; cols: any[]; editingColKey: string | null;
@@ -183,12 +262,20 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
                     className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100 flex items-center justify-between gap-1"
                     options={[...baseOpts.map((s: string) => ({ value: s, label: s })), { value: "", label: "— clear —" }]} />
                 )
-              ) : (
+              ) : col.type === "DATE" ? (
+                <DatePopover value={val} onSave={(v) => onSave(r, col, v)} onCancel={onCancel} />
+              ) : col.type === "NUMBER" ? (
                 <div className="flex min-h-[36px] w-full items-center">
-                  <input ref={editRef as any} autoFocus aria-label={col.label}
-                    type={col.type === "NUMBER" ? "number" : col.type === "DATE" ? "date" : "text"}
-                    defaultValue={col.type === "DATE" ? (val && !isNaN(Date.parse(val)) ? new Date(val).toISOString().slice(0, 10) : "") : val}
-                    onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100" />
+                  <input ref={editRef as any} autoFocus aria-label={col.label} type="number" defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100" />
+                </div>
+              ) : (
+                // Text → comfortable auto-growing textarea (Notion/Airtable style) so long remarks/notes are fully readable.
+                <div className="flex min-h-[36px] w-full items-start">
+                  <textarea ref={(el) => { (editRef as any).current = el; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }} autoFocus rows={1} aria-label={col.label} defaultValue={val}
+                    onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
+                    onBlur={(e) => onSave(r, col, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
+                    className="block w-[280px] min-w-[180px] max-w-[60vw] resize-none rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] leading-snug shadow-lg outline-none ring-2 ring-brand-100" />
                 </div>
               )
             ) : isStatus ? (

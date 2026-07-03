@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare } from "lucide-react";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
@@ -92,25 +92,7 @@ export default function InstructorMasterPage() {
   // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const wrapTop = wrap.offsetTop; // table wrapper's offset within <main>'s scroll content
-      const y = scroller.scrollTop - wrapTop;
-      // Pin the header once the wrapper's top scrolls above the viewport; release at the bottom.
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      const shift = Math.max(0, Math.min(y, maxShift));
-      thead.style.transform = `translateY(${shift}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [meta, rows.length]);
+  const pagRef = useRef<HTMLDivElement | null>(null);
 
   // Build the query string shared by the list fetch and the CSV export.
   const sort = useSort();
@@ -128,6 +110,18 @@ export default function InstructorMasterPage() {
     p.set("scope", scope);
     return p;
   }, [dq, applied, scope, role, contribution, sort.sort, sort.dir]);
+
+  // The pagination bar lives at the END of the data (inside the horizontal scroll). Sync its width to
+  // the scroll viewport so Prev/Next never scroll off-screen, while `sticky left-0` keeps it pinned.
+  useEffect(() => {
+    const wrap = wrapRef.current, pag = pagRef.current;
+    if (!wrap || !pag) return;
+    const sync = () => { pag.style.width = `${wrap.clientWidth}px`; };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [meta, rows.length]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -183,6 +177,7 @@ export default function InstructorMasterPage() {
     }));
     try {
       await api.post("/master/cell", { instructorId: row.id, key: col.key, value: raw });
+      toast.success(`${col.label} updated${raw ? `: ${String(raw).replace(/\n/g, " ")}` : " (cleared)"}`);
     } catch (e: any) {
       setRows((rs) => rs.map((r) => (r.id === row.id ? prevRow : r)));
       toast.error(e.message || "Failed to save");
@@ -193,8 +188,9 @@ export default function InstructorMasterPage() {
   if (!meta) return <Loading />;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    // Fill <main> so the grid gets its own scroll area with a native sticky header (like the Training Stats page).
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Instructor Master</h1>
           <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
@@ -243,8 +239,8 @@ export default function InstructorMasterPage() {
         </div>
       )}
 
-      <div className="card flex flex-col">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <span className="text-sm font-medium text-slate-500">{total} instructor(s)</span>
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
             {([["active", "Active", counts.active], ["all", "All", counts.all], ["exited", "Exited", counts.exited]] as const).map(([key, label, n]) => (
@@ -258,9 +254,9 @@ export default function InstructorMasterPage() {
             ))}
           </div>
         </div>
-        <div ref={wrapRef} className="overflow-x-auto">
+        <div ref={wrapRef} className="min-h-0 flex-1 overflow-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead ref={theadRef} className="z-20 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:sticky [&_th]:top-0 [&_th]:border-b [&_th]:border-slate-200">
               <tr>
                 {selectMode && (
                   <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] bg-slate-50 px-2 py-3">
@@ -270,10 +266,13 @@ export default function InstructorMasterPage() {
                 {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`bg-slate-50 px-3 py-3 font-semibold ${c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-30` : "z-20"}`} />
-                    {/* Campus + Training quick-view columns, right after Name. */}
-                    {c.key === "name" && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />}
-                    {c.key === "name" && <th className="z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
+                      className={`bg-slate-50 px-3 py-3 font-semibold ${
+                        c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px]`
+                          : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-30 min-w-[130px] border-r border-slate-200`
+                            : "z-20"}`} />
+                    {/* Campus + Training quick-view columns sit right after the frozen Name + Employee ID pair. */}
+                    {c.key === "employeeId" && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />}
+                    {c.key === "employeeId" && <th className="z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
                   </Fragment>
                 ))}
                 {isOps && <th className="sticky right-0 z-30 border-l border-slate-100 bg-slate-50 px-3 py-3 text-right font-semibold">Actions</th>}
@@ -281,15 +280,17 @@ export default function InstructorMasterPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
-                <tr key={row.id} className={`group hover:bg-slate-50 ${selected.has(row.id) ? "bg-brand-50/50" : ""}`}>
+                <tr key={row.id} className={`group bg-white transition-colors even:bg-slate-50 hover:!bg-brand-50 ${selected.has(row.id) ? "!bg-brand-50" : ""}`}>
                   {selectMode && (
-                    <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-white px-2 py-2 group-hover:bg-slate-50">
+                    <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-inherit px-2 py-2">
                       <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" />
                     </td>
                   )}
                   {displayColumns.map((c) => {
-                    // Only Name is sticky while horizontally scrolling (offset right of the checkbox column in multi-select).
-                    const sticky = c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 bg-white group-hover:bg-slate-50` : "";
+                    // Name + Employee ID are both frozen while horizontally scrolling (like the Training Stats grid).
+                    const sticky = c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 bg-inherit w-[200px] min-w-[200px]`
+                      : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-10 bg-inherit min-w-[130px] border-r border-slate-200`
+                        : "";
                     const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
                     const isEditing = edit?.id === row.id && edit?.key === c.key;
                     const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
@@ -297,7 +298,7 @@ export default function InstructorMasterPage() {
                     const isLink = c.key === "name";
                     return (
                       <Fragment key={c.key}>
-                      <td className={`px-3 py-2 ${sticky} ${c.key === "name" ? "font-medium" : ""}`} style={c.key === "name" ? { minWidth: 160 } : c.key === "employeeId" ? { minWidth: 120 } : undefined}>
+                      <td className={`px-3 py-2 ${sticky} ${c.key === "name" ? "font-medium" : ""}`}>
                         {isLink ? (
                           <button type="button" onClick={() => setDetailId(row.id)} className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={String(display)}>{display}</button>
                         ) : isEditing ? (
@@ -314,11 +315,11 @@ export default function InstructorMasterPage() {
                           </button>
                         )}
                       </td>
-                      {/* Campus + Training quick-view columns, right after Name. */}
-                      {c.key === "name" && (
+                      {/* Campus + Training quick-view columns, right after the frozen Name + Employee ID. */}
+                      {c.key === "employeeId" && (
                         <td className="px-3 py-2 text-slate-500">{row.campus || <span className="text-slate-300">—</span>}</td>
                       )}
-                      {c.key === "name" && (
+                      {c.key === "employeeId" && (
                         <td className="px-3 py-2">
                           {row.training == null ? <span className="text-slate-300">—</span> : (
                             <div className="flex items-center gap-2">
@@ -332,7 +333,7 @@ export default function InstructorMasterPage() {
                     );
                   })}
                   {isOps && (
-                    <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-3 py-2 text-right group-hover:bg-slate-50">
+                    <td className="sticky right-0 z-10 border-l border-slate-100 bg-inherit px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         <button onClick={() => setEditing(row)} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
                         <button onClick={() => removeInstructor(row)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
@@ -341,13 +342,25 @@ export default function InstructorMasterPage() {
                   )}
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0) + (selectMode ? 1 : 0)} className="px-5 py-10 text-center text-slate-400">No instructors match these filters.</td></tr>}
+              {!rows.length && (
+                <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0) + (selectMode ? 1 : 0)} className="px-5 py-16 text-center">
+                  <div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-slate-400">
+                    <Inbox className="h-8 w-8 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500">No instructors match these filters</p>
+                    {activeCount > 0 ? <button onClick={clearAll} className="text-xs font-medium text-brand-600 hover:text-brand-700">Clear filters</button> : <p className="text-xs">Try a different search or scope.</p>}
+                  </div>
+                </td></tr>
+              )}
             </tbody>
           </table>
+          {/* Pagination sits at the very END of the data — the user scrolls past the last row to reach it,
+              rather than it floating below the viewport. `sticky left-0` pins it during horizontal scroll;
+              its width is synced (above) to the scroll viewport so the controls stay on-screen. */}
+          <div ref={pagRef} className="sticky left-0 border-t border-slate-200 bg-white px-5 py-3">
+            <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
+          </div>
         </div>
       </div>
-
-      <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
 
       {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 
@@ -398,7 +411,8 @@ export default function InstructorMasterPage() {
 
 // Inline cell editor — type-aware (dropdown / manager picker / date / number / text).
 function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column; managers: { id: string; name: string }[]; value: string; onCommit: (v: string) => void; onCancel: () => void }) {
-  const base = "w-full min-w-[140px] rounded border border-brand-400 px-2 py-1 text-sm outline-none ring-2 ring-brand-100";
+  // max-w cap + truncation keep the cell from widening when a long value is selected in a dropdown.
+  const base = "w-full max-w-[280px] rounded border border-brand-400 px-2 py-1 text-sm outline-none ring-2 ring-brand-100";
 
   if (col.source === "manager") {
     const options = [{ value: "", label: "— unassigned —" }, ...managers.map((m) => ({ value: m.id, label: m.name }))];
@@ -410,14 +424,25 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
     const options = [{ value: "", label: "— select —" }, ...extra, ...opts.map((o) => ({ value: o, label: o }))];
     return <ScrollSelect autoOpen value={value} options={options} onChange={onCommit} onClose={onCancel} className={`${base} flex items-center justify-between gap-2`} />;
   }
+  if (col.type === "NUMBER") {
+    return (
+      <input autoFocus type="number" defaultValue={value} className={base}
+        onBlur={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} />
+    );
+  }
+  // Text/date → a comfortable auto-growing textarea (Notion/Airtable style): wide enough to read at a
+  // glance, wraps + grows VERTICALLY so long values are never clipped. Esc cancels, click-away saves.
   return (
-    <input
+    <textarea
       autoFocus
-      type={col.type === "NUMBER" ? "number" : "text"}
+      rows={1}
       defaultValue={value}
-      className={base}
+      ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }}
+      className="block w-[360px] min-w-[240px] max-w-[70vw] resize-none rounded border border-brand-400 px-2 py-1 text-sm leading-snug shadow-lg outline-none ring-2 ring-brand-100"
+      onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
       onBlur={(e) => onCommit(e.target.value)}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
     />
   );
 }
