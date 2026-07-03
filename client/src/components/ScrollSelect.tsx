@@ -88,7 +88,7 @@ export default function ScrollSelect({
         onClick={() => setOpen((o) => !o)}
         className={className || "input flex w-full items-center justify-between gap-2 text-left"}
       >
-        <span className={`truncate ${selected ? "" : "text-slate-400"}`}>{selected ? selected.label : placeholder}</span>
+        <span className={`min-w-0 flex-1 truncate ${selected ? "" : "text-slate-400"}`}>{selected ? selected.label : placeholder}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
 

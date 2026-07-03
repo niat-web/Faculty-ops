@@ -13,7 +13,7 @@ const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
 type DocWithSummary = any & { liveTraining?: TrainingSummary | null; livePrimaryPct?: number | null };
 const dayMs = 24 * 60 * 60 * 1000;
 
-async function attachLiveTrainingSummaries(docs: DocWithSummary[]) {
+export async function attachLiveTrainingSummaries(docs: DocWithSummary[]) {
   if (!docs.length) return;
   const moduleCols: any[] = await TrainingColumn.find({ archivedAt: null, storage: "module" }).select("track key courseId").lean();
   const live: Record<string, string[]> = {};

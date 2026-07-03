@@ -6,6 +6,11 @@
 html, body, #root { padding: 0; margin: 0; min-height: 100%; }
 body { font-family: var(--font-sans); color: theme("colors.ink"); -webkit-font-smoothing: antialiased; background: #f8fafc; }
 
+/* Toast auto-dismiss countdown bar (shrinks over the toast's lifetime). */
+@keyframes toastbar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+/* Toast enter animation — slide in from the right + fade. */
+@keyframes toastin { from { opacity: 0; transform: translateX(0.75rem); } to { opacity: 1; transform: translateX(0); } }
+
 @layer components {
   .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition; }
   .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700 shadow-sm; }
