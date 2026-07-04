@@ -319,6 +319,9 @@ export default function TrainingPage() {
   const [edit, setEdit] = useState<any>(null); // { id, colKey }
   const editRef = useRef<HTMLSelectElement | HTMLInputElement | null>(null);
   const syncToastRef = useRef<string>("");
+  // Sticky header during PAGE scroll: the page (<main>) scrolls vertically while the table keeps
+  // its own horizontal scroll. CSS sticky can't pin the header to the page through an overflow-x
+  // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const pagRef = useRef<HTMLDivElement | null>(null);
@@ -415,6 +418,26 @@ export default function TrainingPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
+
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wrapTop = wrap.offsetTop; // table wrapper's offset within <main>'s scroll content
+      const y = scroller.scrollTop - wrapTop;
+      // Pin the header once the wrapper's top scrolls above the viewport; release at the bottom.
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      const shift = Math.max(0, Math.min(y, maxShift));
+      thead.style.transform = `translateY(${shift}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [resp, tabKey, shown.length]);
 
   const onEdit = useCallback((id: string, colKey: string) => setEdit({ id, colKey }), []);
   const onCancel = useCallback(() => setEdit(null), []);
