@@ -46,17 +46,17 @@ function cleanOptions(type: string, options: any): string[] {
 }
 
 // Grid data — scoped: Ops/SM see all, a Capability Manager sees only their reportees.
-router.get("/", staffGuard, async (req, res) => {
-  // Optional ?track= → build (and return) ROWS for only that track. Counts for all tracks are still
-  // computed (cheap) so the tabs show totals, but the big rows payload is just the requested track.
-  const wantTrack = String(req.query.track || "").trim();
-  const summaryOnly = String(req.query.summaryOnly || "") === "1"; // return only the BigQuery sync status (for the Dynamic Fields page)
+// Build the Training Stats rows + columns + track counts from MongoDB ONLY (no BigQuery). Shared by the
+// grid route and the background /sync route so both see an identical instructor/row set. This is the single
+// Mongo-read seam — the entire BigQuery layer lives in /sync (and the summaryOnly probe) so the grid renders
+// instantly. Optional wantTrack builds rows for just that track (tab counts are always computed — cheap).
+async function buildTrainingData(user: any, wantTrack: string) {
   const cols = await loadColumns();
   const live = liveTrackKeys(cols as any[]);
   const sensitiveKeys = new Set((await FieldDefinition.find({ visibility: "SENSITIVE", archivedAt: null }).select("key").lean()).map((f: any) => f.key));
   const valueKeys = [...new Set((cols as any[]).filter((c) => c.storage === "value").map((c) => c.key))];
 
-  const docs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
+  const docs = await Instructor.find(instructorScopeFilter(user)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
   const mgrIds = [...new Set(docs.map((d: any) => d.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
@@ -81,11 +81,28 @@ router.get("/", staffGuard, async (req, res) => {
   const columns: Record<string, any[]> = {};
   for (const c of cols as any[]) (columns[c.track] ||= []).push(colOut(c));
   const syncCols = (cols as any[]).filter((c) => c.storage === "module" && c.courseId && !MANUAL_MODULE_KEYS.has(c.key) && (!wantTrack || c.track === wantTrack));
+  const tracks = TRACK_META.map((t) => ({ ...t, count: trackCount[t.key] || 0, columns: (columns[t.key] || []).length }));
+  return { rows, columns, tracks, syncCols };
+}
+
+// Training Stats grid. Per an explicit product decision, this page is BigQuery-blocking (NOT Mongo-first):
+// it fetches BigQuery, waits, merges the latest live values into the rows, and returns once — so the grid
+// always represents the latest BigQuery state (no Mongo-cached values, no background patching).
+router.get("/", staffGuard, async (req, res) => {
+  const wantTrack = String(req.query.track || "").trim();
+  const summaryOnly = String(req.query.summaryOnly || "") === "1"; // Dynamic Fields page probes only the sync status
+  const { rows, columns, tracks, syncCols } = await buildTrainingData(req.user!, wantTrack);
+
+  // fresh:true → bypass the server-side result cache so Stats ALWAYS waits for a live BigQuery read
+  // (never a cached/stale result). The cache is still populated for Master/Dashboard's fast path.
   const progress = await fetchTrainingProgress(
-    syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
-    rows.map((r) => ({ id: r.id, employeeId: r.employeeId, email: r.email, uid: r.uid }))
+    syncCols.map((c: any) => ({ key: c.key, courseId: c.courseId })),
+    rows.map((r) => ({ id: r.id, employeeId: r.employeeId, email: r.email, uid: r.uid })),
+    { fresh: true }
   );
   if (summaryOnly) return res.json({ progressSync: progress });
+
+  // Merge the live BigQuery values into each row (blocking — Stats always shows the latest BigQuery state).
   for (const row of rows) {
     const updates = progress.ok ? progress.cells[row.id] : null;
     const nextStatus = { ...row.moduleStatus };
@@ -94,10 +111,9 @@ router.get("/", staffGuard, async (req, res) => {
       else delete nextStatus[col.key];
     }
     row.moduleStatus = nextStatus;
-    Object.assign(row.values, summaryStored(computeSummary(row.values, row.moduleStatus, row.tab)));
+    Object.assign(row.values, summaryStored(computeSummary(row.values, nextStatus, row.tab)));
   }
   for (const row of rows) { delete row.email; delete row.uid; }
-  const tracks = TRACK_META.map((t) => ({ ...t, count: trackCount[t.key] || 0, columns: (columns[t.key] || []).length }));
   res.json({ rows, columns, tracks, role: req.user!.role, canDelete: req.user!.role === Role.OPS_ADMIN, progressSync: progress });
 });
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Building2 } from "lucide-react";
 import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 
 export default function CampuswisePage() {
   const { data, loading } = useCachedGet<any>("/contribution/campuswise"); // cached for instant revisits
@@ -14,7 +14,7 @@ export default function CampuswisePage() {
     return !n ? items : items.filter((i) => i.campus.toLowerCase().includes(n));
   }, [items, q]);
 
-  if (loading) return <Loading />;
+  if (loading) return <GridSkeleton />;
 
   return (
     <div className="space-y-5">
@@ -41,7 +41,7 @@ export default function CampuswisePage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((i) => (
                 <tr key={i.campus} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800"><Link to={`/app/instructors/master?campus=${encodeURIComponent(i.campus)}`} className="text-brand-700 hover:underline">{i.campus}</Link></td>
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc"><Link to={`/app/instructors/master?campus=${encodeURIComponent(i.campus)}`} className="text-brand-700 hover:underline" title={i.campus}>{i.campus}</Link></td>
                   <td className="px-5 py-3 text-right"><span className="chip chip-status">{i.total}</span></td>
                   <td className="px-5 py-3 text-right text-slate-600">{i.university}</td>
                   <td className="px-5 py-3 text-right text-slate-600">{i.nxtwave}</td>

@@ -150,10 +150,10 @@ export default function UsersPage() {
             <tbody className="divide-y divide-slate-100">
               {data?.users.map((u: any) => (
                 <tr key={u.id} className="group hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium">{u.name}</td>
-                  <td className="px-5 py-3 text-slate-500">{u.email}</td>
+                  <td className="px-5 py-3 font-medium cell-trunc" title={u.name}>{u.name}</td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={u.email}>{u.email}</td>
                   <td className="px-5 py-3"><span className="chip chip-gray">{ROLE_LABEL[u.role]}</span></td>
-                  <td className="px-5 py-3 text-slate-500">{u.managerName || "—"}</td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={u.managerName || "—"}>{u.managerName || "—"}</td>
                   <td className="px-5 py-3">{u.active ? (u.mustSetPassword ? <span className="chip chip-necessary">Pending password</span> : <span className="chip chip-public">Active</span>) : <span className="chip chip-sensitive">Inactive</span>}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-slate-500">{fmtDateTime(u.lastLoginAt)}</td>
                   <td className="px-5 py-3">

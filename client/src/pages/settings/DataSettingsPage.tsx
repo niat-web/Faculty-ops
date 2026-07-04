@@ -3,7 +3,7 @@ import { Database, Trash2, Download } from "lucide-react";
 import { api, API_BASE } from "../../api";
 import { useToast } from "../../toast";
 import { useConfirm } from "../../confirm";
-import Loading from "../../components/Loading";
+import { FormSkeleton } from "../../components/skeletons";
 
 type Counts = { audit: number; notifications: number; logins: number };
 
@@ -41,7 +41,7 @@ export default function DataSettingsPage() {
     finally { setPruning(false); }
   }
 
-  if (counts === null) return <Loading />;
+  if (counts === null) return <FormSkeleton />;
   const keepForever = !days || Number(days) <= 0;
 
   return (

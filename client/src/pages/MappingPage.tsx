@@ -4,7 +4,7 @@ import { ArrowRight, History, Users2 } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 import ScrollSelect from "../components/ScrollSelect";
 
 export default function MappingPage() {
@@ -31,7 +31,7 @@ export default function MappingPage() {
     catch (e: any) { toast.error(e.message); } finally { setBusy(false); }
   }
 
-  if (!data) return <Loading />;
+  if (!data) return <GridSkeleton />;
 
   const TabBtn = ({ id, label, count }: { id: string; label: string; count?: number }) => (
     <button onClick={() => setTab(id)} className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${tab === id ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
@@ -60,8 +60,8 @@ export default function MappingPage() {
               <tbody className="divide-y divide-slate-100">
                 {managers.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-3"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><Users2 className="h-4 w-4" /></span><span className="font-medium text-slate-800">{m.name}</span></div></td>
-                    <td className="px-5 py-3 text-slate-600">{m.reportsTo}</td>
+                    <td className="max-w-[280px] px-5 py-3"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600"><Users2 className="h-4 w-4" /></span><span className="min-w-0 truncate font-medium text-slate-800" title={m.name}>{m.name}</span></div></td>
+                    <td className="px-5 py-3 text-slate-600 cell-trunc" title={m.reportsTo}>{m.reportsTo}</td>
                     <td className="px-5 py-3"><span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">{m.reportees}</span></td>
                     <td className="px-5 py-3 text-right"><Link to={`/app/instructors?managerId=${m.id}`} className="inline-flex items-center gap-1 text-brand-600 hover:underline">View reportees <ArrowRight className="h-3.5 w-3.5" /></Link></td>
                   </tr>
@@ -132,8 +132,8 @@ function ReassignTab({ cms, instructors, cmName, busy, reassign, toast }: any) {
                 <tr key={i.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{i.employeeId}</td>
                   <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline">{i.name}</Link></td>
-                  <td className="px-5 py-3 text-slate-500">{i.campus || "—"}</td>
-                  <td className="px-5 py-3 text-slate-600">{cmName(i.managerId)}</td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={i.campus || "—"}>{i.campus || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600 cell-trunc" title={cmName(i.managerId)}>{cmName(i.managerId)}</td>
                   <td className="px-5 py-3">
                     <div className="w-44">
                       <ScrollSelect value="" disabled={busy} placeholder="Change…" onChange={(v) => { if (v) reassign([i.id], v); }}

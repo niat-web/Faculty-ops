@@ -191,11 +191,11 @@ export default function RequestsPage() {
               <tbody className="divide-y divide-slate-100">
                 {history.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50 align-top">
-                    <td className="px-5 py-3"><Link to={`/app/instructors/${r.instructorId}`} className="font-medium text-brand-700 hover:underline">{r.instructorName}</Link></td>
-                    <td className="px-5 py-3 text-slate-600">{r.fieldLabel}</td>
-                    <td className="px-5 py-3 text-xs"><span className="text-slate-400 line-through">{r.oldValue || "—"}</span> → <span className="text-slate-700">{r.newValue}</span></td>
+                    <td className="px-5 py-3 cell-trunc"><Link to={`/app/instructors/${r.instructorId}`} className="font-medium text-brand-700 hover:underline" title={r.instructorName}>{r.instructorName}</Link></td>
+                    <td className="px-5 py-3 text-slate-600 cell-trunc" title={r.fieldLabel}>{r.fieldLabel}</td>
+                    <td className="px-5 py-3 text-xs cell-trunc" title={`${r.oldValue || "—"} → ${r.newValue}`}><span className="text-slate-400 line-through">{r.oldValue || "—"}</span> → <span className="text-slate-700">{r.newValue}</span></td>
                     <td className="px-5 py-3"><span className={`chip ${STATUS_CHIP[r.status]}`}>{r.status.toLowerCase()}</span></td>
-                    <td className="px-5 py-3 text-xs text-slate-500">{r.decisionComment || "—"}</td>
+                    <td className="px-5 py-3 text-xs text-slate-500 cell-trunc" title={r.decisionComment || "—"}>{r.decisionComment || "—"}</td>
                   </tr>
                 ))}
                 {!history.length && <tr><td colSpan={5} className="px-5 py-6 text-center text-slate-400">No matching history.</td></tr>}

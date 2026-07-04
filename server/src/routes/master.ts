@@ -82,8 +82,10 @@ function buildSort(sort: string, dir: string): Record<string, 1 | -1> {
   return { [`values.${sort}`]: d };
 }
 
-// Paginated, scoped, filtered master rows.
-router.get("/", guard, async (req, res) => {
+// Resolve the shared scope/search/filter/pagination for the master grid from the request query.
+// Used by both the main list route and the /training-sync route so a page's instructor set is
+// identical across the two (the sync can also be driven by a scheduled job with the same inputs).
+async function buildMasterFilter(req: any) {
   const q = String(req.query.q || "").trim();
   const managers = listParam(req.query.managerId);
   const departments = listParam(req.query.department);
@@ -117,9 +119,18 @@ router.get("/", guard, async (req, res) => {
   if (scope === "active") filter.status = { $nin: EXIT_STATES };
   else if (scope === "exited") filter.status = { $in: EXIT_STATES };
 
+  const sort = buildSort(String(req.query.sort || ""), String(req.query.dir || ""));
+  return { base, filter, sort, page, PER };
+}
+
+// Paginated, scoped, filtered master rows. Reads ONLY from MongoDB so the grid renders immediately —
+// the live BigQuery TRAINING % is fetched separately (non-blocking) via GET /training-sync.
+router.get("/", guard, async (req, res) => {
+  const { base, filter, sort, page, PER } = await buildMasterFilter(req);
+
   const [total, rows, cAll, cExited] = await Promise.all([
     Instructor.countDocuments(filter),
-    Instructor.find(filter).sort(buildSort(String(req.query.sort || ""), String(req.query.dir || ""))).skip((page - 1) * PER).limit(PER).lean(),
+    Instructor.find(filter).sort(sort).skip((page - 1) * PER).limit(PER).lean(),
     Instructor.countDocuments(base),
     Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
   ]);
@@ -128,15 +139,14 @@ router.get("/", guard, async (req, res) => {
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
 
   const valueKeys = (await getActiveMasterColumns()).filter((c) => c.source === "value").map((c) => c.key);
-  // TRAINING % is computed LIVE from BigQuery (like the Training Stats page) so it reflects the latest
-  // module progress, not the last-saved value. Falls back to the stored primary_pct for non-training rows.
-  await attachLiveTrainingSummaries(rows as any[]);
+  // TRAINING % here is the last-saved (MongoDB) value so the grid renders instantly. The live BigQuery
+  // value is layered on top by the client via GET /training-sync, which never blocks this response.
   const instructors = rows.map((r: any) => {
     const pct = r.values?.primary_pct;
     const row: Record<string, any> = {
       id: String(r._id),
       employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
-      training: r.livePrimaryPct != null ? r.livePrimaryPct : (pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null),
+      training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
       managerId: r.currentManagerId ? String(r.currentManagerId) : "",
       managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "",
     };
@@ -144,6 +154,26 @@ router.get("/", guard, async (req, res) => {
     return row;
   });
   res.json({ total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)), counts: { all: cAll, active: cAll - cExited, exited: cExited }, instructors });
+});
+
+// Live TRAINING % from BigQuery for the CURRENT page's instructors ONLY. The grid calls this AFTER it
+// has rendered from Mongo, so BigQuery latency never blocks the page. Returns only { id -> pct } patches
+// (no full rows) so the client updates just the training cells. If BigQuery fails it responds ok:false
+// with the error and an empty map — the client keeps the last-saved Mongo values. This handler is the
+// single seam a scheduled job would replace: precompute `training` and serve it from a store instead.
+router.get("/training-sync", guard, async (req, res) => {
+  const { filter, sort, page, PER } = await buildMasterFilter(req);
+  const rows: any[] = await Instructor.find(filter).sort(sort).skip((page - 1) * PER).limit(PER)
+    .select("employeeId email uid values moduleStatus").lean();
+  const progress = await attachLiveTrainingSummaries(rows);
+  const training: Record<string, number> = {};
+  for (const r of rows) if (r.livePrimaryPct != null) training[String(r._id)] = r.livePrimaryPct;
+  res.json({
+    ok: progress ? progress.ok : true,
+    lastSyncedAt: progress?.lastSyncedAt ?? null,
+    error: progress && !progress.ok ? (progress.error || "BigQuery sync failed.") : undefined,
+    training,
+  });
 });
 
 // CSV export — all master columns, mirrors the active list filters (capped to bound memory).

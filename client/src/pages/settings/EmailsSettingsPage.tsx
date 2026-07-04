@@ -3,7 +3,7 @@ import { Mail } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
 import { ROLE_LABEL } from "../../auth";
-import Loading from "../../components/Loading";
+import { FormSkeleton } from "../../components/skeletons";
 
 const ROLE_ORDER = ["SENIOR_MANAGER", "CAPABILITY_MANAGER", "OPS_ADMIN", "INSTRUCTOR"];
 
@@ -26,7 +26,7 @@ export default function EmailsSettingsPage() {
     finally { setBusy(null); }
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <FormSkeleton />;
 
   const groups = ROLE_ORDER
     .map((role) => ({ role, items: events.filter((e) => e.role === role) }))

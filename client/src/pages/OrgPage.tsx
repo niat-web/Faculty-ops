@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Building2, Users2, UserCog, ArrowRight, ChevronDown, ChevronRight, UserX, Plus, Minus, Maximize2, Download, ShieldCheck } from "lucide-react";
-import { toPng } from "html-to-image";
 import { useCachedGet } from "../hooks";
 import { useToast } from "../toast";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 
 // Per-branch colour (node accent + connector line) so each Senior Manager's tree is distinct.
 const BRANCH = [
@@ -141,6 +140,9 @@ export default function OrgPage() {
     if (!wrapRef.current) return;
     setExporting(true);
     try {
+      // Dynamic import: html-to-image (~a few KB) loads only when the user actually exports, keeping it out
+      // of the Org page's initial chunk.
+      const { toPng } = await import("html-to-image");
       const url = await toPng(wrapRef.current, { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true });
       const a = document.createElement("a"); a.href = url; a.download = "org-chart.png"; a.click();
     } catch { toast.error("Couldn't export the chart. Try collapsing some branches and retry."); }
@@ -148,7 +150,7 @@ export default function OrgPage() {
   }
 
   if (err && !raw) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!raw) return <Loading />;
+  if (!raw) return <GridSkeleton />;
 
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !(o[id] ?? true) }));
   const setAll = (v: boolean) => setOpen(Object.fromEntries(branches.map((b: any) => [b._id, v])));
