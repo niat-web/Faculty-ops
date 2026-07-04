@@ -6,7 +6,7 @@ import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
-import Loading from "../components/Loading";
+import { FormSkeleton } from "../components/skeletons";
 import ScrollSelect from "../components/ScrollSelect";
 
 // Module labels/order now come dynamically from the profile payload (p.modules).
@@ -84,7 +84,7 @@ export default function InstructorProfilePage() {
   }
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!p) return <Loading />;
+  if (!p) return <FormSkeleton sections={3} />;
 
   // Field-table tabs come from the (dynamic) module list — incl. admin-created modules — excluding the
   // ones rendered with special UI (Lifecycle timeline / Exit form).

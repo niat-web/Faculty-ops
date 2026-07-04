@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
 interface ConfirmOptions {
@@ -51,8 +51,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     resolver.current = undefined;
   }, []);
 
+  // Stable value (confirm/prompt are already useCallback'd) so opening/closing a dialog doesn't re-render
+  // every useConfirm() consumer.
+  const ctxValue = useMemo(() => ({ confirm, prompt }), [confirm, prompt]);
   return (
-    <Ctx.Provider value={{ confirm, prompt }}>
+    <Ctx.Provider value={ctxValue}>
       {children}
 
       {state.kind === "confirm" && (() => {

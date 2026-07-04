@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, Rota
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 import Modal from "../components/Modal";
 
 const TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
@@ -53,7 +53,7 @@ export default function MasterColumnsPage() {
     setCols((cur) => { persistOrder(cur); return cur; });
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <GridSkeleton />;
 
   return (
     <div className="space-y-5">
@@ -88,7 +88,7 @@ export default function MasterColumnsPage() {
                       <button onClick={() => move(i, 1)} disabled={i === cols.length - 1} className="rounded p-0.5 hover:bg-slate-100 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
                     </div>
                   </td>
-                  <td className="px-5 py-2.5 font-medium">
+                  <td className="px-5 py-2.5 font-medium cell-trunc" title={c.label}>
                     <span className="inline-flex items-center gap-1.5">{c.label}{c.locked && <Lock className="h-3 w-3 text-slate-300" />}</span>
                   </td>
                   <td className="px-5 py-2.5"><span className="chip chip-gray">{SOURCE_LABEL[c.source] || c.source}</span></td>

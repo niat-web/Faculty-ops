@@ -5,10 +5,11 @@ import Papa from "papaparse";
 import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, ChevronLeft, ChevronRight, Check, Inbox } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
-import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { isAbort } from "../hooks";
+import { GridSkeleton } from "../components/skeletons";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
+import OverlayCellEditor from "../components/OverlayCellEditor";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
 import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
 
@@ -58,9 +59,11 @@ const CHIP_TONE: Record<string, string> = {
   other: "bg-slate-100 text-slate-600",
   empty: "",
 };
-function StatusChip({ text, tone }: { text: string; tone: string }) {
-  if (!text || tone === "empty") return <span className="text-[11px] text-slate-300">—</span>;
-  return <span className={`inline-block max-w-full truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${CHIP_TONE[tone] || CHIP_TONE.other}`}>{text}</span>;
+function StatusChip({ text, tone, block }: { text: string; tone: string; block?: boolean }) {
+  if (!text || tone === "empty") return <span className="text-xs text-slate-300">—</span>;
+  // `block` → the coloured background fills the cell (used for module/status cells so there is almost no
+  // white gap around it); otherwise it hugs its text (compact inline labels like Health).
+  return <span title={text} className={`truncate rounded px-2 py-1 text-xs font-medium ${block ? "block w-full text-center" : "inline-block max-w-full"} ${CHIP_TONE[tone] || CHIP_TONE.other}`}>{text}</span>;
 }
 
 // Multi-select editor for SEM columns: tick several options; changes apply when you click away
@@ -177,7 +180,7 @@ function DatePopover({ value, onSave, onCancel }: { value: string; onSave: (v: s
   const prevM = () => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }));
   const nextM = () => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }));
   return (
-    <div ref={anchorRef} className="flex min-h-[36px] w-full items-center justify-center px-1.5 text-[11px]">
+    <div ref={anchorRef} className="flex min-h-[36px] w-full items-center justify-center px-2 text-sm">
       <span className={selISO ? "text-slate-700" : "text-slate-400"}>{value || "Select"}</span>
       {pos && createPortal(
         <div ref={menuRef} style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: W }}
@@ -222,18 +225,18 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
   const summary = computeSummary(r.values, r.moduleStatus, r.tab);
   return (
     <tr className="group bg-white transition-colors even:bg-slate-50 hover:!bg-brand-50">
-      <td className="sticky z-20 border-b border-slate-100 bg-inherit px-3 py-2 font-mono text-[11px] text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W }}>{r.employeeId}</td>
-      <td className="sticky z-20 whitespace-nowrap border-b border-r border-slate-200 bg-inherit px-3 py-2 font-medium text-slate-800" style={{ left: ID_W, minWidth: NAME_W }}>{r.name}</td>
+      <td className="sticky z-20 truncate border-b border-slate-100 bg-inherit px-3 py-2 font-mono text-xs text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W, maxWidth: ID_W }} title={r.employeeId}>{r.employeeId}</td>
+      <td className="sticky z-20 truncate border-b border-r border-slate-200 bg-inherit px-3 py-2 font-medium text-slate-800" style={{ left: ID_W, width: NAME_W, minWidth: NAME_W, maxWidth: NAME_W }} title={r.name}>{r.name}</td>
       {cols.map((col) => {
         if (COMPUTED.has(col.key)) {
           const isHealth = col.key === "health_status" || col.key === "secondary_health_status";
           const { text, tone: ctone } = summaryCell(col.key, summary);
           return (
-            <td key={col.id} className="border-b border-slate-100 px-1.5 text-center" title="Calculated automatically">
+            <td key={col.id} className="border-b border-slate-100 px-2 text-center" title="Calculated automatically">
               <div className="flex min-h-[36px] w-full items-center justify-center whitespace-nowrap">
                 {isHealth
                   ? <StatusChip text={healthMeta(text).label} tone={ctone || "other"} />
-                  : <span className="text-[11px] font-semibold text-slate-700">{text}</span>}
+                  : <span className="text-sm font-semibold text-slate-700">{text}</span>}
               </div>
             </td>
           );
@@ -247,11 +250,11 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         const selectLike = col.type === "STATUS" || col.type === "DROPDOWN";
         const multi = MULTI_KEYS.has(col.key);
         return (
-          <td key={col.id} className="border-b border-slate-100 px-1.5 text-center">
+          <td key={col.id} className="border-b border-slate-100 px-2 text-center">
             {isSynced ? (
-              // Live BigQuery value → compact read-only chip. Transparent cell so the row bg flows through.
-              <div className="flex min-h-[36px] w-full items-center justify-center whitespace-nowrap">
-                <StatusChip text={syncedStatusText(val, tone)} tone={tone} />
+              // Live BigQuery value → coloured block that nearly fills the cell (minimal white gap).
+              <div className="flex min-h-[36px] w-full items-center justify-center px-1">
+                <StatusChip text={syncedStatusText(val, tone)} tone={tone} block />
               </div>
             ) : isEditing ? (
               selectLike ? (
@@ -259,39 +262,35 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
                   <MultiSelectEditor value={val || ""} options={baseOpts} onSave={(v) => onSave(r, col, v)} onCancel={onCancel} />
                 ) : (
                   <ScrollSelect autoOpen value={val || ""} onChange={(v) => onSave(r, col, v)} onClose={onCancel} placeholder="— clear —"
-                    className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100 flex items-center justify-between gap-1"
+                    className="w-full rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-100 flex items-center justify-between gap-1"
                     options={[...baseOpts.map((s: string) => ({ value: s, label: s })), { value: "", label: "— clear —" }]} />
                 )
               ) : col.type === "DATE" ? (
                 <DatePopover value={val} onSave={(v) => onSave(r, col, v)} onCancel={onCancel} />
               ) : col.type === "NUMBER" ? (
                 <div className="flex min-h-[36px] w-full items-center">
-                  <input ref={editRef as any} autoFocus aria-label={col.label} type="number" defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100" />
+                  <input ref={editRef as any} autoFocus aria-label={col.label} type="number" defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full min-w-0 overflow-hidden text-ellipsis rounded border border-brand-400 bg-white px-2 py-1 text-sm outline-none ring-2 ring-brand-100" />
                 </div>
               ) : (
-                // Text → comfortable auto-growing textarea (Notion/Airtable style) so long remarks/notes are fully readable.
-                <div className="flex min-h-[36px] w-full items-start">
-                  <textarea ref={(el) => { (editRef as any).current = el; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }} autoFocus rows={1} aria-label={col.label} defaultValue={val}
-                    onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
-                    onBlur={(e) => onSave(r, col, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-                    className="block w-[280px] min-w-[180px] max-w-[60vw] resize-none rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] leading-snug shadow-lg outline-none ring-2 ring-brand-100" />
-                </div>
+                // Text → shared zero-CLS overlay editor (identical to the Instructor Master grid).
+                <OverlayCellEditor value={val} sizerClass="max-w-[280px]" onCommit={(v) => onSave(r, col, v)} onCancel={onCancel} onRef={(el) => { (editRef as any).current = el; }} />
               )
             ) : isStatus ? (
               // Manual module (Frontend/Backend Projects) → colored status chip, clickable to edit.
-              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-center justify-center rounded transition hover:bg-black/[0.03]">
-                {val ? <StatusChip text={SHORT[tone] || val} tone={tone} /> : <span className="text-[11px] text-slate-300">Select</span>}
+              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-center justify-center rounded px-1 transition hover:bg-black/[0.03]">
+                {val ? <StatusChip text={SHORT[tone] || val} tone={tone} block /> : <span className="text-sm text-slate-300">Select</span>}
               </button>
             ) : multi ? (
               // Multi-select (SEM 1/2) → chosen options stack vertically, one per line. Plain (no box).
-              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full flex-col items-center justify-center gap-0.5 rounded px-1.5 text-[11px] text-slate-600 transition hover:bg-brand-50/40">
-                {parseMulti(val).length ? parseMulti(val).map((t, i) => <span key={i} className="w-full truncate text-center leading-tight">{t}</span>) : <span className="text-slate-300">Select</span>}
+              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full flex-col items-center justify-center gap-0.5 rounded px-2 text-sm text-slate-600 transition hover:bg-brand-50/40">
+                {parseMulti(val).length ? parseMulti(val).map((t, i) => <span key={i} title={t} className="block w-full min-w-0 truncate text-center leading-tight">{t}</span>) : <span className="text-slate-300">Select</span>}
               </button>
             ) : (
               // All other editable value cells (Department, tracks, dates, reporting, remarks…) → plain, no box.
-              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-center justify-center rounded px-1.5 text-[11px] text-slate-600 transition hover:bg-brand-50/40">
-                <span className={`truncate ${col.key === "department" ? "max-w-[150px]" : (col.key === "remarks" || col.key === "other_learnings") ? "max-w-[180px]" : ""} ${val ? "" : "text-slate-300"}`}>{val || "Select"}</span>
+              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-center justify-center rounded px-2 text-sm text-slate-600 transition hover:bg-brand-50/40">
+                {/* w-full + min-w-0 + truncate → the cell fills the (fixed-width, header-driven) column and
+                    truncates with an ellipsis, so selecting a long value can never resize the column. */}
+                <span title={val || ""} className={`block w-full max-w-[280px] truncate text-center ${val ? "" : "text-slate-300"}`}>{val || "Select"}</span>
               </button>
             )}
           </td>
@@ -306,8 +305,11 @@ export default function TrainingPage() {
   const navigate = useNavigate();
   const { slug } = useParams();
   const tabKey = SLUG_TRACK[slug || ""] || "tech";
-  // Per-track fetch (cached): only this track's rows load → faster initial load, instant tab revisits.
-  const { data: resp, setData: setResp, loading, error: err } = useCachedGet<any>(`/training?track=${tabKey}`);
+  // BigQuery-ONLY: every visit fetches fresh and WAITS for the response — no cache, no stale-while-revalidate,
+  // no Mongo-first render. The page shows <Loading> until BigQuery returns, then renders once.
+  const [resp, setResp] = useState<any>(undefined);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [cmFilter, setCmFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -322,16 +324,31 @@ export default function TrainingPage() {
   // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const pagRef = useRef<HTMLDivElement | null>(null);
 
   const data: any[] = resp?.rows || [];
   const columns: Record<string, any[]> = resp?.columns || {};
   const tracks: any[] = resp?.tracks || [];
+  // Instructor Stats is BigQuery-blocking: the /training response already carries the fully-synced rows
+  // and the BigQuery status. There is NO Mongo-first render / background patch here (by product decision).
   const progressSync = resp?.progressSync;
 
   // Reset view state when the track (route) changes.
   useEffect(() => { setPage(0); setEdit(null); setFilters(EMPTY_FILTERS); setCmFilter(""); }, [tabKey]);
 
-  // On load / sync, surface the BigQuery status as a long-lived toast (30s) instead of a header banner.
+  // Fresh BigQuery fetch on every mount / track change. `resp` is cleared first so NO stale data is ever
+  // shown — the page waits on <Loading> until the response arrives, then renders once.
+  useEffect(() => {
+    const ac = new AbortController();
+    setLoading(true); setResp(undefined); setErr(null);
+    api.get(`/training?track=${tabKey}`, { signal: ac.signal })
+      .then((r) => { if (!ac.signal.aborted) setResp(r); })
+      .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load"); })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
+  }, [tabKey]);
+
+  // Surface the BigQuery sync status once per completed fetch (success = matched counts, failure = warning).
   useEffect(() => {
     if (!progressSync) return;
     const key = progressSync.lastSyncedAt || progressSync.error || "";
@@ -340,6 +357,18 @@ export default function TrainingPage() {
     if (progressSync.ok) toast.success(`Live from BigQuery · ${progressSync.instructorsMatched || 0}/${progressSync.totalInstructors || 0} matched · ${progressSync.mappedCourses || 0} courses · ${progressSync.matched || 0} cells synced`);
     else toast.error(progressSync.error || "BigQuery sync unavailable");
   }, [progressSync, toast]);
+
+  // Pagination lives at the END of the data inside the scroll card (identical to Instructor Master):
+  // sync its width to the scroll viewport so Prev/Next stay on-screen while `sticky left-0` pins it.
+  useEffect(() => {
+    const wrap = wrapRef.current, pag = pagRef.current;
+    if (!wrap || !pag) return;
+    const sync = () => { pag.style.width = `${wrap.clientWidth}px`; };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [tabKey, resp?.rows?.length]);
 
   // When a cell enters edit mode, open its native dropdown/picker immediately (single click).
   useEffect(() => {
@@ -458,7 +487,7 @@ export default function TrainingPage() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
   }
 
-  if (!resp && loading) return <Loading />;
+  if (!resp && loading) return <GridSkeleton cols={10} />;
   if (err && !resp) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
 
   // Vertical pinning is handled by translating the <thead> on page scroll; these classes keep the
@@ -468,9 +497,9 @@ export default function TrainingPage() {
   const grouped = segs.filter((s) => s.group);
 
   return (
-    // Normal page flow (like Master/Users): the PAGE (<main>) scrolls vertically, the card only
-    // scrolls horizontally, and the pagination sits below the full table at the bottom of the page.
-    <div className="flex flex-col gap-3">
+    // Fill <main> so the grid gets its OWN scroll area; the toolbar stays static at the top.
+    <div className="flex h-full flex-col gap-4">
+      {/* Toolbar — static at the top of the page; only the grid below scrolls. */}
       <div className="shrink-0">
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -495,18 +524,22 @@ export default function TrainingPage() {
               </button>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-slate-500">
+      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+        {/* Card header — mirrors Instructor Master: count on the left, status legend on the right. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <span className="text-sm font-medium text-slate-500">{filtered.length} instructor(s)</span>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
             {[["completed", "Completed"], ["progress", "In Progress"], ["hold", "On Hold"], ["notstarted", "Not Started"]].map(([k, l]) => (
               <span key={k} className="flex items-center gap-1.5"><span className={`inline-block h-3 w-3 rounded ${TONE[k]}`} /> {l}</span>
             ))}
           </div>
         </div>
-      </div>
-
-      <div ref={wrapRef} className="card overflow-x-auto p-0">
-        <table className="border-separate border-spacing-0 text-xs">
-          <thead ref={theadRef} className="relative z-30">
+        <div ref={wrapRef} className="min-h-0 flex-1 overflow-auto">
+        <table className="border-separate border-spacing-0 text-sm">
+          <thead ref={theadRef} className="sticky top-0 z-30">
             <tr>
               <th rowSpan={2} className={`${frozenHead} px-3 py-2 text-left font-semibold`} style={{ left: 0, width: ID_W, minWidth: ID_W }}>Employee ID</th>
               <th rowSpan={2} className={`${frozenHead} whitespace-nowrap border-r border-slate-200 px-3 py-2 text-left font-semibold`} style={{ left: ID_W, minWidth: NAME_W }}>Name</th>
@@ -516,7 +549,7 @@ export default function TrainingPage() {
               )}
             </tr>
             <tr>
-              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${head} whitespace-nowrap px-1.5 py-2 text-center font-medium`} style={{ minWidth: 88 }}><div className="leading-tight">{c.label}</div></th>)}
+              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${head} whitespace-nowrap px-2 py-2 text-center font-medium`} style={{ minWidth: 88 }}><div className="leading-tight">{c.label}</div></th>)}
             </tr>
           </thead>
           <tbody>
@@ -538,9 +571,12 @@ export default function TrainingPage() {
             )}
           </tbody>
         </table>
+        {/* Pagination at the END of the data (matches Instructor Master): sticky-left, width-synced above. */}
+        <div ref={pagRef} className="sticky left-0 border-t border-slate-200 bg-white px-5 py-3">
+          <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
+        </div>
+        </div>
       </div>
-
-      <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
 
       {/* Right-side filter drawer — full height, scrollable, with Apply / Clear at the bottom. */}
       {filterOpen && (

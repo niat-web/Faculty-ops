@@ -5,6 +5,7 @@ import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import Pagination from "../components/Pagination";
 import MultiSelect from "../components/MultiSelect";
+import { GridSkeleton } from "../components/skeletons";
 
 const ACTIONS = ["FIELD_EDIT", "FIELD_ADD", "FIELD_ARCHIVE", "MAPPING_CHANGE", "LIFECYCLE_CHANGE", "NOTE_ADD", "REQUEST_DECISION", "REQUEST_DELETE", "INSTRUCTOR_CREATE", "INSTRUCTOR_DELETE", "USER_CREATE", "USER_UPDATE", "USER_DELETE"];
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
@@ -54,6 +55,8 @@ export default function AuditPage() {
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
   function clearAll() { setApplied(EMPTY); setDraft(EMPTY); setPage(1); }
 
+  if (!data) return <GridSkeleton />;
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -83,12 +86,12 @@ export default function AuditPage() {
               {data?.entries.map((a: any) => (
                 <tr key={a.id} className="hover:bg-slate-50 align-top">
                   <td className="px-5 py-3 whitespace-nowrap text-xs text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>
-                  <td className="px-5 py-3 text-slate-600">{a.actorName}{a.actorRole && <div className="text-[11px] text-slate-400">{ROLE_LABEL[a.actorRole] || a.actorRole}</div>}</td>
+                  <td className="max-w-[200px] px-5 py-3 text-slate-600" title={a.actorName}><span className="block truncate">{a.actorName}</span>{a.actorRole && <div className="truncate text-[11px] text-slate-400">{ROLE_LABEL[a.actorRole] || a.actorRole}</div>}</td>
                   <td className="px-5 py-3"><span className="chip chip-gray">{a.action.replace(/_/g, " ").toLowerCase()}</span></td>
-                  <td className="px-5 py-3 text-slate-600">{a.instructorName || "—"}</td>
-                  <td className="px-5 py-3 text-slate-600">{a.fieldName || "—"}</td>
-                  <td className="px-5 py-3 text-xs">{a.oldValue || a.newValue ? <span><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span> : "—"}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{a.reason || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600 cell-trunc" title={a.instructorName || "—"}>{a.instructorName || "—"}</td>
+                  <td className="px-5 py-3 text-slate-600 cell-trunc" title={a.fieldName || "—"}>{a.fieldName || "—"}</td>
+                  <td className="px-5 py-3 text-xs cell-trunc" title={a.oldValue || a.newValue ? `${a.oldValue || "—"} → ${a.newValue || "—"}` : "—"}>{a.oldValue || a.newValue ? <span><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span> : "—"}</td>
+                  <td className="px-5 py-3 text-xs text-slate-500 cell-trunc" title={a.reason || "—"}>{a.reason || "—"}</td>
                   <td className="px-5 py-3 text-xs">{a.proofPath ? <a href={`${API_BASE}/api/audit/proof/${encodeURIComponent(a.proofPath)}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">view</a> : "—"}</td>
                 </tr>
               ))}

@@ -52,11 +52,15 @@ function credentialOpts(raw: string): { keyFilename?: string; credentials?: any 
   return { keyFilename };
 }
 
+// Reuse a single client — constructing it re-parses (and base64-decodes) the credentials each time.
+let bqClient: BigQuery | null = null;
 function client() {
+  if (bqClient) return bqClient;
   const opts: any = {};
   if (config.bigQuery.projectId) opts.projectId = config.bigQuery.projectId;
   if (config.bigQuery.credentials) Object.assign(opts, credentialOpts(config.bigQuery.credentials));
-  return new BigQuery(opts);
+  bqClient = new BigQuery(opts);
+  return bqClient;
 }
 
 function configured() {
@@ -83,23 +87,45 @@ function formatStatus(statusRaw: any, pctRaw: any): string | null {
   return `${status} (${Math.round(pct)}%)`;
 }
 
-async function tableColumns(bq: BigQuery) {
+// The table schema effectively never changes at runtime — cache it so we don't pay an extra
+// BigQuery round-trip (an INFORMATION_SCHEMA query) on every single sync.
+const SCHEMA_TTL_MS = 10 * 60 * 1000;
+let schemaCache: { at: number; cols: string[] } | null = null;
+async function tableColumns(bq: BigQuery): Promise<string[]> {
+  if (schemaCache && Date.now() - schemaCache.at < SCHEMA_TTL_MS) return schemaCache.cols;
   const sql = `
     SELECT column_name
     FROM \`${config.bigQuery.projectId}.${config.bigQuery.dataset}.INFORMATION_SCHEMA.COLUMNS\`
     WHERE table_name = @table
   `;
   const [rows] = await bq.query({ query: sql, params: { table: config.bigQuery.table } });
-  return rows.map((r: any) => String(r.column_name));
+  const cols = rows.map((r: any) => String(r.column_name));
+  schemaCache = { at: Date.now(), cols };
+  return cols;
 }
 
-export async function fetchTrainingProgress(courses: CourseColumn[], instructors: InstructorKey[]): Promise<TrainingProgressSync> {
+// A full sync takes 15–25s and the source data changes slowly, but /master, /dashboard, CSV export and
+// every pagination click each trigger one. Cache the computed result (keyed by the exact course +
+// instructor set) for a few minutes so only the first request in that window pays the BigQuery cost.
+const RESULT_TTL_MS = 5 * 60 * 1000;
+const resultCache = new Map<string, { at: number; result: TrainingProgressSync }>();
+
+export async function fetchTrainingProgress(courses: CourseColumn[], instructors: InstructorKey[], opts?: { fresh?: boolean }): Promise<TrainingProgressSync> {
   if (!configured()) return { ok: false, lastSyncedAt: null, cells: {}, matched: 0, instructorsMatched: 0, totalInstructors: instructors.length, mappedCourses: 0, error: "BigQuery is not configured." };
   const courseIds = [...new Set(courses.map((c) => clean(c.courseId)).filter(Boolean))];
   const employeeIds = [...new Set(instructors.map((i) => clean(i.employeeId)).filter(Boolean))];
   const emails = [...new Set(instructors.map((i) => clean(i.email).toLowerCase()).filter(Boolean))];
   const uids = [...new Set(instructors.map((i) => normId(i.uid)).filter(Boolean))];
   if (!courseIds.length || (!employeeIds.length && !emails.length && !uids.length)) return { ok: true, lastSyncedAt: new Date().toISOString(), cells: {}, matched: 0, instructorsMatched: 0, totalInstructors: instructors.length, mappedCourses: courseIds.length };
+
+  // Serve a recent identical sync from cache instead of re-querying BigQuery (see RESULT_TTL_MS) — UNLESS
+  // the caller demands a fresh read. Instructor Stats passes fresh:true so it ALWAYS reflects the latest
+  // BigQuery state (never a cached/stale result); Master/Dashboard keep using the cache for speed.
+  const sig = JSON.stringify([[...courseIds].sort(), [...employeeIds].sort(), [...emails].sort(), [...uids].sort()]);
+  if (!opts?.fresh) {
+    const hit = resultCache.get(sig);
+    if (hit && Date.now() - hit.at < RESULT_TTL_MS) return hit.result;
+  }
 
   try {
     const bq = client();
@@ -164,7 +190,9 @@ export async function fetchTrainingProgress(courses: CourseColumn[], instructors
       if (!formatted) continue;
       (cells[instructorId] ||= {})[colKey] = formatted;
     }
-    return { ok: true, lastSyncedAt: new Date().toISOString(), cells, matched: best.size, instructorsMatched: Object.keys(cells).length, totalInstructors: instructors.length, mappedCourses: courseIds.length };
+    const result: TrainingProgressSync = { ok: true, lastSyncedAt: new Date().toISOString(), cells, matched: best.size, instructorsMatched: Object.keys(cells).length, totalInstructors: instructors.length, mappedCourses: courseIds.length };
+    resultCache.set(sig, { at: Date.now(), result });
+    return result;
   } catch (e: any) {
     return { ok: false, lastSyncedAt: null, cells: {}, matched: 0, instructorsMatched: 0, totalInstructors: instructors.length, mappedCourses: courseIds.length, error: e?.message || "BigQuery sync failed." };
   }

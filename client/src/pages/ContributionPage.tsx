@@ -5,7 +5,7 @@ import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 import Modal from "../components/Modal";
 
 export default function ContributionPage() {
@@ -26,7 +26,7 @@ export default function ContributionPage() {
     try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); reload(); } catch (e: any) { toast.error(e.message); }
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <GridSkeleton />;
   if (!data?.field) return <div className="card p-6 text-sm text-slate-500">No <b>Contribution</b> field is defined in Dynamic Fields yet. Add a field labelled "Contribution" to use this page.</div>;
 
   return (
@@ -57,7 +57,7 @@ export default function ContributionPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((it) => (
                 <tr key={it.value} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800"><Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={`View the ${it.count} instructor(s) with this contribution`}>{it.value}</Link></td>
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc"><Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={it.value}>{it.value}</Link></td>
                   <td className="px-5 py-3"><span className="chip chip-status">{it.count}</span></td>
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">

@@ -3,7 +3,7 @@ import { Lock, ShieldCheck } from "lucide-react";
 import { api } from "../../api";
 import { ROLE_LABEL } from "../../auth";
 import { useToast } from "../../toast";
-import Loading from "../../components/Loading";
+import { FormSkeleton } from "../../components/skeletons";
 
 // Order + helper text for each role row.
 const ROLE_ROWS: { key: string; desc: string }[] = [
@@ -35,7 +35,7 @@ export default function AccountAccessPage() {
     } finally { setBusy(null); }
   }
 
-  if (!access) return <Loading />;
+  if (!access) return <FormSkeleton />;
 
   return (
     <div className="space-y-5">

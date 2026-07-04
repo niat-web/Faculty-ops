@@ -244,10 +244,10 @@ export default function InstructorsPage() {
                 <tr key={i.id} className="group hover:bg-slate-50">
                   {canManage && <td className="px-5 py-3"><input type="checkbox" checked={!!selected[i.id]} onChange={(e) => setSelected((s) => ({ ...s, [i.id]: e.target.checked }))} /></td>}
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{i.employeeId}</td>
-                  <td className="px-5 py-3 font-medium"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline">{i.name}</Link></td>
-                  <td className="px-5 py-3 text-slate-500">{i.campus || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.department || "—"}</td>
-                  <td className="px-5 py-3 text-slate-500">{i.managerName || "—"}</td>
+                  <td className="px-5 py-3 font-medium cell-trunc"><Link to={`/app/instructors/${i.id}`} className="text-brand-700 hover:underline" title={i.name}>{i.name}</Link></td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={i.campus || "—"}>{i.campus || "—"}</td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={i.department || "—"}>{i.department || "—"}</td>
+                  <td className="px-5 py-3 text-slate-500 cell-trunc" title={i.managerName || "—"}>{i.managerName || "—"}</td>
                   <td className="px-5 py-3">{i.training == null ? <span className="text-slate-300">—</span> : <div className="flex items-center gap-2"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(i.training), 100)}%` }} /></div><span className="text-xs text-slate-500">{i.training}%</span></div>}</td>
                   <td className="px-5 py-3">
                     {canEditStatus ? (
@@ -416,7 +416,7 @@ function ImportModal({ rows, onClose, onDone }: any) {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-left text-slate-400"><tr>{cols.map((c) => <th key={c} className="px-3 py-2">{c}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.slice(0, 8).map((r: any, i: number) => <tr key={i}>{cols.map((c) => <td key={c} className="px-3 py-1.5 text-slate-600">{String(r[c] ?? "")}</td>)}</tr>)}
+                {rows.slice(0, 8).map((r: any, i: number) => <tr key={i}>{cols.map((c) => <td key={c} className="px-3 py-1.5 text-slate-600 cell-trunc" title={String(r[c] ?? "")}>{String(r[c] ?? "")}</td>)}</tr>)}
               </tbody>
             </table>
           </div>

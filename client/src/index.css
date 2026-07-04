@@ -19,6 +19,12 @@ body { font-family: var(--font-sans); color: theme("colors.ink"); -webkit-font-s
   .btn-danger { @apply bg-rose-600 text-white hover:bg-rose-700; }
   .btn-sm { @apply px-3 py-1.5 text-xs; }
 
+  /* Stable table column: caps the cell width and truncates long text to an ellipsis, so a long value can
+     NEVER resize/grow the column or break the table layout. Pair with a `title` attribute so the full value
+     shows on hover. Shared across every data table for a single, consistent behaviour. */
+  .cell-trunc { @apply max-w-[260px] truncate; }
+  .cell-trunc-sm { @apply max-w-[160px] truncate; }
+
   .card { @apply bg-white border border-slate-200 shadow-card; }
   .input { @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 transition; }
   .label { @apply block text-xs font-medium text-slate-500 mb-1; }

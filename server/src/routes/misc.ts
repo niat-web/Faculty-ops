@@ -11,7 +11,12 @@ const router = Router();
 router.use(requireUser());
 
 // Dashboard (role-aware).
-router.get("/dashboard", async (req, res) => res.json(await dashboardData(req.user!)));
+// ?live=1 → BigQuery-blocking dashboard with a FRESH read (no cached/stale result). The Dashboard page
+// always calls with live=1 and waits, so it renders the latest BigQuery numbers exactly once.
+router.get("/dashboard", async (req, res) => {
+  const live = String(req.query.live || "") === "1";
+  res.json(await dashboardData(req.user!, live, live ? { fresh: true } : undefined));
+});
 
 // Org chart tree: Org → Senior Managers → their Capability Managers.
 router.get("/org", async (req, res) => {
