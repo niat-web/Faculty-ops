@@ -18,6 +18,15 @@ export const config = {
     dataset: process.env.BIGQUERY_DATASET || "",
     table: process.env.BIGQUERY_TABLE || "",
   },
+  darwinbox: {
+    endpoint: process.env.DARWINBOX_ENDPOINT || "",
+    username: process.env.DARWINBOX_USERNAME || "",
+    password: process.env.DARWINBOX_PASSWORD || "",
+    apiKey: process.env.DARWINBOX_API_KEY || "",
+    datasetKey: process.env.DARWINBOX_DATASET_KEY || "",
+    // Auto-sync interval in hours (0 = disabled). Keeps the Instructor Master fresh from Darwinbox.
+    syncIntervalHours: Number(process.env.DARWINBOX_SYNC_INTERVAL_HOURS ?? 6),
+  },
   isProd,
 };
 

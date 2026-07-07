@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Users2 } from "lucide-react";
 import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { ListPageSkeleton } from "../components/Skeleton";
 
 export default function ManagerDistributionPage() {
   const { data, loading } = useCachedGet<any>("/contribution/managers"); // cached for instant revisits
@@ -14,7 +14,7 @@ export default function ManagerDistributionPage() {
     return !n ? items : items.filter((i) => i.manager.toLowerCase().includes(n));
   }, [items, q]);
 
-  if (loading) return <Loading />;
+  if (loading) return <ListPageSkeleton title="Capability Manager Distribution" subtitle="How many instructors report to each Capability Manager." cols={2} />;
 
   return (
     <div className="space-y-5">

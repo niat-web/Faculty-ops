@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Building2 } from "lucide-react";
 import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { ListPageSkeleton } from "../components/Skeleton";
 
 export default function CampuswisePage() {
   const { data, loading } = useCachedGet<any>("/contribution/campuswise"); // cached for instant revisits
@@ -14,7 +14,7 @@ export default function CampuswisePage() {
     return !n ? items : items.filter((i) => i.campus.toLowerCase().includes(n));
   }, [items, q]);
 
-  if (loading) return <Loading />;
+  if (loading) return <ListPageSkeleton title="Campuswise Instructors" subtitle="Instructors per campus, split by who runs their payroll." cols={4} />;
 
   return (
     <div className="space-y-5">

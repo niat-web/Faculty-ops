@@ -5,7 +5,7 @@ import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { ListPageSkeleton } from "../components/Skeleton";
 import Modal from "../components/Modal";
 
 export default function ContributionPage() {
@@ -26,7 +26,7 @@ export default function ContributionPage() {
     try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); reload(); } catch (e: any) { toast.error(e.message); }
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <ListPageSkeleton title="Contribution" subtitle="Each unique contribution and how many instructors have it." cols={3} />;
   if (!data?.field) return <div className="card p-6 text-sm text-slate-500">No <b>Contribution</b> field is defined in Dynamic Fields yet. Add a field labelled "Contribution" to use this page.</div>;
 
   return (

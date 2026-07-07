@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox } from "lucide-react";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox, RefreshCw } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
@@ -9,7 +9,7 @@ import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
-import Loading from "../components/Loading";
+import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
@@ -42,6 +42,14 @@ export default function InstructorMasterPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  // Column keys sourced LIVE from Darwinbox → read-only in the grid (only manual columns are editable).
+  const [darwinboxKeys, setDarwinboxKeys] = useState<Set<string>>(new Set());
+  // Department quick-filter: `deptSel` = null means "use server default" (all except the 2 support depts);
+  // a Set means an explicit user selection. `allDepts`/`defaultUnchecked` come from the response.
+  const [allDepts, setAllDepts] = useState<string[]>([]);
+  const [defaultUnchecked, setDefaultUnchecked] = useState<string[]>([]);
+  const [deptSel, setDeptSel] = useState<Set<string> | null>(null);
+  const [deptOpen, setDeptOpen] = useState(false);
 
   const [q, setQ] = useState("");
   const dq = useDebouncedValue(q, 300);
@@ -54,7 +62,7 @@ export default function InstructorMasterPage() {
   const [per, setPer] = useState(50);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [edit, setEdit] = useState<{ id: string; key: string } | null>(null);
+  const [edit, setEdit] = useState<{ empId: string; key: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null); // open instructor in the right-side drawer
 
   // Multi-select (bulk) mode — checkbox column + selection toolbar (Edit for all staff; Delete Ops-only).
@@ -62,7 +70,7 @@ export default function InstructorMasterPage() {
   const [bulkOpen, setBulkOpen] = useState(false); // bulk-edit common-fields modal
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const pageIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const pageIds = useMemo(() => rows.map((r) => r.id).filter(Boolean), [rows]);
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggleSelectAll = () => setSelected((s) => { const n = new Set(s); if (allOnPage) pageIds.forEach((id) => n.delete(id)); else pageIds.forEach((id) => n.add(id)); return n; });
   function exitSelect() { setSelectMode(false); setSelected(new Set()); }
@@ -92,7 +100,6 @@ export default function InstructorMasterPage() {
   // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const pagRef = useRef<HTMLDivElement | null>(null);
 
   // Build the query string shared by the list fetch and the CSV export.
   const sort = useSort();
@@ -106,36 +113,68 @@ export default function InstructorMasterPage() {
     if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
     if (applied.region.length) p.set("region", applied.region.join(","));
     if (applied.campus.length) p.set("campus", applied.campus.join(","));
+    // Department quick-filter: only send `depts` once the user has made an explicit choice; until then
+    // the server applies its default (all except the 2 support departments).
+    if (deptSel) p.set("depts", [...deptSel].join(","));
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir]);
+  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir, deptSel]);
 
-  // The pagination bar lives at the END of the data (inside the horizontal scroll). Sync its width to
-  // the scroll viewport so Prev/Next never scroll off-screen, while `sticky left-0` keeps it pinned.
+  // Sticky header during PAGE scroll (same technique as the Training Stats grid): the page (<main>)
+  // scrolls vertically while the card scrolls horizontally. CSS `position: sticky` can't pin the header
+  // to the page through the overflow-x wrapper, so we translate the <thead> down by the page's scrollTop.
   useEffect(() => {
-    const wrap = wrapRef.current, pag = pagRef.current;
-    if (!wrap || !pag) return;
-    const sync = () => { pag.style.width = `${wrap.clientWidth}px`; };
-    sync();
-    const ro = new ResizeObserver(sync);
-    ro.observe(wrap);
-    return () => ro.disconnect();
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const y = scroller.scrollTop - wrap.offsetTop;
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
   }, [meta, rows.length]);
 
+  const [loadingRows, setLoadingRows] = useState(true);
   useEffect(() => {
     const ac = new AbortController();
     const p = new URLSearchParams(query);
     p.set("page", String(page)); p.set("per", String(per));
+    setLoadingRows(true);
     api.get(`/master?${p}`, { signal: ac.signal })
-      .then((r) => { setRows(r.instructors); setTotal(r.total); setCounts(r.counts || { all: 0, active: 0, exited: 0 }); setErr(null); })
-      .catch((e) => { if (!isAbort(e)) setErr(e.message); });
+      .then((r) => {
+        setRows(r.instructors); setTotal(r.total); setCounts(r.counts || { all: 0, active: 0, exited: 0 });
+        setDarwinboxKeys(new Set(r.darwinboxKeys || [])); setAllDepts(r.departments || []); setDefaultUnchecked(r.defaultUnchecked || []);
+        setErr(null); setLoadingRows(false);
+      })
+      .catch((e) => { if (!isAbort(e)) { setErr(e.message); setLoadingRows(false); } });
     return () => ac.abort();
   }, [query, page, per, reloadKey]);
 
   const pages = Math.max(1, Math.ceil(total / per));
+
   const managerName = useMemo(() => Object.fromEntries((meta?.managers || []).map((m) => [m.id, m.name])), [meta]);
   const activeCount = Object.values(applied).filter((a) => a.length).length;
+
+  // Department quick-filter helpers. Effective checked set = explicit `deptSel`, or (until the user
+  // touches it) "all except the default-unchecked support departments".
+  const isDeptChecked = (d: string) => (deptSel ? deptSel.has(d) : !defaultUnchecked.includes(d));
+  const deptCheckedCount = deptSel ? deptSel.size : Math.max(0, allDepts.length - defaultUnchecked.length);
+  function toggleDept(d: string) {
+    setPage(1);
+    setDeptSel((prev) => {
+      const base = prev ? new Set(prev) : new Set(allDepts.filter((x) => !defaultUnchecked.includes(x)));
+      base.has(d) ? base.delete(d) : base.add(d);
+      return base;
+    });
+  }
+  function setAllDeptsChecked(on: boolean) { setPage(1); setDeptSel(on ? new Set(allDepts) : new Set()); }
 
   // Display order: Name FIRST (sticky, clickable), Employee ID SECOND (not sticky, plain text).
   // Backend column config is untouched (CSV export etc. keep their own order).
@@ -167,29 +206,46 @@ export default function InstructorMasterPage() {
 
   async function save(row: any, col: Column, raw: string) {
     setEdit(null);
-    const cur = col.source === "manager" ? (row.managerId || "") : (row[col.key] ?? "");
+    const cur = row[col.key] ?? "";
     if (String(cur) === String(raw)) return;
     const prevRow = { ...row };
-    setRows((rs) => rs.map((r) => {
-      if (r.id !== row.id) return r;
-      if (col.source === "manager") return { ...r, managerId: raw, managerName: raw ? (managerName[raw] || "") : "" };
-      return { ...r, [col.key]: raw };
-    }));
+    // Rows are keyed by employeeId (Darwinbox-only rows have no Mongo id yet).
+    setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? { ...r, [col.key]: raw } : r)));
     try {
-      await api.post("/master/cell", { instructorId: row.id, key: col.key, value: raw });
+      // Pass employeeId + name so the server can auto-create a minimal Mongo record for a Darwinbox-only row.
+      const r = await api.post("/master/cell", { instructorId: row.id || null, employeeId: row.employeeId, name: row.name, key: col.key, value: raw });
+      // If the server created/resolved a Mongo record, keep its id on the row for the next edit.
+      if (r?.instructorId && !row.id) setRows((rs) => rs.map((x) => (x.employeeId === row.employeeId ? { ...x, id: r.instructorId } : x)));
       toast.success(`${col.label} updated${raw ? `: ${String(raw).replace(/\n/g, " ")}` : " (cleared)"}`);
     } catch (e: any) {
-      setRows((rs) => rs.map((r) => (r.id === row.id ? prevRow : r)));
+      setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? prevRow : r)));
       toast.error(e.message || "Failed to save");
     }
   }
 
   if (err && !meta) return <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => location.reload()} className="btn btn-ghost btn-sm">Reload</button></div>;
-  if (!meta) return <Loading />;
+  // Instant shell while columns/meta load — real header renders immediately, grid shimmers underneath.
+  if (!meta) return (
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Instructor Master</h1>
+          <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton width="224px" height="36px" borderRadius="10px" />
+          <Skeleton width="96px" height="36px" borderRadius="10px" />
+          <Skeleton width="120px" height="36px" borderRadius="10px" />
+        </div>
+      </div>
+      <TableSkeleton rows={12} cols={7} />
+    </div>
+  );
 
   return (
-    // Fill <main> so the grid gets its own scroll area with a native sticky header (like the Training Stats page).
-    <div className="flex h-full flex-col gap-4">
+    // Normal page flow (like the Training Stats page): the PAGE (<main>) scrolls vertically, the card only
+    // scrolls horizontally, and the pagination sits below the full table at the bottom of the page.
+    <div className="flex flex-col gap-4">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Instructor Master</h1>
@@ -239,9 +295,39 @@ export default function InstructorMasterPage() {
         </div>
       )}
 
-      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+      <div className={`card flex flex-col overflow-hidden rounded-xl ${loadingRows && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
-          <span className="text-sm font-medium text-slate-500">{total} instructor(s)</span>
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-500">
+            {loadingRows && !rows.length ? <span className="flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-500" /> Loading instructors…</span> : `${total} instructor(s)`}
+            {/* Department quick-filter: blue text button → checkbox dropdown of unique departments. */}
+            {!!allDepts.length && (
+              <span className="relative">
+                <button onClick={() => setDeptOpen((o) => !o)} className="font-medium text-brand-600 hover:text-brand-700 hover:underline">
+                  Departments ({deptCheckedCount}/{allDepts.length})
+                </button>
+                {deptOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setDeptOpen(false)} />
+                    <div className="absolute left-0 top-7 z-40 max-h-[60vh] w-[360px] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-soft">
+                      <div className="flex items-center justify-between px-2 py-1.5 text-xs">
+                        <span className="font-semibold text-slate-600">Show departments</span>
+                        <span className="flex gap-3">
+                          <button onClick={() => setAllDeptsChecked(true)} className="font-medium text-brand-600 hover:underline">All</button>
+                          <button onClick={() => setAllDeptsChecked(false)} className="font-medium text-slate-500 hover:underline">None</button>
+                        </span>
+                      </div>
+                      {allDepts.map((d) => (
+                        <label key={d} className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
+                          <input type="checkbox" checked={isDeptChecked(d)} onChange={() => toggleDept(d)} className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300" />
+                          <span className="leading-snug">{d}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </span>
+            )}
+          </span>
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
             {([["active", "Active", counts.active], ["all", "All", counts.all], ["exited", "Exited", counts.exited]] as const).map(([key, label, n]) => (
               <button
@@ -249,14 +335,14 @@ export default function InstructorMasterPage() {
                 onClick={() => { setScope(key); setPage(1); }}
                 className={`rounded-md px-3 py-1 font-medium transition ${scope === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
               >
-                {label} <span className={scope === key ? "text-brand-500" : "text-slate-400"}>{n}</span>
+                {label} <span className={scope === key ? "text-brand-500" : "text-slate-400"}>{loadingRows && !rows.length ? "·" : n}</span>
               </button>
             ))}
           </div>
         </div>
-        <div ref={wrapRef} className="min-h-0 flex-1 overflow-auto">
+        <div ref={wrapRef} className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead ref={theadRef} className="z-20 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:sticky [&_th]:top-0 [&_th]:border-b [&_th]:border-slate-200">
+            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:border-b [&_th]:border-slate-200">
               <tr>
                 {selectMode && (
                   <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] bg-slate-50 px-2 py-3">
@@ -280,10 +366,11 @@ export default function InstructorMasterPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
-                <tr key={row.id} className={`group bg-white transition-colors even:bg-slate-50 hover:!bg-brand-50 ${selected.has(row.id) ? "!bg-brand-50" : ""}`}>
+                <tr key={row.employeeId} className={`group bg-white transition-colors even:bg-slate-50 hover:!bg-brand-50 ${row.id && selected.has(row.id) ? "!bg-brand-50" : ""}`}>
                   {selectMode && (
                     <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-inherit px-2 py-2">
-                      <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" />
+                      {/* Only rows that exist in Mongo can be bulk-selected (Darwinbox-only rows have no record yet). */}
+                      {row.id ? <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" /> : <span className="text-slate-300">—</span>}
                     </td>
                   )}
                   {displayColumns.map((c) => {
@@ -291,23 +378,26 @@ export default function InstructorMasterPage() {
                     const sticky = c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 bg-inherit w-[200px] min-w-[200px]`
                       : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-10 bg-inherit min-w-[130px] border-r border-slate-200`
                         : "";
-                    const display = c.source === "manager" ? (row.managerName || "—") : (row[c.key] === "" || row[c.key] == null ? "—" : row[c.key]);
-                    const isEditing = edit?.id === row.id && edit?.key === c.key;
-                    const editable = c.editable || (isOps && c.key === "employeeId"); // super admin may edit Employee ID
-                    // Only Name opens the instructor details drawer (and is the only blue/clickable cell).
+                    const display = row[c.key] === "" || row[c.key] == null ? "—" : row[c.key];
+                    const isEditing = edit?.empId === row.employeeId && edit?.key === c.key;
+                    // Darwinbox-sourced columns are read-only; only the manual FacultyOps columns are editable.
+                    const editable = c.editable && !darwinboxKeys.has(c.key);
+                    // Only Name opens the instructor details drawer — and only when a Mongo record exists.
                     const isLink = c.key === "name";
                     return (
                       <Fragment key={c.key}>
                       <td className={`px-3 py-2 ${sticky} ${c.key === "name" ? "font-medium" : ""}`}>
                         {isLink ? (
-                          <button type="button" onClick={() => setDetailId(row.id)} className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={String(display)}>{display}</button>
+                          row.id
+                            ? <button type="button" onClick={() => setDetailId(row.id)} className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={String(display)}>{display}</button>
+                            : <span className="block max-w-[280px] truncate px-2 py-1 font-medium text-slate-700" title={String(display)}>{display}</span>
                         ) : isEditing ? (
-                          <CellEditor col={c} managers={meta.managers} value={c.source === "manager" ? (row.managerId || "") : String(row[c.key] ?? "")} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
+                          <CellEditor col={c} managers={meta.managers} value={String(row[c.key] ?? "")} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
                         ) : (
                           <button
                             type="button"
                             disabled={!editable}
-                            onClick={() => editable && setEdit({ id: row.id, key: c.key })}
+                            onClick={() => editable && setEdit({ empId: row.employeeId, key: c.key })}
                             className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""} ${c.key === "employeeId" ? "font-mono text-xs" : ""}`}
                             title={typeof display === "string" ? display : ""}
                           >
@@ -342,8 +432,23 @@ export default function InstructorMasterPage() {
                   )}
                 </tr>
               ))}
-              {!rows.length && (
-                <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0) + (selectMode ? 1 : 0)} className="px-5 py-16 text-center">
+              {/* While loading (fresh fetch, no rows yet) show shimmer rows that fill the grid — never a
+                  tiny empty table or a premature "no instructors" message. */}
+              {loadingRows && !rows.length && Array.from({ length: 18 }).map((_, i) => (
+                <tr key={`sk-${i}`} className="border-b border-slate-50">
+                  {selectMode && <td className="px-2 py-3"><Skeleton width="16px" height="16px" /></td>}
+                  {displayColumns.map((c) => (
+                    <Fragment key={c.key}>
+                      <td className={`px-3 py-3 ${c.key === "name" ? "sticky left-0 bg-white" : c.key === "employeeId" ? "sticky left-[200px] border-r border-slate-200 bg-white" : ""}`}><Skeleton width={c.key === "name" ? "80%" : "60%"} height="12px" /></td>
+                      {c.key === "employeeId" && <td className="px-3 py-3"><Skeleton width="55%" height="12px" /></td>}
+                      {c.key === "employeeId" && <td className="px-3 py-3"><Skeleton width="36px" height="12px" /></td>}
+                    </Fragment>
+                  ))}
+                  {isOps && <td className="px-3 py-3"><Skeleton width="44px" height="14px" /></td>}
+                </tr>
+              ))}
+              {!loadingRows && !rows.length && (
+                <tr><td colSpan={meta.columns.length + 2 + (isOps ? 1 : 0) + (selectMode ? 1 : 0)} className="px-5 py-20 text-center">
                   <div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-slate-400">
                     <Inbox className="h-8 w-8 text-slate-300" />
                     <p className="text-sm font-medium text-slate-500">No instructors match these filters</p>
@@ -353,14 +458,12 @@ export default function InstructorMasterPage() {
               )}
             </tbody>
           </table>
-          {/* Pagination sits at the very END of the data — the user scrolls past the last row to reach it,
-              rather than it floating below the viewport. `sticky left-0` pins it during horizontal scroll;
-              its width is synced (above) to the scroll viewport so the controls stay on-screen. */}
-          <div ref={pagRef} className="sticky left-0 border-t border-slate-200 bg-white px-5 py-3">
-            <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
-          </div>
         </div>
       </div>
+
+      {/* Pagination sits below the full table at the bottom of the page (like Training Stats) — you
+          scroll the page down through all rows and reach the page controls here. */}
+      <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
 
       {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 

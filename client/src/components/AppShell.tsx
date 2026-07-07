@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Database } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 import Logo from "./Logo";
@@ -159,9 +159,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         ) : (
           <div className="mb-6 flex items-center justify-between gap-2 px-2">
-            <Link to="/app" className="flex items-center gap-2 overflow-hidden">
+            {/* Wordmark: the logo's "F" monogram + "acultyOps" read together as "FacultyOps".
+                The text is filled with the SAME blue gradient as the logo so the whole mark is one colour. */}
+            <Link to="/app" className="flex items-center overflow-hidden" title="FacultyOps">
               <Logo size={38} className="shrink-0 drop-shadow-sm" />
-              <span><span className="block text-sm font-bold leading-tight">FacultyOps</span><span className="block text-[10px] uppercase tracking-wide text-slate-400">NIAT Campus Suite</span></span>
+              {/* Negative margin pulls the text over the logo SVG's internal right padding so
+                  the "F" and "acultyOps" sit flush — reading as one continuous "FacultyOps". */}
+              <span className="-ml-2 bg-gradient-to-br from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] bg-clip-text text-2xl font-bold leading-none tracking-tight text-transparent">acultyOps</span>
             </Link>
             <button onClick={() => setCollapsed(true)} title="Collapse sidebar" className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
               <PanelLeftClose className="h-5 w-5" />
@@ -202,6 +206,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <Bell className="h-4 w-4 text-slate-400" /> <span className="flex-1">Notifications</span>
                 {unread > 0 && <span className="chip chip-status">{unread}</span>}
               </button>
+              {user.role === "OPS_ADMIN" && (
+                <button onClick={() => go("/app/data")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Database className="h-4 w-4 text-slate-400" /> Data</button>
+              )}
               <div className="my-1 border-t border-slate-100" />
               <button onClick={async () => { setMenuOpen(false); await logout(); navigate("/login"); }} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"><LogOut className="h-4 w-4" /> Logout</button>
             </div>

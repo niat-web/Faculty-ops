@@ -21,6 +21,7 @@ import cronRoutes from "./routes/cron";
 import trainingRoutes from "./routes/training";
 import contributionRoutes from "./routes/contribution";
 import masterRoutes from "./routes/master";
+import dataRoutes from "./routes/data";
 
 async function main() {
   await connectDB();
@@ -56,6 +57,7 @@ async function main() {
   app.use("/api/mapping", mappingRoutes);
   app.use("/api/training", trainingRoutes);
   app.use("/api/contribution", contributionRoutes);
+  app.use("/api/data", dataRoutes); // raw BigQuery/Darwinbox browser (Data page, Ops only)
   app.use("/api/cron", cronRoutes); // reminders, digest (x-cron-secret gated)
   app.use("/api", miscRoutes); // dashboard, org, audit, notifications, settings, saved views
 
@@ -70,9 +72,14 @@ async function main() {
 
   const server = app.listen(config.port, () => console.log(`[server] API listening on http://localhost:${config.port}`));
 
+  // Keep the Instructor Master fresh from Darwinbox on a schedule (in-process; env-gated).
+  const { startDarwinboxAutoSync, stopDarwinboxAutoSync } = await import("./lib/darwinboxScheduler");
+  startDarwinboxAutoSync();
+
   // Graceful shutdown: stop accepting, drain in-flight, close the DB pool.
   const shutdown = async (sig: string) => {
     console.log(`[server] ${sig} received — shutting down`);
+    stopDarwinboxAutoSync();
     server.close(async () => { try { await disconnectDB(); } catch {} process.exit(0); });
     setTimeout(() => process.exit(1), 10000).unref();
   };

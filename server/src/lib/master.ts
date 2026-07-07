@@ -36,36 +36,42 @@ const ROLE_OPTS = [
 ];
 
 // The master grid columns, in spreadsheet order. (Seeds the editable MasterColumn docs on first use.)
+// Column order: core + Darwinbox-synced columns first (one by one), then the 6 manually-editable
+// FacultyOps-only columns LAST. Removed: managerId (Capability Manager), university_mail; replaced
+// cm_employee_id with reporting_manager_employee_id (extracted from Darwinbox direct_manager).
 export const MASTER_COLUMNS: MasterColumnDef[] = [
+  // --- Core + Darwinbox-synced (first) ---
   { key: "employeeId", label: "Employee ID", source: "core", type: "TEXT", editable: false, locked: true },
   { key: "name", label: "Name", source: "core", type: "TEXT", editable: true, locked: true },
+  { key: "reporting_manager_employee_id", label: "Reporting Manager Employee ID", source: "value", type: "TEXT", editable: true },
   { key: "department", label: "Department", source: "value", type: "DROPDOWN", options: DEPARTMENT_OPTS, editable: true },
-  { key: "managerId", label: "Capability Manager", source: "manager", type: "MANAGER", editable: true, locked: true },
-  { key: "campus", label: "Work Location", source: "core", type: "TEXT", editable: true },
-  { key: "contribution", label: "Contribution", source: "value", type: "TEXT", editable: true },
-  { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
-  { key: "contribution_region", label: "Contribution Region", source: "value", type: "DROPDOWN", options: CONTRIBUTION_REGION_OPTS, editable: true },
-  { key: "reporting_manager", label: "Reporting Manager (Darwin)", source: "value", type: "TEXT", editable: true },
-  { key: "payroll_entity", label: "Payroll", source: "value", type: "DROPDOWN", options: PAYROLL_OPTS, editable: true },
   { key: "designation", label: "Role", source: "value", type: "DROPDOWN", options: ROLE_OPTS, editable: true },
-  { key: "phone", label: "Phone Number", source: "value", type: "TEXT", editable: true },
+  { key: "campus", label: "Work Location", source: "core", type: "TEXT", editable: true },
   { key: "email", label: "Mail ID", source: "core", type: "TEXT", editable: true },
-  { key: "university_mail", label: "University Mail Id", source: "value", type: "TEXT", editable: true },
+  { key: "phone", label: "Phone Number", source: "value", type: "TEXT", editable: true },
   { key: "doj", label: "DOJ", source: "value", type: "DATE", editable: true },
   { key: "qualification", label: "Qualification", source: "value", type: "DROPDOWN", options: QUALIFICATION_OPTS, editable: true },
   { key: "domain", label: "Domain", source: "value", type: "TEXT", editable: true },
   { key: "uid", label: "UID", source: "core", type: "TEXT", editable: true },
   { key: "gender", label: "Gender", source: "value", type: "DROPDOWN", options: GENDER_OPTS, editable: true },
   { key: "native_language", label: "Native Language", source: "value", type: "TEXT", editable: true },
-  { key: "access_status", label: "Portal / Assets / Drive Access", source: "value", type: "TEXT", editable: true },
-  { key: "cm_employee_id", label: "Capability Manager Employee ID", source: "value", type: "TEXT", editable: true },
-  { key: "exit_date", label: "Exit Date", source: "value", type: "TEXT", editable: true },
-  { key: "remarks", label: "Remarks", source: "value", type: "TEXT", editable: true },
+  { key: "reporting_manager", label: "Reporting Manager (Darwin)", source: "value", type: "TEXT", editable: true },
   { key: "workspace", label: "June 2026 Workspace", source: "value", type: "TEXT", editable: true },
   { key: "emp_state", label: "State", source: "value", type: "TEXT", editable: true },
   { key: "emp_district", label: "District", source: "value", type: "TEXT", editable: true },
   { key: "emp_city", label: "City", source: "value", type: "TEXT", editable: true },
+  { key: "exit_date", label: "Exit Date", source: "value", type: "TEXT", editable: true },
+  // --- Manually-editable, FacultyOps-managed (LAST; never touched by Darwinbox sync) ---
+  { key: "contribution", label: "Contribution", source: "value", type: "TEXT", editable: true },
+  { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
+  { key: "contribution_region", label: "Contribution Region", source: "value", type: "DROPDOWN", options: CONTRIBUTION_REGION_OPTS, editable: true },
+  { key: "payroll_entity", label: "Payroll", source: "value", type: "DROPDOWN", options: PAYROLL_OPTS, editable: true },
+  { key: "access_status", label: "Portal / Assets / Drive Access", source: "value", type: "TEXT", editable: true },
+  { key: "remarks", label: "Remarks", source: "value", type: "TEXT", editable: true },
 ];
+
+// Columns removed from the grid during reconciliation (archived, not deleted — instructor values kept).
+export const REMOVED_MASTER_KEYS = ["managerId", "university_mail", "cm_employee_id"];
 
 // Quick lookups (seed defaults — runtime reads come from the DB via getActiveMasterColumns).
 export const MASTER_COLUMN_BY_KEY: Record<string, MasterColumnDef> = Object.fromEntries(MASTER_COLUMNS.map((c) => [c.key, c]));
@@ -73,7 +79,7 @@ export const MASTER_COLUMN_BY_KEY: Record<string, MasterColumnDef> = Object.from
 // Dynamic fields that don't exist yet but the master sheet needs (created on first use).
 const NEW_FIELDS: { key: string; label: string; module: string; type: string; visibility: string }[] = [
   { key: "hod_interaction", label: "HOD Interaction", module: "DEPLOYMENT", type: "TEXT", visibility: "PUBLIC" },
-  { key: "cm_employee_id", label: "Capability Manager Employee ID", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "reporting_manager_employee_id", label: "Reporting Manager Employee ID", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
   { key: "exit_date", label: "Exit Date", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
 ];
 // Existing TEXT fields the user wants promoted to admin-editable DROPDOWNs (non-destructive: only
@@ -109,7 +115,8 @@ export const keyFromLabel = (label: string) =>
   String(label).toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
 
 let _seeded = false;
-// Materialise MASTER_COLUMNS into editable MasterColumn docs on first use (idempotent).
+// Materialise MASTER_COLUMNS into editable MasterColumn docs on first use (idempotent),
+// then reconcile an already-seeded DB to the current desired column set (also idempotent).
 export async function seedMasterColumns() {
   if (_seeded) return;
   await ensureMasterFields();
@@ -117,8 +124,48 @@ export async function seedMasterColumns() {
     await MasterColumn.insertMany(MASTER_COLUMNS.map((c, i) => ({
       key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [], order: i, locked: !!c.locked,
     })));
+  } else {
+    await reconcileMasterColumns();
   }
   _seeded = true;
+}
+
+// Bring an existing MasterColumn collection in line with MASTER_COLUMNS without destroying instructor
+// data. Runs every boot but only writes when the DB differs (idempotent + safe):
+//  - archive columns that were removed (managerId, university_mail, cm_employee_id) — values kept
+//  - insert any new columns (e.g. reporting_manager_employee_id) as active
+//  - re-apply the display order + label from MASTER_COLUMNS
+// Admin-added custom columns (not in MASTER_COLUMNS) are left untouched and pushed after the known set.
+async function reconcileMasterColumns() {
+  const desired = MASTER_COLUMNS;
+  const desiredKeys = new Set(desired.map((c) => c.key));
+
+  // 1) Archive removed columns (only if currently active). Set archivedAt so the unique
+  //    {key, archivedAt:null} partial index frees the key for any future re-insert.
+  for (const key of REMOVED_MASTER_KEYS) {
+    await MasterColumn.updateOne({ key, archivedAt: null }, { $set: { archivedAt: new Date() } });
+  }
+
+  // 2) Upsert desired columns in order (revive if archived, insert if missing, fix order/label).
+  for (let i = 0; i < desired.length; i++) {
+    const c = desired[i];
+    const existing: any = await MasterColumn.findOne({ key: c.key }).sort({ archivedAt: 1 });
+    if (existing) {
+      existing.archivedAt = null; existing.order = i; existing.label = c.label;
+      existing.source = c.source; existing.locked = !!c.locked;
+      // Don't clobber admin-owned dropdown options; only seed options if empty.
+      if (c.type) existing.type = c.type;
+      if ((!existing.options || existing.options.length === 0) && (c.options?.length)) existing.options = c.options;
+      await existing.save();
+    } else {
+      await MasterColumn.create({ key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [], order: i, locked: !!c.locked });
+    }
+  }
+
+  // 3) Any active admin-added columns not in the desired set keep their place AFTER the known columns.
+  const extras = await MasterColumn.find({ archivedAt: null, key: { $nin: [...desiredKeys] } }).sort({ order: 1 });
+  let next = desired.length;
+  for (const e of extras as any[]) { if (e.order < desired.length) { e.order = next++; await e.save(); } }
 }
 
 // Active (non-archived) master columns in display order. `editable` is derived (only Employee ID is read-only).

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { BigQuery } from "@google-cloud/bigquery";
 import { config } from "../config";
 
@@ -93,7 +94,66 @@ async function tableColumns(bq: BigQuery) {
   return rows.map((r: any) => String(r.column_name));
 }
 
+// ---- Raw table browse (Data page) -------------------------------------------------------------
+// BigQuery cell values can be wrapper objects (BigQueryTimestamp/Date/Big) — flatten to plain strings.
+function cellValue(v: any): any {
+  if (v == null) return "";
+  if (typeof v === "object") {
+    if ("value" in v) return cellValue((v as any).value);
+    return JSON.stringify(v);
+  }
+  return v;
+}
+
+export type RawTablePage = {
+  ok: boolean;
+  columns: string[];
+  rows: Record<string, any>[];
+  total: number;
+  fetchedAt: string;
+  source: string;
+  error?: string;
+};
+
+export async function fetchBigQueryRows(limit: number, offset: number, q?: string): Promise<RawTablePage> {
+  const source = `${config.bigQuery.projectId}.${config.bigQuery.dataset}.${config.bigQuery.table}`;
+  const fetchedAt = new Date().toISOString();
+  if (!configured()) return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: "BigQuery is not configured." };
+  try {
+    const bq = client();
+    const columns = await tableColumns(bq);
+    const table = `\`${source}\``;
+    // Generic search: match the query anywhere in the row (serialized) — fine for a data-preview tool.
+    const where = q ? `WHERE LOWER(TO_JSON_STRING(t)) LIKE @q` : "";
+    const params: any = q ? { q: `%${q.toLowerCase()}%` } : {};
+    const [countRows] = await bq.query({ query: `SELECT COUNT(*) AS n FROM ${table} t ${where}`, params });
+    const total = Number(cellValue((countRows[0] as any)?.n)) || 0;
+    const [rows] = await bq.query({ query: `SELECT * FROM ${table} t ${where} LIMIT @limit OFFSET @offset`, params: { ...params, limit, offset } });
+    const flat = (rows as any[]).map((r) => { const o: Record<string, any> = {}; for (const c of columns) o[c] = cellValue(r[c]); return o; });
+    return { ok: true, columns, rows: flat, total, fetchedAt, source };
+  } catch (e: any) {
+    return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: e?.message || "BigQuery query failed." };
+  }
+}
+
+// Short-lived cache so Dashboard + Training Stats (and repeated loads of either) reuse the SAME
+// BigQuery result instead of re-querying every time. Keyed by the exact course + instructor identity
+// set, so different pages/tracks cache independently but identical requests are instant.
+const PROGRESS_TTL_MS = 3 * 60 * 1000;
+const progressCache = new Map<string, { at: number; result: TrainingProgressSync }>();
+
 export async function fetchTrainingProgress(courses: CourseColumn[], instructors: InstructorKey[]): Promise<TrainingProgressSync> {
+  const courseIds = [...new Set(courses.map((c) => clean(c.courseId)).filter(Boolean))].sort();
+  const idKeys = instructors.map((i) => `${clean(i.employeeId)}|${clean(i.email).toLowerCase()}|${normId(i.uid)}`).sort();
+  const cacheKey = crypto.createHash("sha1").update(`${courseIds.join(",")}#${idKeys.join(",")}`).digest("hex");
+  const hit = progressCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < PROGRESS_TTL_MS) return hit.result;
+  const result = await fetchTrainingProgressUncached(courses, instructors);
+  if (result.ok) progressCache.set(cacheKey, { at: Date.now(), result }); // only cache successful pulls
+  return result;
+}
+
+async function fetchTrainingProgressUncached(courses: CourseColumn[], instructors: InstructorKey[]): Promise<TrainingProgressSync> {
   if (!configured()) return { ok: false, lastSyncedAt: null, cells: {}, matched: 0, instructorsMatched: 0, totalInstructors: instructors.length, mappedCourses: 0, error: "BigQuery is not configured." };
   const courseIds = [...new Set(courses.map((c) => clean(c.courseId)).filter(Boolean))];
   const employeeIds = [...new Set(instructors.map((i) => clean(i.employeeId)).filter(Boolean))];

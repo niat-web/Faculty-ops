@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, Rota
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import Loading from "../components/Loading";
+import { ListPageSkeleton } from "../components/Skeleton";
 import Modal from "../components/Modal";
 
 const TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
@@ -53,7 +53,7 @@ export default function MasterColumnsPage() {
     setCols((cur) => { persistOrder(cur); return cur; });
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <ListPageSkeleton title="Instructor Master columns" subtitle="Add, edit, hide and reorder the columns shown in the Instructor Master grid." cols={6} filters={false} />;
 
   return (
     <div className="space-y-5">

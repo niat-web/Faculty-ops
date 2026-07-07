@@ -7,7 +7,8 @@ import { escapeRegex } from "../lib/text";
 import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
-import { attachLiveTrainingSummaries } from "../lib/analytics";
+import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
+import { norm } from "../lib/darwinboxSync";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -82,68 +83,63 @@ function buildSort(sort: string, dir: string): Record<string, 1 | -1> {
   return { [`values.${sort}`]: d };
 }
 
-// Paginated, scoped, filtered master rows.
+// Paginated, scoped, filtered master rows — LIVE from Darwinbox (instructor departments), joined with
+// MongoDB manual columns by Employee ID. Darwinbox columns are read-only; manual columns are editable.
 router.get("/", guard, async (req, res) => {
-  const q = String(req.query.q || "").trim();
-  const managers = listParam(req.query.managerId);
+  const q = String(req.query.q || "").trim().toLowerCase();
   const departments = listParam(req.query.department);
   const payrolls = listParam(req.query.payroll);
   const regions = listParam(req.query.region);
-  const campuses = listParam(req.query.campus);
   const contributions = listParam(req.query.contribution);
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
   const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
 
-  // base = everything except the lifecycle/scope condition (used for the bucket counts).
-  const base: any = { ...instructorScopeFilter(req.user!) };
-  if (managers.length) base.currentManagerId = inOrEq(managers);
-  if (departments.length) base["values.department"] = inOrEq(departments);
-  if (payrolls.length) base["values.payroll_entity"] = inOrEq(payrolls);
-  if (regions.length) base["values.contribution_region"] = inOrEq(regions);
-  if (campuses.length) base.campus = inOrEq(campuses);
-  if (contributions.length) { const ck = await contribKey(); if (ck) base[`values.${ck}`] = inOrEq(contributions); }
-  if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { email: rx }, { uid: rx }]; }
-  const role = String(req.query.role || "").trim();
-  if (role) {
-    const cond = await roleEmailCondition(role);
-    if (cond) base.email = cond;
-    // Instructor role = teaching only → also drop the non-teaching departments (unless a dept filter is set).
-    if (role === "INSTRUCTOR" && !departments.length) base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
-  }
+  const live = await loadLiveMasterRows(String(req.query.refresh || "") === "1");
+  if (!live.ok) return res.status(502).json({ error: live.error, instructors: [], total: 0, page, per: PER, pages: 1, counts: { all: 0, active: 0, exited: 0 }, departments: [], defaultUnchecked: [] });
 
-  const filter: any = { ...base };
-  if (scope === "active") filter.status = { $nin: EXIT_STATES };
-  else if (scope === "exited") filter.status = { $in: EXIT_STATES };
+  // Department quick-filter: ?depts=<comma list> = show ONLY these departments (exact). When the param
+  // is ABSENT, default-exclude the non-teaching support depts (Delivery Support, Instructor Platform).
+  const deptParamPresent = req.query.depts != null;
+  const deptInclude = new Set(listParam(req.query.depts).map((d) => norm(d)));
+  const deptAllowed = (dept: string) => deptParamPresent ? deptInclude.has(norm(dept)) : !isDefaultUnchecked(dept);
 
-  const [total, rows, cAll, cExited] = await Promise.all([
-    Instructor.countDocuments(filter),
-    Instructor.find(filter).sort(buildSort(String(req.query.sort || ""), String(req.query.dir || ""))).skip((page - 1) * PER).limit(PER).lean(),
-    Instructor.countDocuments(base),
-    Instructor.countDocuments({ ...base, status: { $in: EXIT_STATES } }),
-  ]);
-  const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
-  const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
-  const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));
+  // In-memory filters (data is from Darwinbox, not a Mongo query).
+  const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
+  const matchesNonScope = (r: any) => {
+    if (!deptAllowed(r.department)) return false;
+    if (departments.length && !has(departments, r.department)) return false;
+    if (payrolls.length && !has(payrolls, r.payroll_entity)) return false;
+    if (regions.length && !has(regions, r.contribution_region)) return false;
+    if (contributions.length && !has(contributions, r.contribution)) return false;
+    if (q) {
+      const hay = `${r.name} ${r.employeeId} ${r.email} ${r.uid}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  };
 
-  const valueKeys = (await getActiveMasterColumns()).filter((c) => c.source === "value").map((c) => c.key);
-  // TRAINING % is computed LIVE from BigQuery (like the Training Stats page) so it reflects the latest
-  // module progress, not the last-saved value. Falls back to the stored primary_pct for non-training rows.
-  await attachLiveTrainingSummaries(rows as any[]);
-  const instructors = rows.map((r: any) => {
-    const pct = r.values?.primary_pct;
-    const row: Record<string, any> = {
-      id: String(r._id),
-      employeeId: r.employeeId, name: r.name, email: r.email || "", campus: r.campus || "", uid: r.uid || "", status: r.status,
-      training: r.livePrimaryPct != null ? r.livePrimaryPct : (pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null),
-      managerId: r.currentManagerId ? String(r.currentManagerId) : "",
-      managerName: r.currentManagerId ? mgrName[String(r.currentManagerId)] || "" : "",
-    };
-    for (const key of valueKeys) row[key] = maybeDecrypt(r.values?.[key] ?? "") ?? "";
-    return row;
+  // Tab counts reflect the current department/filters (so unchecking a dept updates them), but not scope.
+  const filteredAll = live.rows.filter(matchesNonScope);
+  const cExited = filteredAll.filter((r) => r.exited).length;
+  const counts = { all: filteredAll.length, active: filteredAll.length - cExited, exited: cExited };
+
+  let rows = filteredAll.filter((r) => (scope === "active" ? !r.exited : scope === "exited" ? r.exited : true));
+
+  // Sort (default: Employee ID). Core + value keys sort on the row field directly.
+  const sortKey = String(req.query.sort || "").trim() || "employeeId";
+  const dir = String(req.query.dir || "").trim() === "desc" ? -1 : 1;
+  rows.sort((a, b) => String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""), undefined, { numeric: true }) * dir);
+
+  const total = rows.length;
+  const instructors = rows.slice((page - 1) * PER, (page - 1) * PER + PER).map((r) => ({ ...r, training: null }));
+  res.json({
+    total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
+    counts, instructors, darwinboxKeys: live.darwinboxKeys, fetchedAt: live.fetchedAt,
+    departments: live.departments,
+    defaultUnchecked: live.departments.filter(isDefaultUnchecked),
   });
-  res.json({ total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)), counts: { all: cAll, active: cAll - cExited, exited: cExited }, instructors });
 });
 
 // CSV export — all master columns, mirrors the active list filters (capped to bound memory).
@@ -187,26 +183,53 @@ router.get("/export.csv", guard, async (req, res) => {
   res.send(Papa.unparse(data));
 });
 
-// Edit a single master cell.
+// Master value keys that are sourced LIVE from Darwinbox → read-only in this live-join view.
+const DARWINBOX_READONLY_KEYS = new Set<string>([
+  "employeeId", "name", "email", "campus", "uid", // core Darwinbox-owned
+  "phone", "doj", "department", "designation", "reporting_manager", "reporting_manager_employee_id",
+  "qualification", "gender", "native_language", "workspace", "emp_state", "emp_district", "emp_city", "exit_date",
+]);
+
+// Edit a single master cell. Only the manually-editable FacultyOps columns can be changed here (the rest
+// come live from Darwinbox and are read-only). If the row exists only in Darwinbox (no Mongo record yet),
+// the first manual edit auto-creates a minimal Instructor keyed by Employee ID.
 router.post("/cell", guard, async (req, res) => {
-  const { instructorId, key, value } = req.body || {};
+  let { instructorId } = req.body || {};
+  const { key, value, employeeId: bodyEmpId, name: bodyName } = req.body || {};
   const col = (await getActiveMasterColumns()).find((c) => c.key === String(key));
   if (!col) return res.status(400).json({ error: "Unknown column" });
-  // Employee ID is normally locked, but an Ops Admin (super admin) may change it.
-  if (!col.editable && col.key !== "employeeId") return res.status(400).json({ error: "Read-only column" });
-  if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
+  // In the live view, Darwinbox-owned columns are read-only (Darwinbox is the source of truth).
+  if (DARWINBOX_READONLY_KEYS.has(col.key)) return res.status(400).json({ error: "This column is synced from Darwinbox and can't be edited here." });
+  if (!col.editable) return res.status(400).json({ error: "Read-only column" });
   const val = value == null ? "" : String(value);
 
-  // Type validation (DROPDOWN/MANAGER accept free values — existing data varies; DATE/NUMBER are checked).
+  // Type validation (DROPDOWN accepts free values — existing data varies; DATE/NUMBER are checked).
   if (col.type === "DATE" || col.type === "NUMBER") {
     const verr = validateValue(col.type, val);
     if (verr) return res.status(400).json({ error: verr });
   }
 
+  // Auto-create a minimal Mongo record for a Darwinbox-only row on its first manual edit.
+  if (!instructorId) {
+    const empId = String(bodyEmpId || "").trim();
+    if (!empId) return res.status(400).json({ error: "Employee ID is required to save this row." });
+    const existing: any = await Instructor.findOne({ employeeId: empId }).select("_id").lean();
+    if (existing) instructorId = String(existing._id);
+    else {
+      const inst = await Instructor.create({
+        employeeId: empId, name: String(bodyName || empId).trim(), status: "ONBOARDING",
+        lifecycle: [{ status: "ONBOARDING", note: "Created via Master edit (Darwinbox row)", actorId: req.user!.id, actorName: req.user!.name }],
+      });
+      instructorId = String(inst._id);
+      await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "INSTRUCTOR_CREATE", newValue: empId, reason: "Master edit" });
+    }
+  }
+  if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
+
   if (col.source === "value") {
     await ensureMasterFields();
     await applyFieldChange({ actor: req.user!, instructorId, fieldKey: col.key, fieldLabel: col.label, newValue: val, reason: "Master edit" });
-    return res.json({ ok: true });
+    return res.json({ ok: true, instructorId });
   }
 
   // Core + manager edits operate on the Instructor doc directly (with audit).

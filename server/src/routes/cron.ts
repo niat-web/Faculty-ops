@@ -58,6 +58,19 @@ router.post("/recompute-summaries", async (_req, res) => {
   res.json({ ok: true, scanned: docs.length, updated });
 });
 
+// Darwinbox → Instructor Master sync (scheduled): same engine as the manual Data-page sync.
+// Department-scoped, Employee ID keyed; Darwinbox wins on synced fields only.
+router.post("/darwinbox-sync", async (_req, res) => {
+  const { applyDarwinboxSync } = await import("../lib/darwinboxSync");
+  // Attribute the run to an active Ops Admin when one exists (keeps audit rows linkable).
+  const ops: any = await User.findOne({ role: Role.OPS_ADMIN, active: true }).select("name email").lean();
+  const actor = ops
+    ? { id: String(ops._id), name: `${ops.name} (Darwinbox cron)`, email: ops.email, role: Role.OPS_ADMIN, managerId: null }
+    : { id: null as any, name: "System (Darwinbox cron)", email: "", role: Role.OPS_ADMIN, managerId: null };
+  const report = await applyDarwinboxSync(actor, true);
+  res.status(report.ok ? 200 : 502).json(report);
+});
+
 // Retention: prune audit + login history older than RETENTION_DAYS (0 = keep forever).
 router.post("/prune", async (_req, res) => {
   const { getData } = await import("../lib/settings");

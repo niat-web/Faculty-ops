@@ -8,13 +8,48 @@ import { useCachedGet } from "../hooks";
 import { GreetingHeader, TrendArea } from "../components/charts";
 import NotificationBell from "../components/NotificationBell";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
-import Loading from "../components/Loading";
+import { Skeleton } from "../components/Skeleton";
+
+// Instant shell while /dashboard loads: greeting + metric tiles + panel placeholders shimmer
+// in the real layout, so the page never blanks. Data fills in silently when it arrives.
+function DashboardSkeleton({ name }: { name: string }) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Welcome back{name ? `, ${name}` : ""} 👋</h1>
+          <p className="text-sm text-slate-500">Loading your overview…</p>
+        </div>
+        <Skeleton width="160px" height="36px" borderRadius="10px" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="card space-y-3 p-5">
+            <Skeleton width="40%" height="12px" />
+            <Skeleton width="60%" height="28px" />
+            <Skeleton width="80%" height="10px" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div key={i} className="card space-y-4 p-5">
+            <Skeleton width="50%" height="14px" />
+            <Skeleton width="100%" height="140px" borderRadius="12px" />
+            <Skeleton width="70%" height="10px" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data: d, error: err } = useCachedGet<any>("/dashboard"); // instant on revisit, revalidates in background
+  const firstName = (user?.name || "").split(" ")[0];
   if (err && !d) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!d) return <Loading />;
+  if (!d) return <DashboardSkeleton name={firstName} />;
 
   const first = (user!.name || "").split(" ")[0];
   if (d.role === "OPS_ADMIN") return <AdminDash d={d} first={first} />;

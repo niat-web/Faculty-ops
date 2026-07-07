@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, Rota
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import Loading from "../components/Loading";
+import { ListPageSkeleton } from "../components/Skeleton";
 import Modal from "../components/Modal";
 import { STATUS_OPTIONS, TONE, SHORT } from "../training";
 
@@ -106,7 +106,7 @@ export default function TrainingColumnsPage() {
     setCols((cur) => { persistOrder(cur); return cur; });
   }
 
-  if (loading) return <Loading />;
+  if (loading) return <ListPageSkeleton title="Training columns" subtitle="Add, edit and reorder the columns shown in this track's Training Stats grid." cols={6} filters={false} />;
 
   return (
     <div className="space-y-5">

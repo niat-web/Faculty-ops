@@ -51,6 +51,9 @@ router.get("/", staffGuard, async (req, res) => {
   // computed (cheap) so the tabs show totals, but the big rows payload is just the requested track.
   const wantTrack = String(req.query.track || "").trim();
   const summaryOnly = String(req.query.summaryOnly || "") === "1"; // return only the BigQuery sync status (for the Dynamic Fields page)
+  // ?fast=1 → skip the (slow) BigQuery progress fetch and return stored data immediately.
+  // The client renders this instantly, then re-fetches WITHOUT fast to overlay live progress silently.
+  const fast = String(req.query.fast || "") === "1";
   const cols = await loadColumns();
   const live = liveTrackKeys(cols as any[]);
   const sensitiveKeys = new Set((await FieldDefinition.find({ visibility: "SENSITIVE", archivedAt: null }).select("key").lean()).map((f: any) => f.key));
@@ -81,20 +84,23 @@ router.get("/", staffGuard, async (req, res) => {
   const columns: Record<string, any[]> = {};
   for (const c of cols as any[]) (columns[c.track] ||= []).push(colOut(c));
   const syncCols = (cols as any[]).filter((c) => c.storage === "module" && c.courseId && !MANUAL_MODULE_KEYS.has(c.key) && (!wantTrack || c.track === wantTrack));
-  const progress = await fetchTrainingProgress(
-    syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
-    rows.map((r) => ({ id: r.id, employeeId: r.employeeId, email: r.email, uid: r.uid }))
-  );
-  if (summaryOnly) return res.json({ progressSync: progress });
-  for (const row of rows) {
-    const updates = progress.ok ? progress.cells[row.id] : null;
-    const nextStatus = { ...row.moduleStatus };
-    for (const col of syncCols) {
-      if (updates?.[col.key]) nextStatus[col.key] = updates[col.key];
-      else delete nextStatus[col.key];
+  let progress: any = null;
+  if (!fast) {
+    progress = await fetchTrainingProgress(
+      syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
+      rows.map((r) => ({ id: r.id, employeeId: r.employeeId, email: r.email, uid: r.uid }))
+    );
+    if (summaryOnly) return res.json({ progressSync: progress });
+    for (const row of rows) {
+      const updates = progress.ok ? progress.cells[row.id] : null;
+      const nextStatus = { ...row.moduleStatus };
+      for (const col of syncCols) {
+        if (updates?.[col.key]) nextStatus[col.key] = updates[col.key];
+        else delete nextStatus[col.key];
+      }
+      row.moduleStatus = nextStatus;
+      Object.assign(row.values, summaryStored(computeSummary(row.values, row.moduleStatus, row.tab)));
     }
-    row.moduleStatus = nextStatus;
-    Object.assign(row.values, summaryStored(computeSummary(row.values, row.moduleStatus, row.tab)));
   }
   for (const row of rows) { delete row.email; delete row.uid; }
   const tracks = TRACK_META.map((t) => ({ ...t, count: trackCount[t.key] || 0, columns: (columns[t.key] || []).length }));

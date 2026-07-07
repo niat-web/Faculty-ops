@@ -2,11 +2,11 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, ChevronLeft, ChevronRight, Check, Inbox } from "lucide-react";
+import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, ChevronLeft, ChevronRight, Check, Inbox, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
-import { useCachedGet } from "../hooks";
-import Loading from "../components/Loading";
+import { useCachedGet, isAbort } from "../hooks";
+import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
 import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
@@ -306,8 +306,10 @@ export default function TrainingPage() {
   const navigate = useNavigate();
   const { slug } = useParams();
   const tabKey = SLUG_TRACK[slug || ""] || "tech";
-  // Per-track fetch (cached): only this track's rows load → faster initial load, instant tab revisits.
-  const { data: resp, setData: setResp, loading, error: err } = useCachedGet<any>(`/training?track=${tabKey}`);
+  // Two-stage load: the FAST fetch (fast=1, no BigQuery) renders the grid instantly from stored
+  // data; a background fetch WITHOUT fast then overlays live BigQuery progress silently.
+  const { data: resp, setData: setResp, loading, error: err } = useCachedGet<any>(`/training?track=${tabKey}&fast=1`);
+  const [syncing, setSyncing] = useState(false);
   const [q, setQ] = useState("");
   const [cmFilter, setCmFilter] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -330,6 +332,22 @@ export default function TrainingPage() {
 
   // Reset view state when the track (route) changes.
   useEffect(() => { setPage(0); setEdit(null); setFilters(EMPTY_FILTERS); setCmFilter(""); }, [tabKey]);
+
+  // Background BigQuery overlay: fetch the full (slow) payload and swap it in silently.
+  // The fast data stays on screen the whole time; only the synced cells/summaries change.
+  // If the user edited a cell while the fetch was in flight, the stale snapshot is discarded
+  // (their optimistic edit wins; the next visit revalidates anyway).
+  const editStampRef = useRef(0);
+  useEffect(() => {
+    const ac = new AbortController();
+    const started = Date.now();
+    setSyncing(true);
+    api.get(`/training?track=${tabKey}`, { signal: ac.signal })
+      .then((full) => { if (editStampRef.current <= started) setResp(full); setSyncing(false); })
+      .catch((e) => { if (!isAbort(e)) setSyncing(false); }); // keep fast data on failure — grid stays usable
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabKey]);
 
   // On load / sync, surface the BigQuery status as a long-lived toast (30s) instead of a header banner.
   useEffect(() => {
@@ -420,6 +438,7 @@ export default function TrainingPage() {
       ? { ...r, moduleStatus: { ...r.moduleStatus, [col.key]: v || undefined } }
       : { ...r, values: { ...r.values, [col.key]: v } });
     setResp((d: any) => d ? { ...d, rows: apply(d.rows, value) } : d);
+    editStampRef.current = Date.now(); // an in-flight background overlay must not clobber this edit
     setEdit(null);
     try {
       await api.post("/training", { instructorId: row.id, track: row.tab, target: col.storage, key: col.key, value });
@@ -458,7 +477,20 @@ export default function TrainingPage() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
   }
 
-  if (!resp && loading) return <Loading />;
+  // First-ever visit (nothing cached): render the page shell + shimmer grid immediately —
+  // never a blank page. Data streams in underneath.
+  if (!resp && loading) return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Training Stats</h1>
+        <div className="flex items-center gap-2">
+          <Skeleton width="224px" height="38px" borderRadius="10px" />
+          <Skeleton width="120px" height="38px" borderRadius="10px" />
+        </div>
+      </div>
+      <TableSkeleton rows={12} cols={8} />
+    </div>
+  );
   if (err && !resp) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
 
   // Vertical pinning is handled by translating the <thead> on page scroll; these classes keep the
@@ -497,6 +529,12 @@ export default function TrainingPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-slate-500">
+            {/* Live-progress state: stored data shows instantly; this chip signals the silent BigQuery overlay. */}
+            {syncing && (
+              <span className="flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-700">
+                <RefreshCw className="h-3 w-3 animate-spin" /> Syncing live progress…
+              </span>
+            )}
             {[["completed", "Completed"], ["progress", "In Progress"], ["hold", "On Hold"], ["notstarted", "Not Started"]].map(([k, l]) => (
               <span key={k} className="flex items-center gap-1.5"><span className={`inline-block h-3 w-3 rounded ${TONE[k]}`} /> {l}</span>
             ))}
@@ -504,7 +542,7 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      <div ref={wrapRef} className="card overflow-x-auto p-0">
+      <div ref={wrapRef} className={`card overflow-x-auto p-0 ${(loading || syncing) && !shown.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
         <table className="border-separate border-spacing-0 text-xs">
           <thead ref={theadRef} className="relative z-30">
             <tr>
@@ -525,8 +563,17 @@ export default function TrainingPage() {
                 editingColKey={edit && edit.id === r.id ? edit.colKey : null}
                 onEdit={onEdit} onSave={onSave} onCancel={onCancel} editRef={editRef} />
             ))}
-            {!loading && !shown.length && (
-              <tr><td colSpan={2 + cols.length} className="px-5 py-16 text-center">
+            {/* Still loading (or the live overlay is running) with nothing to show yet → shimmer rows,
+                never a premature "no instructors" or a tiny empty table. */}
+            {(loading || syncing) && !shown.length && Array.from({ length: 18 }).map((_, i) => (
+              <tr key={`sk-${i}`} className="border-b border-slate-50">
+                <td className="px-3 py-3"><Skeleton width="70px" height="12px" /></td>
+                <td className="px-3 py-3"><Skeleton width="80%" height="12px" /></td>
+                {cols.map((c) => <td key={c.id} className="px-3 py-3 text-center"><Skeleton width="64px" height="12px" className="mx-auto" /></td>)}
+              </tr>
+            ))}
+            {!loading && !syncing && !shown.length && (
+              <tr><td colSpan={2 + cols.length} className="px-5 py-20 text-center">
                 <div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-slate-400">
                   <Inbox className="h-8 w-8 text-slate-300" />
                   <p className="text-sm font-medium text-slate-500">{(activeFilterCount || q) ? "No instructors match your filters" : "No instructors in this track"}</p>

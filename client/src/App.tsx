@@ -41,6 +41,7 @@ const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const DataPage = lazy(() => import("./pages/DataPage"));
 const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
 const NotificationsSettingsPage = lazy(() => import("./pages/settings/NotificationsSettingsPage"));
 const EmailsSettingsPage = lazy(() => import("./pages/settings/EmailsSettingsPage"));
@@ -150,6 +151,8 @@ export default function App() {
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
+                {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}
+                <Route path="data" element={<RequireRole roles={["OPS_ADMIN"]}><DataPage /></RequireRole>} />
                 {/* Personal account settings (all users) — moved from /app/settings */}
                 <Route path="account" element={<SettingsPage />} />
                 {/* Admin Settings (Ops only) — tabbed, each tab an in-app sub-route */}

@@ -1,0 +1,117 @@
+import { Instructor } from "../models";
+import { getDarwinboxData } from "./darwinbox";
+import { maybeDecrypt } from "./crypto";
+import {
+  clean, norm, isOurDepartment, pickCol, normDate, isExited,
+  TARGETS, EMPLOYEE_ID_KEYS, UID_KEYS, STATUS_KEYS, EXIT_DATE_KEYS,
+} from "./darwinboxSync";
+import { getActiveMasterColumns } from "./master";
+
+// LIVE Instructor Master: rows come DIRECTLY from Darwinbox (filtered to instructor departments,
+// keyed by Employee ID). The manually-editable FacultyOps columns (contribution, hod_interaction,
+// contribution_region, payroll_entity, access_status, remarks, domain) are joined from MongoDB by
+// Employee ID. No sync-into-Mongo — Darwinbox is read live (cached ~5min in getDarwinboxData).
+//
+//  - Darwinbox columns are READ-ONLY (source of truth is Darwinbox).
+//  - Manual columns are editable → written to Mongo (auto-creating a minimal Instructor if needed).
+//  - Rows that exist only in Darwinbox still show (manual columns blank).
+
+// The Master value-keys that are NOT sourced from Darwinbox → come from Mongo. Anything a TARGET
+// maps to (plus the derived reporting_manager_employee_id, uid, exit_date) is Darwinbox-owned.
+const DARWINBOX_VALUE_KEYS = new Set<string>([
+  ...TARGETS.filter((t) => t.kind === "value").map((t) => t.key),
+  "reporting_manager_employee_id", "exit_date",
+]);
+// Core Darwinbox-owned keys (shown as read-only, sourced from Darwinbox).
+const DARWINBOX_CORE_KEYS = new Set<string>(["employeeId", "name", "email", "campus", "uid"]);
+
+export type LiveMasterRow = Record<string, any> & { id: string | null; employeeId: string; exited: boolean };
+
+export type LiveMasterResult = {
+  ok: boolean;
+  error?: string;
+  fetchedAt: string;
+  rows: LiveMasterRow[];
+  counts: { all: number; active: number; exited: number };
+  darwinboxKeys: string[]; // which column keys are Darwinbox-owned (read-only) — for the client
+  departments: string[];   // unique department names in the live set (for the department quick-filter)
+};
+
+// Departments unchecked BY DEFAULT in the Master department filter (non-teaching support depts).
+// Matched against the actual department strings (which carry a code suffix).
+export const DEFAULT_UNCHECKED_DEPT_PATTERNS = [/delivery support/i, /^\s*instructor platform/i];
+export const isDefaultUnchecked = (dept: string) => DEFAULT_UNCHECKED_DEPT_PATTERNS.some((re) => re.test(clean(dept)));
+
+// Build every instructor-department row from Darwinbox, joined with Mongo manual columns.
+export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterResult> {
+  const data = await getDarwinboxData(refresh);
+  if (!data.ok) return { ok: false, error: data.error || "Darwinbox fetch failed.", fetchedAt: data.fetchedAt, rows: [], counts: { all: 0, active: 0, exited: 0 }, darwinboxKeys: [], departments: [] };
+
+  const cols = data.columns;
+  const empCol = pickCol(cols, EMPLOYEE_ID_KEYS);
+  const uidCol = pickCol(cols, UID_KEYS);
+  const statusCol = pickCol(cols, STATUS_KEYS);
+  const exitDateCol = pickCol(cols, EXIT_DATE_KEYS);
+  const deptCol = pickCol(cols, ["department", "department_name", "dept"]);
+  const resolved = TARGETS.map((t) => ({ t, col: pickCol(cols, t.candidates) }));
+
+  // In-scope Darwinbox rows (instructor departments only).
+  const inScope = deptCol ? data.rows.filter((r) => isOurDepartment(clean(r[deptCol]))) : data.rows;
+
+  // Mongo manual columns, indexed by Employee ID (only the non-Darwinbox value keys + _id).
+  const activeCols = await getActiveMasterColumns();
+  const manualValueKeys = activeCols.filter((c) => c.source === "value" && !DARWINBOX_VALUE_KEYS.has(c.key)).map((c) => c.key);
+  const mongoDocs = await Instructor.find({}).select("employeeId _id values").lean();
+  const byEmp = new Map<string, any>();
+  for (const d of mongoDocs as any[]) { const k = norm(d.employeeId); if (k) byEmp.set(k, d); }
+
+  const rows: LiveMasterRow[] = [];
+  const seen = new Set<string>();
+  for (const raw of inScope) {
+    const employeeId = clean(raw[empCol]);
+    if (!employeeId) continue;
+    const empKey = norm(employeeId);
+    if (seen.has(empKey)) continue; // de-dupe
+    seen.add(empKey);
+
+    const mongo = byEmp.get(empKey);
+    const exited = statusCol ? isExited(raw[statusCol]) : false;
+    const exitDate = exitDateCol ? normDate(raw[exitDateCol]) : "";
+
+    const row: LiveMasterRow = { id: mongo ? String(mongo._id) : null, employeeId, exited };
+
+    // Darwinbox columns (read-only).
+    for (const { t, col } of resolved) {
+      if (!col) { row[t.key] = ""; continue; }
+      let v = clean(raw[col]);
+      if (t.date) v = normDate(v);
+      row[t.key] = v;
+    }
+    row.uid = uidCol ? clean(raw[uidCol]) : "";
+    row.exit_date = exitDate;
+    // Derived: Reporting Manager Employee ID from direct_manager "(NWxxxx)".
+    row.reporting_manager_employee_id = ((row.reporting_manager || "").match(/\((NW[^)]+)\)\s*$/i) || [])[1] || "";
+    // Core aliases the grid expects.
+    row.name = row.name || "";
+    row.email = row.email || "";
+    row.campus = row.campus || "";
+    row.status = exited ? "EXITED" : "ACTIVE";
+    row.training = null; // training % isn't part of this live view (kept out to stay fast)
+
+    // Manual columns from Mongo (blank if no record).
+    for (const key of manualValueKeys) row[key] = mongo ? (maybeDecrypt(mongo.values?.[key] ?? "") ?? "") : "";
+
+    rows.push(row);
+  }
+
+  const exited = rows.filter((r) => r.exited).length;
+  const departments = [...new Set(rows.map((r) => clean(r.department)).filter(Boolean))].sort();
+  return {
+    ok: true,
+    fetchedAt: data.fetchedAt,
+    rows,
+    counts: { all: rows.length, active: rows.length - exited, exited },
+    darwinboxKeys: [...DARWINBOX_CORE_KEYS, ...DARWINBOX_VALUE_KEYS],
+    departments,
+  };
+}

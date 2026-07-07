@@ -60,17 +60,12 @@ export function ProgressBar({ value, tone = "brand" }: { value: number; tone?: s
 }
 
 // Time-of-day greeting header with date + optional right-aligned actions.
-export function GreetingHeader({ name, subtitle, actions }: { name: string; subtitle?: string; actions?: ReactNode }) {
-  const h = new Date().getHours();
-  const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-  const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+// Date + greeting removed per request. Left shows a simple "Dashboard overview" title; the action
+// buttons stay right-aligned. (name/subtitle kept in the signature so call sites compile unchanged.)
+export function GreetingHeader({ actions }: { name: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{today}</p>
-        <h1 className="mt-0.5 text-2xl font-bold text-slate-900">{greet}, {name} 👋</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
-      </div>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className="text-2xl font-bold text-slate-900">Dashboard overview</h1>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
