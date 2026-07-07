@@ -10,6 +10,7 @@ import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
 import { sendInstructorMail, listInstructorMails } from "../lib/instructorMail";
 import { maybeDecrypt } from "../lib/crypto";
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
+import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -36,7 +37,11 @@ function uploadFile(req: any, res: any, next: any) {
 
 const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // the lifecycle states the "Active" scope hides
 // Non-teaching departments — excluded from the Instructors list page (they stay in Instructor Master).
-const NON_INSTRUCTOR_DEPTS = ["Instructors - Delivery Support (Ops and Central managers)", "Product Team"];
+// Non-teaching "instructor" departments — excluded from the Instructors list + Roles instructor count.
+// Matched by SUBSTRING (robust to the "(NWD_…)" code suffix + en-dash Darwinbox appends), and kept
+// in sync with the Master grid's default-unchecked departments (masterLive.ts).
+const NON_INSTRUCTOR_DEPT_RE = /delivery support|instructor platform/i;
+const isNonInstructorDept = (d: any) => NON_INSTRUCTOR_DEPT_RE.test(String(d || ""));
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
 async function emailConflict(email: string, excludeId?: any) {
@@ -54,6 +59,7 @@ function toRow(r: any, mgrName: Record<string, string>) {
     training: pct != null && pct !== "" && !isNaN(Number(pct)) ? Number(pct) : null,
     department: v("department"), designation: v("designation"), contribution: v("contribution"),
     contributionRegion: v("contribution_region"), reportingManager: v("reporting_manager"), payroll: v("payroll_entity"),
+    reportingManagerEmployeeId: v("reporting_manager_employee_id"),
     phone: v("phone"), universityMail: v("university_mail"), doj: v("doj"), qualification: v("qualification"),
     domain: v("domain"), gender: v("gender"), nativeLanguage: v("native_language"), access: v("access_status"),
     cmEmployeeId: v("cm_employee_id"), remarks: v("remarks"),
@@ -96,7 +102,7 @@ router.get("/", async (req, res) => {
   const q = String(req.query.q || "").trim();
   const statuses = listParam(req.query.status);
   const campuses = listParam(req.query.campus);
-  const departments = listParam(req.query.department).filter((d) => !NON_INSTRUCTOR_DEPTS.includes(d));
+  const departments = listParam(req.query.department).filter((d) => !isNonInstructorDept(d));
   const managers = listParam(req.query.managerId);
   const minTraining = parseInt(String(req.query.minTraining || ""), 10);
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
@@ -110,7 +116,7 @@ router.get("/", async (req, res) => {
   // Instructors page = teaching instructors only. A valid (non-excluded) department filter narrows
   // further; otherwise exclude the non-teaching departments (they remain in Instructor Master).
   if (departments.length) base["values.department"] = inOrEq(departments);
-  else base["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+  else base["values.department"] = { $not: NON_INSTRUCTOR_DEPT_RE };
   if (managers.length) base.currentManagerId = inOrEq(managers);
   if (q) { const rx = new RegExp(escapeRegex(q), "i"); base.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
   if (!isNaN(minTraining)) base.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
@@ -169,7 +175,8 @@ router.get("/exited", async (req, res) => {
   // Facets (from the full exited scope, so options never disappear when filtering).
   const exitScope = { ...instructorScopeFilter(user), status: { $in: EXIT_STATES } };
   const [all, departments, campuses, regions, payrolls, types] = await Promise.all([
-    Instructor.find(filter).sort({ employeeId: 1 }).limit(5000).lean(),
+    // Most-recently-updated first so a just-finalised exit appears at the top of the list.
+    Instructor.find(filter).sort({ updatedAt: -1 }).limit(5000).lean(),
     Instructor.distinct("values.department", exitScope),
     Instructor.distinct("campus", exitScope),
     Instructor.distinct("values.contribution_region", exitScope),
@@ -246,13 +253,15 @@ router.get("/roles", async (req, res) => {
   const roleByEmail: Record<string, string> = {};
   for (const u of staff as any[]) { const e = (u.email || "").toLowerCase(); if (!e) continue; byRole[u.role]?.push(e); roleByEmail[e] = u.role; }
   const staffEmails = [...byRole.OPS_ADMIN, ...byRole.SENIOR_MANAGER, ...byRole.CAPABILITY_MANAGER];
-  const [ops, sm, cm, instr] = await Promise.all([
+  // Instructor count comes from the SAME live-Darwinbox source the Instructor Master's "Active" tab uses,
+  // so the two always agree (active, instructor departments, support depts excluded).
+  const live = await loadLiveMasterRows();
+  const [ops, sm, cm] = await Promise.all([
     User.countDocuments({ role: Role.OPS_ADMIN, active: true }),
     User.countDocuments({ role: Role.SENIOR_MANAGER, active: true }),
     User.countDocuments({ role: Role.CAPABILITY_MANAGER, active: true }),
-    // Instructor = ACTIVE teaching only: not exited, not a staff user, not a non-teaching department.
-    Instructor.countDocuments({ ...scopeF, status: { $nin: EXIT_STATES }, email: { $nin: staffEmails }, "values.department": { $nin: NON_INSTRUCTOR_DEPTS } }),
   ]);
+  const instr = live.ok ? live.rows.filter((r) => !r.exited && !isDefaultUnchecked(r.department)).length : 0;
   const counts = { OPS_ADMIN: ops, SENIOR_MANAGER: sm, CAPABILITY_MANAGER: cm, INSTRUCTOR: instr };
   const total = ops + sm + cm + instr;
 
@@ -287,7 +296,7 @@ router.get("/campuses", async (req, res) => {
 // Distinct departments (for the Instructors-page department filter).
 router.get("/departments", async (req, res) => {
   const list = await Instructor.distinct("values.department", instructorScopeFilter(req.user!));
-  res.json({ departments: (list as string[]).filter(Boolean).filter((d) => !NON_INSTRUCTOR_DEPTS.includes(d)).sort() });
+  res.json({ departments: (list as string[]).filter(Boolean).filter((d) => !isNonInstructorDept(d)).sort() });
 });
 
 // ─── Inline cell edit for the Instructor Exited grid (Ops/SM). Routes by `kind`. ──
@@ -393,7 +402,7 @@ router.get("/export.csv", async (req, res) => {
     if (managerId) baseFilter.currentManagerId = managerId;
     const dep = String(req.query.department || "").trim();
     if (dep) baseFilter["values.department"] = dep;
-    else if (String(req.query.excludeStaff) === "1") baseFilter["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+    else if (String(req.query.excludeStaff) === "1") baseFilter["values.department"] = { $not: NON_INSTRUCTOR_DEPT_RE };
     if (String(req.query.region || "").trim()) baseFilter["values.contribution_region"] = String(req.query.region).trim();
     if (String(req.query.payroll || "").trim()) baseFilter["values.payroll_entity"] = String(req.query.payroll).trim();
     if (String(req.query.typeOfExit || "").trim()) baseFilter["exit.typeOfExit"] = String(req.query.typeOfExit).trim();

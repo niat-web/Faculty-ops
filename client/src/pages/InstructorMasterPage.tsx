@@ -89,9 +89,13 @@ export default function InstructorMasterPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [role, setRole] = useState(searchParams.get("role") || "");
   const [contribution, setContribution] = useState(searchParams.get("contribution") || "");
-  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
+  // Darwinbox reporting-manager drill-down (from Capability Manager Distribution): rmid = employee-id code, rmname = display.
+  const [rmid, setRmid] = useState(searchParams.get("rmid") || "");
+  const [rmname, setRmname] = useState(searchParams.get("rmname") || "");
+  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setRmid(searchParams.get("rmid") || ""); setRmname(searchParams.get("rmname") || ""); setPage(1); }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
+  function clearRm() { const sp = new URLSearchParams(searchParams); sp.delete("rmid"); sp.delete("rmname"); setSearchParams(sp, { replace: true }); }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
@@ -108,6 +112,7 @@ export default function InstructorMasterPage() {
     if (dq) p.set("q", dq);
     if (role) p.set("role", role);
     if (contribution) p.set("contribution", contribution);
+    if (rmid) p.set("rmid", rmid);
     if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
     if (applied.department.length) p.set("department", applied.department.join(","));
     if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
@@ -119,7 +124,7 @@ export default function InstructorMasterPage() {
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir, deptSel]);
+  }, [dq, applied, scope, role, contribution, rmid, sort.sort, sort.dir, deptSel]);
 
   // Sticky header during PAGE scroll (same technique as the Training Stats grid): the page (<main>)
   // scrolls vertically while the card scrolls horizontally. CSS `position: sticky` can't pin the header
@@ -266,6 +271,12 @@ export default function InstructorMasterPage() {
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
               Contribution: {contribution}
               <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
+            </span>
+          )}
+          {rmid && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+              Reporting manager: {rmname || rmid}
+              <button onClick={clearRm} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
             </span>
           )}
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">

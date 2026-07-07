@@ -104,6 +104,7 @@ export const NOTIFY_EVENTS = [
   { key: "EDIT_REQUEST_REJECTED", role: "CAPABILITY_MANAGER", label: "Your request was rejected", desc: "Your change request was rejected." },
   { key: "REQUEST_COMMENT", role: "ALL", label: "New comment on a request", desc: "Someone commented on a request you're part of." },
   { key: "SCHEMA_CHANGED", role: "OPS_ADMIN", label: "A dynamic field was added", desc: "A new field/module was created." },
+  { key: "EXIT_ALERT", role: "OPS_ADMIN", label: "Instructor exit alert", desc: "An instructor's Darwinbox last-working-day is approaching (Ops Admins & Senior Managers)." },
   { key: "REMINDER", role: "ALL", label: "Reminders & weekly digest", desc: "Pending-request nudges, exit deadlines and the weekly summary." },
 ] as const;
 export type NotifyEventKey = (typeof NOTIFY_EVENTS)[number]["key"];
@@ -181,4 +182,20 @@ export async function setData(patch: Partial<DataSettings>) {
   if (patch.retentionDays != null) clean.retentionDays = clampInt(patch.retentionDays, 0, 3650, 0);
   await writeGroup("dataRetention", clean);
   return getData();
+}
+
+// ── Exit alerts ───────────────────────────────────────────────────────
+// leadDays: raise an exit alert this many days before an instructor's Darwinbox
+// last-working-day (default 2). Admin-controlled at /app/settings/exit-alerts.
+export type ExitAlertSettings = { leadDays: number };
+const DEFAULT_EXIT_ALERTS: ExitAlertSettings = { leadDays: 2 };
+export async function getExitAlerts(): Promise<ExitAlertSettings> {
+  const e = (await getSettings()).exitAlerts || {};
+  return { leadDays: clampInt(e.leadDays, 0, 365, DEFAULT_EXIT_ALERTS.leadDays) };
+}
+export async function setExitAlerts(patch: Partial<ExitAlertSettings>) {
+  const clean: Record<string, any> = {};
+  if (patch.leadDays != null) clean.leadDays = clampInt(patch.leadDays, 0, 365, DEFAULT_EXIT_ALERTS.leadDays);
+  await writeGroup("exitAlerts", clean);
+  return getExitAlerts();
 }

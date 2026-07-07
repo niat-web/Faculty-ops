@@ -7,6 +7,7 @@ import { useAuth, LIFECYCLE_LABEL, ROLE_LABEL } from "../auth";
 import { useCachedGet } from "../hooks";
 import { GreetingHeader, TrendArea } from "../components/charts";
 import NotificationBell from "../components/NotificationBell";
+import ExitAlertBanner from "../components/ExitAlertBanner";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
 import { Skeleton } from "../components/Skeleton";
 
@@ -137,6 +138,8 @@ function AdminDash({ d, first }: any) {
       <GreetingHeader name={first} subtitle="Organization-wide control center across all NIAT campuses."
         actions={<><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink><QuickLink to="/app/org" icon={Network}>Org</QuickLink><QuickLink to="/app/audit" icon={ScrollText}>Audit</QuickLink><NotificationBell /></>} />
 
+      <ExitAlertBanner />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="Total instructors" value={k.total} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={spark} footer="vs last month" />
         <MetricTile label="Active" value={active} icon={UserCheck} tone="emerald" footer={`${attrition}% exited overall`} />
@@ -205,6 +208,8 @@ function SeniorDash({ d, first }: any) {
       <GreetingHeader name={first} subtitle="Org-wide oversight and approvals."
         actions={<><QuickLink to="/app/requests" icon={Clock}>Requests</QuickLink><QuickLink to="/app/instructors" icon={Users}>Instructors</QuickLink><NotificationBell /></>} />
 
+      <ExitAlertBanner />
+
       {k.pending > 0 && (
         <Link to="/app/requests" className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 px-5 py-3.5 text-sm text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100">
           <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> <b>{k.pending}</b> edit request(s) awaiting your decision.</span>
@@ -257,6 +262,8 @@ function CapabilityDash({ d, first }: any) {
     <div className="space-y-5">
       <GreetingHeader name={first} subtitle="Your team of reportees at a glance."
         actions={<><QuickLink to="/app/instructors" icon={Users}>Reportees</QuickLink><QuickLink to="/app/training" icon={BookOpen}>Training</QuickLink><NotificationBell /></>} />
+
+      <ExitAlertBanner />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricTile label="My reportees" value={k.total} icon={Users} tone="brand" />

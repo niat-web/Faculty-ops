@@ -229,6 +229,35 @@ const NotificationSchema = new Schema({
 });
 NotificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
 
+// ---------------------------------------------------------------------------
+// ExitAlert — one row per (employee, exitDate) whose Darwinbox last-working-day fell
+// inside the admin-configured lead window. Ops/SM see all pending; the Capability
+// Manager the instructor reports to (managerId) sees theirs and finalises the outcome.
+const ExitAlertSchema = new Schema(
+  {
+    instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", default: null },
+    employeeId: { type: String, required: true },
+    name: String,
+    email: String,
+    role: String,          // Darwinbox designation
+    mobile: String,
+    department: String,
+    managerId: { type: Schema.Types.ObjectId, ref: "User", default: null }, // capability manager (currentManagerId)
+    managerName: String,
+    exitDate: { type: String, required: true }, // yyyy-mm-dd (last working day)
+    status: { type: String, default: "PENDING" }, // PENDING | RESOLVED
+    resolution: { type: String, default: null },  // UNIVERSITY_PAYROLL | EXITED | CONSULTANT_REHIRE
+    resolutionNote: { type: String, default: null },
+    resolvedById: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    resolvedByName: String,
+    resolvedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+// One alert per employee + exit date (a changed exit date raises a fresh alert).
+ExitAlertSchema.index({ employeeId: 1, exitDate: 1 }, { unique: true });
+ExitAlertSchema.index({ status: 1, managerId: 1 });
+
 const LoginAttemptSchema = new Schema({
   key: { type: String, required: true, unique: true },
   count: { type: Number, default: 0 }, first: { type: Date, default: Date.now },
@@ -265,6 +294,9 @@ const AppSettingSchema = new Schema(
     security: { type: Schema.Types.Mixed, default: {} },
     // Data & retention (/app/settings/data): { retentionDays }.
     dataRetention: { type: Schema.Types.Mixed, default: {} },
+    // Exit alerts (/app/settings/exit-alerts): { leadDays } — raise an alert this many days
+    // before an instructor's Darwinbox last-working-day.
+    exitAlerts: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
@@ -308,6 +340,7 @@ export const EditRequestBatch = compile("EditRequestBatch", EditRequestBatchSche
 export const InstructorMail = compile("InstructorMail", InstructorMailSchema);
 export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);
+export const ExitAlert = compile("ExitAlert", ExitAlertSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
 export const LoginEvent = compile("LoginEvent", LoginEventSchema);
 export type ID = Types.ObjectId | string;

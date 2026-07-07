@@ -23,8 +23,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normEmail = (e: any) => String(e || "").trim().toLowerCase() || null;
 const COL_TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN"];
 
-// Non-teaching departments — excluded when filtering to the Instructor role (kept in sync with instructors.ts).
-const NON_INSTRUCTOR_DEPTS = ["Instructors - Delivery Support (Ops and Central managers)", "Product Team"];
+// Non-teaching departments — excluded when filtering to the Instructor role (kept in sync with
+// instructors.ts + masterLive.ts). Substring match: robust to Darwinbox's "(NWD_…)" suffix + en-dash.
+const NON_INSTRUCTOR_DEPT_RE = /delivery support|instructor platform/i;
 
 // The dynamic "Contribution" field key (resolved by label, e.g. "contribution") — for drill-down
 // from the Contribution page. Mirrors contribField() in contribution.ts.
@@ -91,6 +92,7 @@ router.get("/", guard, async (req, res) => {
   const payrolls = listParam(req.query.payroll);
   const regions = listParam(req.query.region);
   const contributions = listParam(req.query.contribution);
+  const rmids = listParam(req.query.rmid); // Darwinbox reporting-manager employee-id (CM Distribution drill-down)
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -113,6 +115,7 @@ router.get("/", guard, async (req, res) => {
     if (payrolls.length && !has(payrolls, r.payroll_entity)) return false;
     if (regions.length && !has(regions, r.contribution_region)) return false;
     if (contributions.length && !has(contributions, r.contribution)) return false;
+    if (rmids.length && !has(rmids, r.reporting_manager_employee_id)) return false;
     if (q) {
       const hay = `${r.name} ${r.employeeId} ${r.email} ${r.uid}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -157,7 +160,7 @@ router.get("/export.csv", guard, async (req, res) => {
   if (role) {
     const cond = await roleEmailCondition(role);
     if (cond) filter.email = cond;
-    if (role === "INSTRUCTOR" && !req.query.department) filter["values.department"] = { $nin: NON_INSTRUCTOR_DEPTS };
+    if (role === "INSTRUCTOR" && !req.query.department) filter["values.department"] = { $not: NON_INSTRUCTOR_DEPT_RE };
   }
   const scope = String(req.query.scope || "active").trim();
   if (scope === "active") filter.status = { $nin: EXIT_STATES };

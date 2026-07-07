@@ -11,6 +11,7 @@ const TABS = [
   { to: "/app/settings/security", label: "Security" },
   { to: "/app/settings/access", label: "Account Access" },
   { to: "/app/settings/data", label: "Data & Retention" },
+  { to: "/app/settings/exit-alerts", label: "Exit Alerts" },
 ];
 
 export default function SettingsLayout() {

@@ -278,6 +278,23 @@ router.post("/settings/data/prune", async (req, res) => {
   res.json({ ok: true, prunedAudit: audit.deletedCount || 0, prunedLogins: logins.deletedCount || 0, cutoff });
 });
 
+// ── Exit alerts (Ops only): how many days before a last-working-day to raise an alert ──
+router.get("/settings/exit-alerts", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getExitAlerts } = await import("../lib/settings");
+  const { ExitAlert } = await import("../models");
+  const [exitAlerts, pending] = await Promise.all([getExitAlerts(), ExitAlert.countDocuments({ status: "PENDING" })]);
+  res.json({ exitAlerts, counts: { pending } });
+});
+router.patch("/settings/exit-alerts", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { setExitAlerts } = await import("../lib/settings");
+  const exitAlerts = await setExitAlerts(req.body || {});
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Exit alert lead days", newValue: `${exitAlerts.leadDays} days`, reason: "Exit alert settings" });
+  res.json({ exitAlerts });
+});
+
 // Account overview (read-only profile + email-notification preference).
 router.get("/settings", async (req, res) => {
   const me: any = await User.findById(req.user!.id).lean();

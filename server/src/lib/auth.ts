@@ -4,6 +4,9 @@ import type { Response } from "express";
 import { config } from "../config";
 
 export const SESSION_COOKIE = "crm_session";
+// How long a login stays valid. The JWT lifetime and the cookie lifetime MUST match.
+const SESSION_DAYS = 30;
+const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
 
 export function hashPassword(plain: string) { return bcrypt.hash(plain, 10); }
 export function verifyPassword(plain: string, hash: string) { return bcrypt.compare(plain, hash); }
@@ -17,7 +20,7 @@ export function passwordIssue(pw: string, opts?: { minLength?: number; requireCo
 }
 
 export function signSession(user: { _id: any; role: string }) {
-  return jwt.sign({ sub: String(user._id), role: user.role }, config.jwtSecret, { expiresIn: "12h" });
+  return jwt.sign({ sub: String(user._id), role: user.role }, config.jwtSecret, { expiresIn: `${SESSION_DAYS}d` });
 }
 export function verifySession(token: string): { sub: string; role: string; iat?: number } | null {
   try { return jwt.verify(token, config.jwtSecret) as any; } catch { return null; }
@@ -30,7 +33,7 @@ const cookieOpts = () => ({
   path: "/",
 });
 export function setSessionCookie(res: Response, token: string) {
-  res.cookie(SESSION_COOKIE, token, { ...cookieOpts(), maxAge: 12 * 60 * 60 * 1000 });
+  res.cookie(SESSION_COOKIE, token, { ...cookieOpts(), maxAge: SESSION_MS });
 }
 export function clearSessionCookie(res: Response) {
   res.cookie(SESSION_COOKIE, "", { ...cookieOpts(), maxAge: 0 });

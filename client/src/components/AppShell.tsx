@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users2, Network, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Database } from "lucide-react";
+import { LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Database } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 import Logo from "./Logo";
@@ -31,7 +31,6 @@ const NAV_SECTIONS: any[] = [
         { to: "/app/contribution/campuswise", label: "Campuswise Instructors" },
         { to: "/app/contribution/managers", label: "Capability Manager Distribution" },
       ] },
-      { to: "/app/mapping", label: "Assignments", icon: Network, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
       { to: "/app/org", label: "Org Chart", icon: GitBranch, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
       { to: "/app/requests", label: "Requests", icon: GitPullRequest, roles: STAFF },
     ],

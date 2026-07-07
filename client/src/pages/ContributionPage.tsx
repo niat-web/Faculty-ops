@@ -56,14 +56,20 @@ export default function ContributionPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map((it) => (
-                <tr key={it.value} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc"><Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={it.value}>{it.value}</Link></td>
+                <tr key={it.value || "(blank)"} className="hover:bg-slate-50">
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc">
+                    {it.blank
+                      ? <span className="italic text-slate-400">(Blank — no contribution set)</span>
+                      : <Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={it.value}>{it.value}</Link>}
+                  </td>
                   <td className="px-5 py-3"><span className="chip chip-status">{it.count}</span></td>
                   <td className="px-5 py-3">
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => setEditing(it)} title="Edit / rename" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                      <button onClick={() => del(it)} title="Clear from instructors" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
-                    </div>
+                    {!it.blank && (
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => setEditing(it)} title="Edit / rename" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
+                        <button onClick={() => del(it)} title="Clear from instructors" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

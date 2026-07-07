@@ -31,8 +31,8 @@ const EXIT_TYPES = ["Formal exit - Resignation", "Formal exit - Termination", "A
 // EXIT-sheet columns in order. Employee ID is the locked first column (not in this list).
 const COLS: Col[] = [
   { label: "Name", field: "name", save: { kind: "core", key: "name" } },
+  { label: "Reporting Manager Employee ID", field: "reportingManagerEmployeeId", save: { kind: "value", key: "reporting_manager_employee_id" } },
   { label: "Department", field: "department", save: { kind: "value", key: "department" } },
-  { label: "Capability Manager", field: "managerName", save: { kind: "manager" }, manager: true },
   { label: "Work Location", field: "campus", save: { kind: "core", key: "campus" } },
   { label: "Contribution", field: "contribution", save: { kind: "value", key: "contribution" } },
   { label: "Contribution Region", field: "contributionRegion", save: { kind: "value", key: "contribution_region" } },
@@ -41,7 +41,6 @@ const COLS: Col[] = [
   { label: "Role", field: "designation", save: { kind: "value", key: "designation" } },
   { label: "Phone Number", field: "phone", save: { kind: "value", key: "phone" } },
   { label: "Mail ID", field: "email", save: { kind: "core", key: "email" } },
-  { label: "University Mail Id", field: "universityMail", save: { kind: "value", key: "university_mail" } },
   { label: "DOJ", field: "doj", save: { kind: "value", key: "doj" } },
   { label: "Qualification", field: "qualification", save: { kind: "value", key: "qualification" } },
   { label: "Domain", field: "domain", save: { kind: "value", key: "domain" } },
@@ -49,7 +48,6 @@ const COLS: Col[] = [
   { label: "Gender", field: "gender", save: { kind: "value", key: "gender" }, dropdown: ["Male", "Female"] },
   { label: "Native language", field: "nativeLanguage", save: { kind: "value", key: "native_language" } },
   { label: "Portal / Assets / Drive Access", field: "access", save: { kind: "value", key: "access_status" } },
-  { label: "Capability Manager Employee ID", field: "cmEmployeeId", save: { kind: "value", key: "cm_employee_id" } },
   { label: "Exit Date", field: "exitDate", save: { kind: "exit", key: "lastWorkingDay" } },
   { label: "Remarks", field: "remarks", save: { kind: "value", key: "remarks" }, wrap: true },
   { label: "Type Of Exit", field: "typeOfExit", save: { kind: "exit", key: "typeOfExit" }, dropdown: EXIT_TYPES },

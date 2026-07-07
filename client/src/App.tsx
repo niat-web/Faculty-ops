@@ -47,7 +47,6 @@ const CampuswisePage = lazy(() => import("./pages/CampuswisePage"));
 const ManagerDistributionPage = lazy(() => import("./pages/ManagerDistributionPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const FieldsPage = lazy(() => import("./pages/FieldsPage"));
-const MappingPage = lazy(() => import("./pages/MappingPage"));
 const OrgPage = lazy(() => import("./pages/OrgPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
@@ -61,6 +60,7 @@ const GeneralSettingsPage = lazy(() => import("./pages/settings/GeneralSettingsP
 const SecuritySettingsPage = lazy(() => import("./pages/settings/SecuritySettingsPage"));
 const DataSettingsPage = lazy(() => import("./pages/settings/DataSettingsPage"));
 const AccountAccessPage = lazy(() => import("./pages/settings/AccountAccessPage"));
+const ExitAlertsSettingsPage = lazy(() => import("./pages/settings/ExitAlertsSettingsPage"));
 
 // Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
 // instead of a blank white screen. (Bug B7)
@@ -157,7 +157,8 @@ export default function App() {
                 <Route path="contribution/managers" element={<RequireRole roles={STAFF}><ManagerDistributionPage /></RequireRole>} />
                 <Route path="users" element={<RequireRole roles={["OPS_ADMIN"]}><UsersPage /></RequireRole>} />
                 <Route path="fields" element={<Navigate to="/app/settings" replace />} />
-                <Route path="mapping" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><MappingPage /></RequireRole>} />
+                {/* Assignments page removed — the Capability Managers list now lives in Capability Manager Distribution. */}
+                <Route path="mapping" element={<Navigate to="/app/contribution/managers" replace />} />
                 <Route path="org" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><OrgPage /></RequireRole>} />
                 <Route path="requests" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
@@ -176,6 +177,7 @@ export default function App() {
                   <Route path="security" element={<SecuritySettingsPage />} />
                   <Route path="access" element={<AccountAccessPage />} />
                   <Route path="data" element={<DataSettingsPage />} />
+                  <Route path="exit-alerts" element={<ExitAlertsSettingsPage />} />
                 </Route>
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />

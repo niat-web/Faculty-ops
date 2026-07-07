@@ -30,6 +30,12 @@ async function runOnce() {
     if (report.ok) {
       console.log(`[darwinbox-sync] ${report.created} created, ${report.updated} updated (${report.changedFields} fields), ${report.exited} exited, ${report.skipped} skipped`);
       if (report.errors?.length) console.warn(`[darwinbox-sync] ${report.errors.length} error(s):`, report.errors.slice(0, 5));
+      // After the master is fresh, scan for newly-imminent exits and raise alerts + notify.
+      try {
+        const { detectExitAlerts } = await import("./exitAlerts");
+        const det = await detectExitAlerts();
+        if (!det.ok) console.warn(`[exit-alerts] skipped: ${det.error}`);
+      } catch (e: any) { console.error("[exit-alerts] failed:", e?.message || e); }
     } else {
       console.warn(`[darwinbox-sync] skipped: ${report.error}`);
     }

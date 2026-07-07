@@ -1,4 +1,4 @@
-import { Instructor } from "../models";
+import { Instructor, ExitAlert } from "../models";
 import { getDarwinboxData } from "./darwinbox";
 import { maybeDecrypt } from "./crypto";
 import {
@@ -61,9 +61,16 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   // Mongo manual columns, indexed by Employee ID (only the non-Darwinbox value keys + _id).
   const activeCols = await getActiveMasterColumns();
   const manualValueKeys = activeCols.filter((c) => c.source === "value" && !DARWINBOX_VALUE_KEYS.has(c.key)).map((c) => c.key);
-  const mongoDocs = await Instructor.find({}).select("employeeId _id values").lean();
+  const mongoDocs = await Instructor.find({}).select("employeeId _id uid values").lean();
   const byEmp = new Map<string, any>();
   for (const d of mongoDocs as any[]) { const k = norm(d.employeeId); if (k) byEmp.set(k, d); }
+
+  // Capability-Manager exit-outcome overlay: once a CM finalises an exit alert, their decision
+  // overrides Darwinbox's live status on this grid — "Actually exited" hides the row from Active
+  // (→ Instructor Exited), while "University Payroll" / "Consultant→FTE rehire" keep them Active.
+  const resolvedAlerts = await ExitAlert.find({ status: "RESOLVED" }).select("employeeId resolution resolvedAt").sort({ resolvedAt: 1 }).lean();
+  const outcomeByEmp = new Map<string, string>();
+  for (const a of resolvedAlerts as any[]) { const k = norm(a.employeeId); if (k && a.resolution) outcomeByEmp.set(k, a.resolution); } // later resolution wins
 
   const rows: LiveMasterRow[] = [];
   const seen = new Set<string>();
@@ -75,19 +82,28 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     seen.add(empKey);
 
     const mongo = byEmp.get(empKey);
-    const exited = statusCol ? isExited(raw[statusCol]) : false;
+    const mongoVal = (key: string) => mongo ? (maybeDecrypt(mongo.values?.[key] ?? "") ?? "") : "";
+    let exited = statusCol ? isExited(raw[statusCol]) : false;
+    // Apply a CM's finalised exit outcome (overrides Darwinbox's live status on this grid).
+    const outcome = outcomeByEmp.get(empKey);
+    if (outcome === "EXITED") exited = true;
+    else if (outcome === "UNIVERSITY_PAYROLL" || outcome === "CONSULTANT_REHIRE") exited = false;
     const exitDate = exitDateCol ? normDate(raw[exitDateCol]) : "";
 
     const row: LiveMasterRow = { id: mongo ? String(mongo._id) : null, employeeId, exited };
 
-    // Darwinbox columns (read-only).
+    // Darwinbox columns (read-only). For VALUE fields, fall back to the stored Mongo value when
+    // Darwinbox is blank — so imported/enriched data (e.g. Qualification) still shows, matching the
+    // CSV export. Core fields (name/email/campus) stay straight from Darwinbox.
     for (const { t, col } of resolved) {
-      if (!col) { row[t.key] = ""; continue; }
-      let v = clean(raw[col]);
+      let v = col ? clean(raw[col]) : "";
       if (t.date) v = normDate(v);
+      if (!v && t.kind === "value") { const fb = mongoVal(t.key); v = t.date ? normDate(fb) : fb; }
       row[t.key] = v;
     }
-    row.uid = uidCol ? clean(raw[uidCol]) : "";
+    // UID: prefer the canonical Mongo uid (the value shown in the CSV export and used for BigQuery
+    // matching); fall back to the Darwinbox candidate_uid for rows that exist only in Darwinbox.
+    row.uid = clean(mongo?.uid) || (uidCol ? clean(raw[uidCol]) : "");
     row.exit_date = exitDate;
     // Derived: Reporting Manager Employee ID from direct_manager "(NWxxxx)".
     row.reporting_manager_employee_id = ((row.reporting_manager || "").match(/\((NW[^)]+)\)\s*$/i) || [])[1] || "";
@@ -99,7 +115,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.training = null; // training % isn't part of this live view (kept out to stay fast)
 
     // Manual columns from Mongo (blank if no record).
-    for (const key of manualValueKeys) row[key] = mongo ? (maybeDecrypt(mongo.values?.[key] ?? "") ?? "") : "";
+    for (const key of manualValueKeys) row[key] = mongoVal(key);
 
     rows.push(row);
   }
