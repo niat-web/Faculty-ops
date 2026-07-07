@@ -116,3 +116,14 @@ export async function findDarwinboxEmployee(employeeId: string): Promise<StaffPe
   const dir = await darwinboxDirectory();
   return dir.find((p) => norm(p.employeeId) === norm(employeeId)) || null;
 }
+
+// Resolve a Capability Manager User → their own Darwinbox Employee ID (via org email), so the Master
+// can scope them to the instructors who report to them (reporting_manager_employee_id === this id).
+// Returns null if their email isn't found in Darwinbox (→ caller should show no rows, not all).
+export async function cmDarwinboxEmployeeId(user: { email?: string }): Promise<string | null> {
+  const email = String(user?.email || "").trim().toLowerCase();
+  if (!email) return null;
+  const dir = await darwinboxDirectory();
+  const me = dir.find((p) => p.email.toLowerCase() === email);
+  return me ? me.employeeId : null;
+}

@@ -8,7 +8,7 @@ import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
-import { isOpsDept, isInstructorDept, seniorManagerIdSet } from "../lib/staffRoles";
+import { isOpsDept, isInstructorDept, seniorManagerIdSet, cmDarwinboxEmployeeId } from "../lib/staffRoles";
 import { norm } from "../lib/darwinboxSync";
 import { requireUser } from "../middleware";
 
@@ -119,9 +119,17 @@ router.get("/", guard, async (req, res) => {
     return true;
   };
 
+  // RBAC scope: a Capability Manager sees ONLY the instructors who report to them in Darwinbox
+  // (reporting_manager_employee_id === their own Employee ID). Ops Admin & Senior Manager see everyone.
+  // If we can't resolve the CM's Darwinbox id (email not in Darwinbox), they see no rows (fail closed).
+  let cmScopeId: string | null | undefined; // undefined = not a CM (no scoping)
+  if (req.user!.role === Role.CAPABILITY_MANAGER) cmScopeId = await cmDarwinboxEmployeeId(req.user!);
+  const inScopeForUser = (r: any) => cmScopeId === undefined ? true : (!!cmScopeId && norm(r.reporting_manager_employee_id) === norm(cmScopeId));
+
   // In-memory filters (data is from Darwinbox, not a Mongo query).
   const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
   const matchesNonScope = (r: any) => {
+    if (!inScopeForUser(r)) return false;
     if (roleFilter ? !roleAllowed(r) : !deptAllowed(r.department)) return false;
     if (departments.length && !has(departments, r.department)) return false;
     if (payrolls.length && !has(payrolls, r.payroll_entity)) return false;

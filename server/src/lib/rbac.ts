@@ -21,11 +21,22 @@ export function instructorScopeFilter(user: SessionUser): Record<string, any> {
   return { email: user.email }; // instructor → only self
 }
 
+const normId = (s: any) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 export async function canAccessInstructor(user: SessionUser, instructorId: string) {
   if (user.role === Role.OPS_ADMIN || user.role === Role.SENIOR_MANAGER) return true;
-  const inst = await Instructor.findById(instructorId).select("currentManagerId email").lean();
+  const inst: any = await Instructor.findById(instructorId).select("currentManagerId email values").lean();
   if (!inst) return false;
-  if (user.role === Role.CAPABILITY_MANAGER) return String(inst.currentManagerId) === user.id;
+  if (user.role === Role.CAPABILITY_MANAGER) {
+    // Legacy app assignment OR (the current model) the Darwinbox reporting manager is this CM.
+    if (String(inst.currentManagerId) === user.id) return true;
+    const { cmDarwinboxEmployeeId } = await import("./staffRoles");
+    const cmId = await cmDarwinboxEmployeeId(user);
+    if (!cmId) return false;
+    const rmId = String(inst.values?.reporting_manager_employee_id || "")
+      || (String(inst.values?.reporting_manager || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
+    return normId(rmId) === normId(cmId);
+  }
   return inst.email && inst.email === user.email;
 }
 
