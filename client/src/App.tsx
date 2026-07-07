@@ -4,16 +4,28 @@ import { Lock, AlertTriangle } from "lucide-react";
 import { useAuth } from "./auth";
 import AppShell from "./components/AppShell";
 import Loading from "./components/Loading";
+import { PageSkeleton, GridSkeleton, FormSkeleton, DashboardSkeleton } from "./components/skeletons";
 import TopProgressBar from "./components/TopProgressBar";
 import BatchEditBar from "./components/BatchEditBar";
 import { progress } from "./progress";
 import { lazyWithReload as lazy, isChunkError, reloadOnce } from "./lazyWithReload";
 
-// Suspense fallback for lazy route chunks — drives the top bar (chunk loads aren't API calls) and
-// renders no in-page spinner.
+// Per-route chunk-load skeleton: a downloading page shows ITS OWN layout (not a generic box). Each skeleton
+// matches that page's data-fetch skeleton, so the chunk-load → data-fetch → content transition is seamless
+// (no white flash, no generic rectangle). Also drives the top bar (chunk loads aren't API calls).
+function routeSkeleton(p: string) {
+  if (p === "/app" || p === "/app/") return <DashboardSkeleton />;
+  if (p.startsWith("/app/training") || p.startsWith("/app/my-stats")) return <GridSkeleton cols={10} />;
+  if (p.startsWith("/app/instructors/master") || p.startsWith("/app/instructors/exited")) return <GridSkeleton />;
+  if (/^\/app\/instructors\/[^/]+$/.test(p)) return <FormSkeleton sections={3} />; // instructor profile
+  if (p.startsWith("/app/settings") || p.startsWith("/app/account")) return <FormSkeleton />;
+  if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/audit")) return <GridSkeleton />;
+  return <PageSkeleton />;
+}
 function RouteFallback() {
   useEffect(() => { progress.start(); return () => { progress.done(); }; }, []);
-  return <Loading />;
+  const { pathname } = useLocation();
+  return routeSkeleton(pathname);
 }
 // Login/Reset stay eager (entry points); everything else is code-split so each page
 // loads its own chunk on demand → much smaller initial bundle + faster first paint.

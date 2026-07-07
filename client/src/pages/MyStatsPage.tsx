@@ -4,7 +4,7 @@ import { api } from "../api";
 import { LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
-import Loading from "../components/Loading";
+import { GridSkeleton } from "../components/skeletons";
 import ScrollSelect from "../components/ScrollSelect";
 
 // Module labels/order come dynamically from the profile payload (p.modules).
@@ -19,7 +19,7 @@ export default function MyStatsPage() {
   useEffect(() => { let on = true; api.get("/instructors/me").then((r) => on && setP(r)).catch((e) => on && setErr(e.message)); return () => { on = false; }; }, []);
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!p) return <Loading />;
+  if (!p) return <GridSkeleton />;
 
   const inst = p.instructor || {};
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));

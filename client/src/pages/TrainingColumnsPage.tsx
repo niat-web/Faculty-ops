@@ -155,8 +155,8 @@ export default function TrainingColumnsPage() {
                     <button onClick={() => move(i, 1)} disabled={i === cols.length - 1} className="rounded p-0.5 hover:bg-slate-100 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
                   </div>
                 </td>
-                <td className="px-5 py-2.5 text-slate-500">{c.group || "—"}</td>
-                <td className="px-5 py-2.5 font-medium">{c.label}</td>
+                <td className="px-5 py-2.5 text-slate-500 cell-trunc" title={c.group || "—"}>{c.group || "—"}</td>
+                <td className="px-5 py-2.5 font-medium cell-trunc" title={c.label}>{c.label}</td>
                 <td className="max-w-[260px] px-5 py-2.5">
                   {c.courseId ? <span className="block select-all truncate font-mono text-xs text-slate-500" title={c.courseId}>{c.courseId}</span> : <span className="text-xs text-slate-300">—</span>}
                 </td>
@@ -217,8 +217,8 @@ function PreviewTable({ cols }: { cols: any[] }) {
     { employeeId: "NW0005678", name: "Sample Instructor B", v: (c: any) => (c.type === "STATUS" || c.type === "DROPDOWN") ? opt(c, 1) : c.type === "NUMBER" ? "50" : c.type === "DATE" ? "01-Feb-2027" : "—" },
   ];
   const cell = (c: any, raw: string) => {
-    if (c.type === "STATUS") { const t = (raw || "").toLowerCase().includes("complete") ? "completed" : (raw || "").toLowerCase().includes("progress") ? "progress" : "notstarted"; return <span className={`block px-2 py-1.5 text-center text-[11px] ${TONE[t]}`}>{SHORT[t] || raw}</span>; }
-    return <span className="block px-3 py-1.5 text-[11px] text-slate-600">{raw}</span>;
+    if (c.type === "STATUS") { const t = (raw || "").toLowerCase().includes("complete") ? "completed" : (raw || "").toLowerCase().includes("progress") ? "progress" : "notstarted"; return <span title={raw} className={`block truncate px-2 py-1.5 text-center text-[11px] ${TONE[t]}`}>{SHORT[t] || raw}</span>; }
+    return <span title={raw} className="block truncate px-3 py-1.5 text-[11px] text-slate-600">{raw}</span>;
   };
   return (
     <div className="card overflow-auto p-0">
@@ -237,8 +237,8 @@ function PreviewTable({ cols }: { cols: any[] }) {
           {samples.map((r, ri) => (
             <tr key={ri}>
               <td className="border-b border-slate-100 bg-white px-3 py-1.5 font-mono text-[11px] text-slate-600">{r.employeeId}</td>
-              <td className="border-b border-slate-100 bg-white px-3 py-1.5 font-medium text-slate-800">{r.name}</td>
-              {cols.map((c) => <td key={c.id} className="border-b border-l border-slate-100 p-0">{cell(c, r.v(c))}</td>)}
+              <td className="max-w-[200px] cell-trunc border-b border-slate-100 bg-white px-3 py-1.5 font-medium text-slate-800" title={r.name}>{r.name}</td>
+              {cols.map((c) => <td key={c.id} className="max-w-[160px] border-b border-l border-slate-100 p-0">{cell(c, r.v(c))}</td>)}
             </tr>
           ))}
           {!cols.length && <tr><td colSpan={2} className="px-5 py-8 text-center text-slate-400">Add columns to see the preview.</td></tr>}

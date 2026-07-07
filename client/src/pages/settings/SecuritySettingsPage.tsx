@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ShieldCheck, KeyRound, LockKeyhole } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
-import Loading from "../../components/Loading";
+import { FormSkeleton } from "../../components/skeletons";
 
 type Security = { passwordMinLength: number; requireComplexity: boolean; maxLoginAttempts: number; lockoutMinutes: number };
 
@@ -21,7 +21,7 @@ export default function SecuritySettingsPage() {
     finally { setBusy(false); }
   }
 
-  if (!s) return <Loading />;
+  if (!s) return <FormSkeleton />;
   const num = (k: keyof Security, lo: number, hi: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const n = parseInt(e.target.value, 10);
     setS({ ...s, [k]: isNaN(n) ? ("" as any) : Math.min(hi, Math.max(lo, n)) });

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 
 type Kind = "success" | "error" | "info";
@@ -16,7 +16,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((t) => [...t, { id, kind, text, ms }]);
     setTimeout(() => remove(id), ms);
   }, [remove]);
-  const value: ToastCtx = { show, success: (t, ms) => show(t, "success", ms), error: (t, ms) => show(t, "error", ms), info: (t, ms) => show(t, "info", ms) };
+  // Memoized on the stable `show` so the context value NEVER changes as toasts are added/removed. Without
+  // this, every toast (e.g. the success toast after each cell edit) re-rendered every useToast() consumer —
+  // including the entire Instructor grids. Same API/behaviour, just a stable reference.
+  const value = useMemo<ToastCtx>(() => ({
+    show,
+    success: (t, ms) => show(t, "success", ms),
+    error: (t, ms) => show(t, "error", ms),
+    info: (t, ms) => show(t, "info", ms),
+  }), [show]);
 
   const Icon = { success: CheckCircle2, error: AlertCircle, info: Info };
   const tone: Record<Kind, string> = { success: "border-emerald-200 bg-emerald-50 text-emerald-800", error: "border-rose-200 bg-rose-50 text-rose-800", info: "border-brand-200 bg-brand-50 text-brand-800" };

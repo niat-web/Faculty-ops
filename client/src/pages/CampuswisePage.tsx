@@ -41,7 +41,7 @@ export default function CampuswisePage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((i) => (
                 <tr key={i.campus} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800"><Link to={`/app/instructors/master?campus=${encodeURIComponent(i.campus)}`} className="text-brand-700 hover:underline">{i.campus}</Link></td>
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc"><Link to={`/app/instructors/master?campus=${encodeURIComponent(i.campus)}`} className="text-brand-700 hover:underline" title={i.campus}>{i.campus}</Link></td>
                   <td className="px-5 py-3 text-right"><span className="chip chip-status">{i.total}</span></td>
                   <td className="px-5 py-3 text-right text-slate-600">{i.university}</td>
                   <td className="px-5 py-3 text-right text-slate-600">{i.nxtwave}</td>

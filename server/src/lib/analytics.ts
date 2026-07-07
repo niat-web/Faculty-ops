@@ -5,7 +5,7 @@ import { instructorScopeFilter } from "./rbac";
 import { maybeDecrypt } from "./crypto";
 import { tabForInstructor } from "./training";
 import { computeSummary, type TrainingSummary } from "./trainingScore";
-import { fetchTrainingProgress } from "./bigqueryTraining";
+import { fetchTrainingProgress, type TrainingProgressSync } from "./bigqueryTraining";
 
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -13,15 +13,16 @@ const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
 type DocWithSummary = any & { liveTraining?: TrainingSummary | null; livePrimaryPct?: number | null };
 const dayMs = 24 * 60 * 60 * 1000;
 
-export async function attachLiveTrainingSummaries(docs: DocWithSummary[]) {
-  if (!docs.length) return;
+export async function attachLiveTrainingSummaries(docs: DocWithSummary[], opts?: { fresh?: boolean }): Promise<TrainingProgressSync | null> {
+  if (!docs.length) return null;
   const moduleCols: any[] = await TrainingColumn.find({ archivedAt: null, storage: "module" }).select("track key courseId").lean();
   const live: Record<string, string[]> = {};
   for (const c of moduleCols) (live[c.track] ||= []).push(c.key);
   const syncCols = moduleCols.filter((c) => c.courseId && !MANUAL_MODULE_KEYS.has(c.key));
   const progress = await fetchTrainingProgress(
     syncCols.map((c) => ({ key: c.key, courseId: c.courseId })),
-    docs.map((d) => ({ id: String(d._id), employeeId: d.employeeId, email: d.email, uid: d.uid }))
+    docs.map((d) => ({ id: String(d._id), employeeId: d.employeeId, email: d.email, uid: d.uid })),
+    opts
   );
   for (const d of docs) {
     const values = d.values || {};
@@ -37,6 +38,7 @@ export async function attachLiveTrainingSummaries(docs: DocWithSummary[]) {
     d.liveTraining = summary;
     d.livePrimaryPct = summary.primaryPct == null ? null : Math.round(summary.primaryPct * 100);
   }
+  return progress;
 }
 
 function daysUntil(date: any) {
@@ -56,12 +58,15 @@ function gapDays(predicted: string, deadline: any) {
 }
 
 // Role-aware dashboard payload (KPIs + chart series + role-specific lists).
-export async function dashboardData(user: SessionUser) {
+// `live=false` (default) renders purely from MongoDB (last-saved training %) so the page is instant;
+// `live=true` layers the BigQuery values on top and attaches a `trainingSync` status — the client calls
+// the live variant in the background and patches only the training-derived widgets.
+export async function dashboardData(user: SessionUser, live = false, opts?: { fresh?: boolean }) {
   const scope = instructorScopeFilter(user);
   // Pull the scoped instructors once and compute most series in memory (mirrors the old app).
   // Deterministic order so an instructor with a duplicate email always resolves to the same self-record.
   const docs: DocWithSummary[] = await Instructor.find(scope).select("employeeId name email uid status campus currentManagerId values moduleStatus createdAt").sort({ createdAt: -1 }).lean();
-  await attachLiveTrainingSummaries(docs);
+  const progress = live ? await attachLiveTrainingSummaries(docs, opts) : null;
 
   const total = docs.length;
   const campuses = new Set(docs.map((d) => (d.campus || "").trim()).filter(Boolean)).size;
@@ -169,5 +174,7 @@ export async function dashboardData(user: SessionUser) {
     } else payload.me = null;
   }
 
+  // Only the live variant carries a sync status (for the client's "Syncing…/Last synced" indicator).
+  if (live) payload.trainingSync = { ok: progress ? progress.ok : true, lastSyncedAt: progress?.lastSyncedAt ?? null, error: progress && !progress.ok ? (progress.error || "BigQuery sync failed.") : undefined };
   return payload;
 }

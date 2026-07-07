@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Building2, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
-import Loading from "../../components/Loading";
+import { FormSkeleton } from "../../components/skeletons";
 
 type General = { appName: string; organisation: string; appUrl: string; supportEmail: string };
 type Integrations = { email: boolean; google: boolean; encryption: boolean; cron: boolean };
@@ -32,7 +32,7 @@ export default function GeneralSettingsPage() {
     finally { setBusy(false); }
   }
 
-  if (!g) return <Loading />;
+  if (!g) return <FormSkeleton />;
   const set = (k: keyof General) => (e: React.ChangeEvent<HTMLInputElement>) => setG({ ...g, [k]: e.target.value });
 
   return (

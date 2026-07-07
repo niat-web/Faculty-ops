@@ -41,7 +41,7 @@ export default function ManagerDistributionPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((i) => (
                 <tr key={i.managerId || "na"} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800">
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc" title={i.manager}>
                     {i.managerId ? <Link to={`/app/instructors/master?managerId=${i.managerId}`} className="text-brand-700 hover:underline">{i.manager}</Link> : <span className="text-slate-500">{i.manager}</span>}
                   </td>
                   <td className="px-5 py-3 text-right"><span className="chip chip-status">{i.count}</span></td>

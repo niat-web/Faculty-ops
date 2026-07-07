@@ -142,12 +142,14 @@ export async function fetchBigQueryRows(limit: number, offset: number, q?: strin
 const PROGRESS_TTL_MS = 3 * 60 * 1000;
 const progressCache = new Map<string, { at: number; result: TrainingProgressSync }>();
 
-export async function fetchTrainingProgress(courses: CourseColumn[], instructors: InstructorKey[]): Promise<TrainingProgressSync> {
+export async function fetchTrainingProgress(courses: CourseColumn[], instructors: InstructorKey[], opts?: { fresh?: boolean }): Promise<TrainingProgressSync> {
   const courseIds = [...new Set(courses.map((c) => clean(c.courseId)).filter(Boolean))].sort();
   const idKeys = instructors.map((i) => `${clean(i.employeeId)}|${clean(i.email).toLowerCase()}|${normId(i.uid)}`).sort();
   const cacheKey = crypto.createHash("sha1").update(`${courseIds.join(",")}#${idKeys.join(",")}`).digest("hex");
-  const hit = progressCache.get(cacheKey);
-  if (hit && Date.now() - hit.at < PROGRESS_TTL_MS) return hit.result;
+  if (!opts?.fresh) { // fresh:true bypasses the cache (e.g. Training Stats always wants the latest)
+    const hit = progressCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < PROGRESS_TTL_MS) return hit.result;
+  }
   const result = await fetchTrainingProgressUncached(courses, instructors);
   if (result.ok) progressCache.set(cacheKey, { at: Date.now(), result }); // only cache successful pulls
   return result;

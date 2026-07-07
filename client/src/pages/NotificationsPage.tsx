@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, Check, Mail, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { PageSkeleton } from "../components/skeletons";
 
 export default function NotificationsPage() {
   const toast = useToast();
@@ -30,6 +31,8 @@ export default function NotificationsPage() {
     try { await api.del(`/notifications/${n.id}`); } catch (e: any) { toast.error(e.message); load(); }
   }
   function openItem(n: any) { if (!n.read) setRead(n, true); if (n.link) nav(n.link); }
+
+  if (!data) return <PageSkeleton />;
 
   return (
     <div className="space-y-5">

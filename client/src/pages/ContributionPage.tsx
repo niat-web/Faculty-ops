@@ -57,7 +57,7 @@ export default function ContributionPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.map((it) => (
                 <tr key={it.value} className="hover:bg-slate-50">
-                  <td className="px-5 py-3 font-medium text-slate-800"><Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={`View the ${it.count} instructor(s) with this contribution`}>{it.value}</Link></td>
+                  <td className="px-5 py-3 font-medium text-slate-800 cell-trunc"><Link to={`/app/instructors/master?contribution=${encodeURIComponent(it.value)}`} className="text-brand-700 hover:underline" title={it.value}>{it.value}</Link></td>
                   <td className="px-5 py-3"><span className="chip chip-status">{it.count}</span></td>
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">

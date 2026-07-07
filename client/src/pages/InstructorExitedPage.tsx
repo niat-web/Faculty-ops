@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, X } from "lucide-react";
+import { SlidersHorizontal, Download, X } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
-import { useDebouncedValue, isAbort } from "../hooks";
+import { isAbort } from "../hooks";
 import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
+import OverlayCellEditor from "../components/OverlayCellEditor";
+import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
 
@@ -60,8 +62,7 @@ export default function InstructorExitedPage() {
   const canEdit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER";
   const isOps = user!.role === "OPS_ADMIN"; // super admin may edit Employee ID
   const toast = useToast();
-  const [q, setQ] = useState("");
-  const dq = useDebouncedValue(q, 300);
+  const [dq, setDq] = useState(""); // debounced search value; the <SearchInput> owns the keystroke state
   const [applied, setApplied] = useState<Filters>(EMPTY);
   const [draft, setDraft] = useState<Filters>(EMPTY);
   const [drawer, setDrawer] = useState(false);
@@ -144,10 +145,7 @@ export default function InstructorExitedPage() {
           <p className="text-sm text-slate-500">Instructors who have exited NIAT{canEdit ? " — click any cell to edit." : "."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-56 sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input className="input h-9 pl-9 text-sm" placeholder="Name, ID, email…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
-          </div>
+          <SearchInput onSearch={(v) => { setPage(1); setDq(v); }} placeholder="Name, ID, email…" />
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
@@ -259,7 +257,9 @@ export default function InstructorExitedPage() {
 
 // Type-aware inline editor: manager picker / dropdown / text.
 function CellEditor({ col, cms, value, onCommit, onCancel }: { col: Col; cms: any[]; value: string; onCommit: (v: string) => void; onCancel: () => void }) {
-  const base = "w-full min-w-[150px] rounded border border-brand-400 px-2 py-1 text-sm outline-none ring-2 ring-brand-100";
+  // Matches Instructor Master: capped dropdown width (no forced min-width that would grow the column on
+  // edit) and the shared zero-CLS overlay editor for text.
+  const base = "w-full max-w-[280px] rounded border border-brand-400 px-2 py-1 text-sm outline-none ring-2 ring-brand-100";
   if (col.manager) {
     const options = [{ value: "", label: "— unassigned —" }, ...cms.map((c) => ({ value: c.id, label: c.name }))];
     return <ScrollSelect autoOpen value={value} options={options} placeholder="— unassigned —" onChange={onCommit} onClose={onCancel} className={`${base} flex items-center justify-between gap-2`} />;
@@ -269,9 +269,5 @@ function CellEditor({ col, cms, value, onCommit, onCancel }: { col: Col; cms: an
     const options = [{ value: "", label: "— select —" }, ...extra, ...col.dropdown.map((o) => ({ value: o, label: o }))];
     return <ScrollSelect autoOpen value={value} options={options} onChange={onCommit} onClose={onCancel} className={`${base} flex items-center justify-between gap-2`} />;
   }
-  return (
-    <input autoFocus type="text" defaultValue={value} className={base}
-      onBlur={(e) => onCommit(e.target.value)}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} />
-  );
+  return <OverlayCellEditor value={value} onCommit={onCommit} onCancel={onCancel} sizerClass="max-w-[280px]" />;
 }

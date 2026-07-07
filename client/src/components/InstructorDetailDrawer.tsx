@@ -5,7 +5,7 @@ import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import { useBatchEdit } from "../batchEdit";
-import Loading from "./Loading";
+import { FormSkeleton } from "./skeletons";
 import ScrollSelect from "./ScrollSelect";
 import {
   fmt, EditFieldModal, StatusModal, SkillsTab, ExitTab, NotesTab,
@@ -126,8 +126,8 @@ export default function InstructorDetailDrawer({ instructorId, onClose, onChange
           </>
         ) : !p ? (
           <>
-            <DrawerHeader onClose={onClose} title="Loading…" subtitle="" right={null} />
-            <div className="flex-1"><Loading /></div>
+            <DrawerHeader onClose={onClose} title="Instructor" subtitle="" right={null} />
+            <div className="flex-1 overflow-y-auto p-6"><FormSkeleton sections={2} rows={4} /></div>
           </>
         ) : (
           <DrawerBody

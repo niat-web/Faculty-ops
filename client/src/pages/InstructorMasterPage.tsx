@@ -1,19 +1,23 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox, RefreshCw } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
-import { useDebouncedValue, isAbort } from "../hooks";
+import { isAbort } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
+import OverlayCellEditor from "../components/OverlayCellEditor";
+import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
-import InstructorDetailDrawer from "../components/InstructorDetailDrawer";
+// Heavy, on-demand: the detail drawer's code is deferred out of the initial grid chunk and only
+// fetched the first time a row is opened (lazy-loaded, rendered under Suspense below).
+const InstructorDetailDrawer = lazy(() => import("../components/InstructorDetailDrawer"));
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
 type Meta = { columns: Column[]; managers: { id: string; name: string }[]; filters: { departments: string[]; payrolls: string[]; regions: string[]; campuses: string[] } };
@@ -51,8 +55,7 @@ export default function InstructorMasterPage() {
   const [deptSel, setDeptSel] = useState<Set<string> | null>(null);
   const [deptOpen, setDeptOpen] = useState(false);
 
-  const [q, setQ] = useState("");
-  const dq = useDebouncedValue(q, 300);
+  const [dq, setDq] = useState(""); // debounced search value; the <SearchInput> below owns the keystroke state
   const [applied, setApplied] = useState<Filters>(filtersFromSearch);
   const [draft, setDraft] = useState<Filters>(filtersFromSearch);
   const [drawer, setDrawer] = useState(false);
@@ -61,6 +64,12 @@ export default function InstructorMasterPage() {
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
   const [reloadKey, setReloadKey] = useState(0);
+  // Live TRAINING % is layered on top of the Mongo rows AFTER render, from GET /master/training-sync,
+  // so the grid never blocks on BigQuery. trainingMap patches only the training cells (by instructor id).
+  const [trainingMap, setTrainingMap] = useState<Record<string, number>>({});
+  const [syncState, setSyncState] = useState<"idle" | "loading" | "error">("idle");
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const syncWarned = useRef(false);
 
   const [edit, setEdit] = useState<{ empId: string; key: string } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null); // open instructor in the right-side drawer
@@ -95,9 +104,9 @@ export default function InstructorMasterPage() {
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
-  // Sticky header during PAGE scroll: the page (<main>) scrolls vertically while the table keeps
-  // its own horizontal scroll. CSS sticky can't pin the header to the page through an overflow-x
-  // wrapper, so we translate the <thead> down by the page's scrollTop to keep it visually pinned.
+  // The grid is a single internal scroll container (wrapRef, overflow-auto both axes): the <thead>
+  // pins with CSS `sticky top-0` and the Name/Employee ID columns with `sticky left-*` — no JS
+  // transforms (a transform on any ancestor would break sticky).
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -154,6 +163,30 @@ export default function InstructorMasterPage() {
         setErr(null); setLoadingRows(false);
       })
       .catch((e) => { if (!isAbort(e)) { setErr(e.message); setLoadingRows(false); } });
+    return () => ac.abort();
+  }, [query, page, per, reloadKey]);
+
+  // Background live-training sync — runs in parallel with (and independent of) the Mongo list fetch.
+  // On success it patches only the training cells; on failure it leaves the last-saved values and warns
+  // once (non-blocking). Re-runs whenever the page/scope/filters change (a new instructor set).
+  useEffect(() => {
+    const ac = new AbortController();
+    setSyncState("loading");
+    setTrainingMap({});
+    const p = new URLSearchParams(query);
+    p.set("page", String(page)); p.set("per", String(per));
+    api.get(`/master/training-sync?${p}`, { signal: ac.signal })
+      .then((r) => {
+        setTrainingMap(r.training || {});
+        setLastSynced(r.lastSyncedAt || null);
+        if (r.ok) { setSyncState("idle"); syncWarned.current = false; }
+        else { setSyncState("error"); if (!syncWarned.current) { syncWarned.current = true; toast.error(r.error || "Live training sync unavailable — showing last-saved values."); } }
+      })
+      .catch((e) => {
+        if (isAbort(e)) return;
+        setSyncState("error");
+        if (!syncWarned.current) { syncWarned.current = true; toast.error("Live training sync failed — showing last-saved values."); }
+      });
     return () => ac.abort();
   }, [query, page, per, reloadKey]);
 
@@ -252,10 +285,7 @@ export default function InstructorMasterPage() {
           <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-56 sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input className="input h-9 pl-9 text-sm" placeholder="Search name, ID, email…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
-          </div>
+          <SearchInput onSearch={(v) => { setPage(1); setDq(v); }} placeholder="Search name, ID, email…" />
           {role && (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
               Role: {ROLE_LABEL[role] || role}
@@ -407,16 +437,22 @@ export default function InstructorMasterPage() {
                       </td>
                       {/* Campus + Training quick-view columns, right after the frozen Name + Employee ID. */}
                       {c.key === "employeeId" && (
-                        <td className="px-3 py-2 text-slate-500">{row.campus || <span className="text-slate-300">—</span>}</td>
+                        <td className="px-3 py-2 text-slate-500 cell-trunc" title={row.campus || ""}>{row.campus || <span className="text-slate-300">—</span>}</td>
                       )}
                       {c.key === "employeeId" && (
                         <td className="px-3 py-2">
-                          {row.training == null ? <span className="text-slate-300">—</span> : (
-                            <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(row.training), 100)}%` }} /></div>
-                              <span className="text-xs text-slate-500">{row.training}%</span>
-                            </div>
-                          )}
+                          {(() => {
+                            const t = trainingMap[row.id] ?? row.training; // live value, else last-saved Mongo value
+                            // Skeleton ONLY when syncing AND there's no value yet — otherwise keep the Mongo
+                            // value on screen and let the background sync refresh it silently (no flicker).
+                            if (syncState === "loading" && t == null) return <div className="h-1.5 w-20 animate-pulse rounded-full bg-slate-200" title="Syncing live training…" />;
+                            return t == null ? <span className="text-slate-300">—</span> : (
+                              <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(Number(t), 100)}%` }} /></div>
+                                <span className="text-xs text-slate-500">{t}%</span>
+                              </div>
+                            );
+                          })()}
                         </td>
                       )}
                       </Fragment>
@@ -534,20 +570,8 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} />
     );
   }
-  // Text/date → a comfortable auto-growing textarea (Notion/Airtable style): wide enough to read at a
-  // glance, wraps + grows VERTICALLY so long values are never clipped. Esc cancels, click-away saves.
-  return (
-    <textarea
-      autoFocus
-      rows={1}
-      defaultValue={value}
-      ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }}
-      className="block w-[360px] min-w-[240px] max-w-[70vw] resize-none rounded border border-brand-400 px-2 py-1 text-sm leading-snug shadow-lg outline-none ring-2 ring-brand-100"
-      onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
-      onBlur={(e) => onCommit(e.target.value)}
-      onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-    />
-  );
+  // Text/date → shared zero-CLS overlay editor (identical to the Instructor Stats grid).
+  return <OverlayCellEditor value={value} onCommit={onCommit} onCancel={onCancel} sizerClass="max-w-[280px]" />;
 }
 
 // Add a new instructor — migrated from the Instructors page (POST /instructors).
@@ -648,7 +672,7 @@ function ImportModal({ rows, onClose, onDone }: { rows: any[]; onClose: () => vo
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-left text-slate-400"><tr>{cols.map((c) => <th key={c} className="px-3 py-2">{c}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.slice(0, 8).map((r: any, i: number) => <tr key={i}>{cols.map((c) => <td key={c} className="px-3 py-1.5 text-slate-600">{String(r[c] ?? "")}</td>)}</tr>)}
+                {rows.slice(0, 8).map((r: any, i: number) => <tr key={i}>{cols.map((c) => <td key={c} className="px-3 py-1.5 text-slate-600 cell-trunc" title={String(r[c] ?? "")}>{String(r[c] ?? "")}</td>)}</tr>)}
               </tbody>
             </table>
           </div>

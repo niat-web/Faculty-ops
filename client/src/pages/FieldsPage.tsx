@@ -84,7 +84,7 @@ export default function FieldsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {tracks.map((t) => (
                     <tr key={t.key} onClick={() => navigate(`/app/settings/fields/training/${t.key}`)} className="cursor-pointer hover:bg-slate-50">
-                      <td className="px-5 py-3 font-medium text-brand-700">{t.label}</td>
+                      <td className="px-5 py-3 font-medium text-brand-700 cell-trunc" title={t.label}>{t.label}</td>
                       <td className="px-5 py-3 text-slate-500">{t.columns} column(s)</td>
                       <td className="px-5 py-3 text-right"><ChevronRight className="ml-auto h-4 w-4 text-slate-400" /></td>
                     </tr>
@@ -106,10 +106,10 @@ export default function FieldsPage() {
                   <tbody className="divide-y divide-slate-100">
                     {moduleFields.map((f) => (
                       <tr key={f.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-2.5 font-medium">{f.label}<span className="ml-2 font-mono text-[11px] text-slate-400">{f.key}</span></td>
+                        <td className="px-5 py-2.5 font-medium cell-trunc" title={f.label}>{f.label}<span className="ml-2 font-mono text-[11px] text-slate-400">{f.key}</span></td>
                         <td className="px-5 py-2.5 text-slate-500">{f.type}{f.type === "DROPDOWN" && f.options?.length ? ` (${f.options.length})` : ""}</td>
                         <td className="px-5 py-2.5"><span className={`chip ${VIS_CHIP[f.visibility]}`}>{f.visibility.toLowerCase()}</span></td>
-                        <td className="px-5 py-2.5 text-slate-500">{f.scope === "INSTANCE" ? `Instance · ${f.instructorName || "?"}` : "Global"}</td>
+                        <td className="px-5 py-2.5 text-slate-500 cell-trunc" title={f.scope === "INSTANCE" ? `Instance · ${f.instructorName || "?"}` : "Global"}>{f.scope === "INSTANCE" ? `Instance · ${f.instructorName || "?"}` : "Global"}</td>
                         <td className="px-5 py-2.5 text-slate-500">{f.valueCount}</td>
                         <td className="px-5 py-2.5">
                           <div className="flex justify-end gap-1">
@@ -138,9 +138,9 @@ export default function FieldsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {archived.map((f) => (
                     <tr key={f.id} className="text-slate-500">
-                      <td className="px-5 py-2.5">{f.label} <span className="font-mono text-[11px]">{f.key}</span></td>
-                      <td className="px-5 py-2.5">{modLabel(f.module)}</td>
-                      <td className="px-5 py-2.5 text-xs italic">{f.archiveReason}</td>
+                      <td className="px-5 py-2.5 cell-trunc" title={f.label}>{f.label} <span className="font-mono text-[11px]">{f.key}</span></td>
+                      <td className="px-5 py-2.5 cell-trunc" title={modLabel(f.module)}>{modLabel(f.module)}</td>
+                      <td className="px-5 py-2.5 text-xs italic cell-trunc" title={f.archiveReason}>{f.archiveReason}</td>
                       {isOps && <td className="px-5 py-2.5 text-right"><button onClick={() => del(f)} className="text-rose-500 hover:underline">Delete</button></td>}
                     </tr>
                   ))}
