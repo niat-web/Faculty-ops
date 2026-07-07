@@ -112,7 +112,12 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.email = row.email || "";
     row.campus = row.campus || "";
     row.status = exited ? "EXITED" : "ACTIVE";
-    row.training = null; // training % isn't part of this live view (kept out to stay fast)
+    // Training % quick-view: the stored BigQuery-derived primary % for this employee (computed via UID on
+    // the Training Stats page and persisted to Mongo), joined here by Employee ID — same value the Master
+    // showed before the live-join. Blank only when we have no stored figure. No BigQuery call on the grid.
+    const pctRaw = mongoVal("primary_pct");
+    const pctNum = Number(pctRaw);
+    row.training = pctRaw !== "" && !isNaN(pctNum) ? pctNum : null;
 
     // Manual columns from Mongo (blank if no record).
     for (const key of manualValueKeys) row[key] = mongoVal(key);

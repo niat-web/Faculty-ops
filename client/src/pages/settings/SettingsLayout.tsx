@@ -9,6 +9,7 @@ const TABS = [
   { to: "/app/settings/emails", label: "Emails" },
   { to: "/app/settings/general", label: "General" },
   { to: "/app/settings/security", label: "Security" },
+  { to: "/app/settings/senior-managers", label: "Senior Managers" },
   { to: "/app/settings/access", label: "Account Access" },
   { to: "/app/settings/data", label: "Data & Retention" },
   { to: "/app/settings/exit-alerts", label: "Exit Alerts" },

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import Papa from "papaparse";
-import { Instructor, User, AuditLog, LoginEvent, EditRequest, FieldDefinition } from "../models";
+import { Instructor, User, AuditLog, LoginEvent, EditRequest, FieldDefinition, SeniorManager } from "../models";
 import { Role, LifecycleStatus, LIFECYCLE_LABEL } from "../enums";
 import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canEditDetails, canDeleteInstructor } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
@@ -10,7 +10,8 @@ import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
 import { sendInstructorMail, listInstructorMails } from "../lib/instructorMail";
 import { maybeDecrypt } from "../lib/crypto";
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
-import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
+import { loadLiveMasterRows } from "../lib/masterLive";
+import { isOpsDept, isInstructorDept } from "../lib/staffRoles";
 import { requireUser } from "../middleware";
 
 const router = Router();
@@ -252,18 +253,19 @@ router.get("/roles", async (req, res) => {
   const byRole: Record<string, string[]> = { OPS_ADMIN: [], SENIOR_MANAGER: [], CAPABILITY_MANAGER: [] };
   const roleByEmail: Record<string, string> = {};
   for (const u of staff as any[]) { const e = (u.email || "").toLowerCase(); if (!e) continue; byRole[u.role]?.push(e); roleByEmail[e] = u.role; }
-  const staffEmails = [...byRole.OPS_ADMIN, ...byRole.SENIOR_MANAGER, ...byRole.CAPABILITY_MANAGER];
-  // Instructor count comes from the SAME live-Darwinbox source the Instructor Master's "Active" tab uses,
-  // so the two always agree (active, instructor departments, support depts excluded).
+  // All role counts derive from live Darwinbox (same source as the Instructor Master), so they agree:
+  //  Ops Admin = "Delivery Support" department · Instructor = every other instructor department ·
+  //  Capability Manager = unique reporting managers · Senior Manager = the admin-curated list.
   const live = await loadLiveMasterRows();
-  const [ops, sm, cm] = await Promise.all([
-    User.countDocuments({ role: Role.OPS_ADMIN, active: true }),
-    User.countDocuments({ role: Role.SENIOR_MANAGER, active: true }),
-    User.countDocuments({ role: Role.CAPABILITY_MANAGER, active: true }),
-  ]);
-  const instr = live.ok ? live.rows.filter((r) => !r.exited && !isDefaultUnchecked(r.department)).length : 0;
-  const counts = { OPS_ADMIN: ops, SENIOR_MANAGER: sm, CAPABILITY_MANAGER: cm, INSTRUCTOR: instr };
-  const total = ops + sm + cm + instr;
+  const activeRows = live.ok ? live.rows.filter((r) => !r.exited) : [];
+  const opsCount = activeRows.filter((r) => isOpsDept(r.department)).length;
+  const instr = activeRows.filter((r) => isInstructorDept(r.department)).length;
+  const rmSet = new Set<string>();
+  for (const r of activeRows) { if (isInstructorDept(r.department)) { const raw = String(r.reporting_manager || "").trim(); if (raw) rmSet.add(raw); } }
+  const cmCount = rmSet.size;
+  const smCount = await SeniorManager.countDocuments();
+  const counts = { OPS_ADMIN: opsCount, SENIOR_MANAGER: smCount, CAPABILITY_MANAGER: cmCount, INSTRUCTOR: instr };
+  const total = opsCount + smCount + cmCount + instr;
 
   let matches: any[] = [];
   if (q) {

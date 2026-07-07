@@ -36,6 +36,11 @@ async function runOnce() {
         const det = await detectExitAlerts();
         if (!det.ok) console.warn(`[exit-alerts] skipped: ${det.error}`);
       } catch (e: any) { console.error("[exit-alerts] failed:", e?.message || e); }
+      // Mirror the Darwinbox "Delivery Support" department into pending Ops-Admin user accounts.
+      try {
+        const { syncOpsAdminUsers } = await import("./staffRoles");
+        await syncOpsAdminUsers();
+      } catch (e: any) { console.error("[staff-sync] failed:", e?.message || e); }
     } else {
       console.warn(`[darwinbox-sync] skipped: ${report.error}`);
     }

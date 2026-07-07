@@ -301,6 +301,21 @@ const AppSettingSchema = new Schema(
   { timestamps: true }
 );
 
+// SeniorManager — admin-curated list of Senior Managers, picked from Darwinbox by Employee ID.
+// Drives the Roles "Senior Manager" count/list and seeds a pending User account (login off until activated).
+const SeniorManagerSchema = new Schema(
+  {
+    employeeId: { type: String, required: true, unique: true, trim: true },
+    name: String,
+    email: String,
+    department: String,
+    designation: String,
+    addedById: { type: Schema.Types.ObjectId, ref: "User" },
+    addedByName: String,
+  },
+  { timestamps: true }
+);
+
 // FieldModule — admin-definable sections that group dynamic fields (Personal Details, etc.).
 const FieldModuleSchema = new Schema(
   {
@@ -341,6 +356,7 @@ export const InstructorMail = compile("InstructorMail", InstructorMailSchema);
 export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);
 export const ExitAlert = compile("ExitAlert", ExitAlertSchema);
+export const SeniorManager = compile("SeniorManager", SeniorManagerSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
 export const LoginEvent = compile("LoginEvent", LoginEventSchema);
 export type ID = Types.ObjectId | string;

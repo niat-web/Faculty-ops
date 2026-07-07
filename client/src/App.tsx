@@ -61,6 +61,7 @@ const SecuritySettingsPage = lazy(() => import("./pages/settings/SecuritySetting
 const DataSettingsPage = lazy(() => import("./pages/settings/DataSettingsPage"));
 const AccountAccessPage = lazy(() => import("./pages/settings/AccountAccessPage"));
 const ExitAlertsSettingsPage = lazy(() => import("./pages/settings/ExitAlertsSettingsPage"));
+const SeniorManagersSettingsPage = lazy(() => import("./pages/settings/SeniorManagersSettingsPage"));
 
 // Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
 // instead of a blank white screen. (Bug B7)
@@ -178,6 +179,7 @@ export default function App() {
                   <Route path="access" element={<AccountAccessPage />} />
                   <Route path="data" element={<DataSettingsPage />} />
                   <Route path="exit-alerts" element={<ExitAlertsSettingsPage />} />
+                  <Route path="senior-managers" element={<SeniorManagersSettingsPage />} />
                 </Route>
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />

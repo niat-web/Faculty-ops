@@ -30,8 +30,10 @@ export default function RolesPage() {
     return () => ac.abort();
   }, [dq]);
 
-  // Click a role → Instructor Master filtered to that role.
-  const openRole = (role: string) => navigate(`/app/instructors/master?role=${role}`);
+  // Click a role → Instructor Master filtered to that role. Capability Managers are the Darwinbox
+  // reporting managers, so that opens their distribution list instead.
+  const openRole = (role: string) =>
+    navigate(role === "CAPABILITY_MANAGER" ? "/app/contribution/managers" : `/app/instructors/master?role=${role}`);
 
   function exportCsv() {
     const rows = [["Role", "Count"], ...ROLE_META.map((r) => [ROLE_LABEL[r.key], String(counts[r.key] ?? 0)]), ["Total", String(total)]];

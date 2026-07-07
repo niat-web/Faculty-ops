@@ -8,6 +8,7 @@ import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
+import { isOpsDept, isInstructorDept, seniorManagerIdSet } from "../lib/staffRoles";
 import { norm } from "../lib/darwinboxSync";
 import { requireUser } from "../middleware";
 
@@ -107,10 +108,21 @@ router.get("/", guard, async (req, res) => {
   const deptInclude = new Set(listParam(req.query.depts).map((d) => norm(d)));
   const deptAllowed = (dept: string) => deptParamPresent ? deptInclude.has(norm(dept)) : !isDefaultUnchecked(dept);
 
+  // Role deep-link from the Roles page — overrides the default department gate so support depts show:
+  //  OPS_ADMIN → Delivery Support dept · INSTRUCTOR → every other instructor dept · SENIOR_MANAGER → curated list.
+  const roleFilter = String(req.query.role || "").trim();
+  const smIdSet = roleFilter === "SENIOR_MANAGER" ? await seniorManagerIdSet() : null;
+  const roleAllowed = (r: any) => {
+    if (roleFilter === "OPS_ADMIN") return isOpsDept(r.department);
+    if (roleFilter === "INSTRUCTOR") return isInstructorDept(r.department);
+    if (roleFilter === "SENIOR_MANAGER") return smIdSet!.has(norm(r.employeeId));
+    return true;
+  };
+
   // In-memory filters (data is from Darwinbox, not a Mongo query).
   const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
   const matchesNonScope = (r: any) => {
-    if (!deptAllowed(r.department)) return false;
+    if (roleFilter ? !roleAllowed(r) : !deptAllowed(r.department)) return false;
     if (departments.length && !has(departments, r.department)) return false;
     if (payrolls.length && !has(payrolls, r.payroll_entity)) return false;
     if (regions.length && !has(regions, r.contribution_region)) return false;
@@ -136,7 +148,23 @@ router.get("/", guard, async (req, res) => {
   rows.sort((a, b) => String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""), undefined, { numeric: true }) * dir);
 
   const total = rows.length;
-  const instructors = rows.slice((page - 1) * PER, (page - 1) * PER + PER).map((r) => ({ ...r, training: null }));
+  const instructors = rows.slice((page - 1) * PER, (page - 1) * PER + PER);
+  // Live training % (BigQuery) for the CURRENT PAGE only — kept to one page (~50 rows) so the grid stays
+  // fast, and BigQuery is cached ~5min. Matched to each instructor via UID; best-effort: on any error the
+  // stored % from masterLive remains, so the grid never breaks.
+  try {
+    const ids = (instructors as any[]).map((r) => r.id).filter(Boolean);
+    if (ids.length) {
+      const [{ attachLiveTrainingSummaries }, docs] = await Promise.all([
+        import("../lib/analytics"),
+        Instructor.find({ _id: { $in: ids } }).select("employeeId email uid values moduleStatus").lean(),
+      ]);
+      await attachLiveTrainingSummaries(docs as any);
+      const pct = new Map<string, number>();
+      for (const d of docs as any[]) if (d.livePrimaryPct != null) pct.set(String(d._id), d.livePrimaryPct);
+      for (const r of instructors as any[]) if (r.id && pct.has(r.id)) r.training = pct.get(r.id)!;
+    }
+  } catch (e: any) { console.warn("[master] live training skipped:", e?.message || e); }
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
     counts, instructors, darwinboxKeys: live.darwinboxKeys, fetchedAt: live.fetchedAt,

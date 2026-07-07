@@ -295,6 +295,57 @@ router.patch("/settings/exit-alerts", async (req, res) => {
   res.json({ exitAlerts });
 });
 
+// ── Senior Managers (Ops only): admin-curated list, picked from Darwinbox ──
+router.get("/settings/senior-managers", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { SeniorManager } = await import("../models");
+  const list = await SeniorManager.find().sort({ name: 1 }).lean();
+  res.json({ items: (list as any[]).map((s) => ({ employeeId: s.employeeId, name: s.name || "", email: s.email || "", department: s.department || "", designation: s.designation || "" })) });
+});
+// Search the full Darwinbox directory for the picker.
+router.get("/settings/senior-managers/search", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { searchDarwinbox } = await import("../lib/staffRoles");
+  res.json({ items: await searchDarwinbox(String(req.query.q || ""), 25) });
+});
+router.post("/settings/senior-managers", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const employeeId = String(req.body?.employeeId || "").trim();
+  if (!employeeId) return res.status(400).json({ error: "Employee ID is required." });
+  const { findDarwinboxEmployee, ensureStaffUser } = await import("../lib/staffRoles");
+  const { SeniorManager } = await import("../models");
+  const p = await findDarwinboxEmployee(employeeId);
+  if (!p) return res.status(404).json({ error: "That Employee ID wasn't found in Darwinbox." });
+  await SeniorManager.updateOne(
+    { employeeId: p.employeeId },
+    { $set: { name: p.name, email: p.email, department: p.department, designation: p.designation, addedById: req.user!.id, addedByName: req.user!.name } },
+    { upsert: true }
+  );
+  // Mirror into a pending (inactive) Senior-Manager user account (login off until activated).
+  const userResult = await ensureStaffUser({ name: p.name, email: p.email, role: Role.SENIOR_MANAGER });
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "USER_CREATE", fieldName: "Senior Manager added", newValue: `${p.name} (${p.employeeId})`, reason: "Senior Managers setting" });
+  res.json({ ok: true, userAccount: userResult });
+});
+router.delete("/settings/senior-managers/:employeeId", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { SeniorManager } = await import("../models");
+  await SeniorManager.deleteOne({ employeeId: String(req.params.employeeId || "").trim() });
+  res.json({ ok: true });
+});
+
+// ── Ops Admins (Ops only): the Darwinbox "Delivery Support" department → pending user accounts ──
+router.get("/settings/ops-admins", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getOpsAdminPeople } = await import("../lib/staffRoles");
+  res.json({ items: await getOpsAdminPeople() });
+});
+router.post("/settings/ops-admins/sync", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { syncOpsAdminUsers } = await import("../lib/staffRoles");
+  res.json({ ok: true, ...(await syncOpsAdminUsers()) });
+});
+
 // Account overview (read-only profile + email-notification preference).
 router.get("/settings", async (req, res) => {
   const me: any = await User.findById(req.user!.id).lean();
