@@ -12,14 +12,11 @@ import { Skeleton } from "../components/Skeleton";
 
 // Instant shell while /dashboard loads: greeting + metric tiles + panel placeholders shimmer
 // in the real layout, so the page never blanks. Data fills in silently when it arrives.
-function DashboardSkeleton({ name }: { name: string }) {
+function DashboardSkeleton() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Welcome back{name ? `, ${name}` : ""} 👋</h1>
-          <p className="text-sm text-slate-500">Loading your overview…</p>
-        </div>
+        <h1 className="text-2xl font-bold text-slate-900">Dashboard overview</h1>
         <Skeleton width="160px" height="36px" borderRadius="10px" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -47,9 +44,8 @@ function DashboardSkeleton({ name }: { name: string }) {
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data: d, error: err } = useCachedGet<any>("/dashboard"); // instant on revisit, revalidates in background
-  const firstName = (user?.name || "").split(" ")[0];
   if (err && !d) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!d) return <DashboardSkeleton name={firstName} />;
+  if (!d) return <DashboardSkeleton />;
 
   const first = (user!.name || "").split(" ")[0];
   if (d.role === "OPS_ADMIN") return <AdminDash d={d} first={first} />;
