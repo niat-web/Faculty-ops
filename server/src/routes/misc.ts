@@ -30,43 +30,77 @@ router.get("/dashboard", async (req, res) => {
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { loadLiveMasterRows } = await import("../lib/masterLive");
-  const { getOpsAdminPeople, getReportingManagers, isInstructorDept } = await import("../lib/staffRoles");
-  const { SeniorManager } = await import("../models");
+  const { getOpsAdminPeople, isInstructorDept } = await import("../lib/staffRoles");
+  const { SeniorManager, Instructor } = await import("../models");
   const { norm } = await import("../lib/darwinboxSync");
-  const [opsPeople, reportingManagers, smDocs, live] = await Promise.all([
+  const { maybeDecrypt } = await import("../lib/crypto");
+  const [opsPeople, smDocs, live, mongoDocs] = await Promise.all([
     getOpsAdminPeople(),
-    getReportingManagers(),
     SeniorManager.find().select("employeeId name").sort({ name: 1 }).lean(),
     loadLiveMasterRows(),
+    Instructor.find({}).select("employeeId values").lean(),
   ]);
 
-  const totalInstructors = live.ok ? live.rows.filter((r: any) => !r.exited && isInstructorDept(r.department)).length : 0;
-  // Every employee → their own Darwinbox manager's Employee ID (used to place a CM under their Senior Manager).
+  const norm2 = (s: any) => norm(s);
+  const rmidFromName = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
+  const stripName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").trim();
+
+  const liveRows: any[] = live.ok ? live.rows : [];
+  // loadLiveMasterRows already unions Mongo-only instructors, so this covers Darwinbox + Mongo people.
+  const activeInstr = liveRows.filter((r) => !r.exited && isInstructorDept(r.department));
+  const totalInstructors = activeInstr.length;
+
+  // employee → their OWN manager's Employee ID. Merged from live Darwinbox (fresh) first, then MongoDB
+  // as a fallback, so a Capability Manager whose manager is missing in the current feed still resolves.
   const empToManager = new Map<string, string>();
-  if (live.ok) for (const r of live.rows) { const e = norm(r.employeeId); if (e) empToManager.set(e, norm(r.reporting_manager_employee_id)); }
+  for (const r of liveRows) {
+    const e = norm2(r.employeeId); if (!e) continue;
+    const mgr = norm2(r.reporting_manager_employee_id) || norm2(rmidFromName(r.reporting_manager));
+    if (mgr) empToManager.set(e, mgr);
+  }
+  for (const d of mongoDocs as any[]) {
+    const e = norm2(d.employeeId); if (!e || empToManager.has(e)) continue;
+    const v = d.values || {};
+    const mgr = norm2(maybeDecrypt(v.reporting_manager_employee_id)) || norm2(rmidFromName(maybeDecrypt(v.reporting_manager)));
+    if (mgr) empToManager.set(e, mgr);
+  }
+
+  // Capability Managers = the unique reporting managers, keyed by Employee ID (NO duplicates), with a
+  // live reportee count. Same person under name variants collapses to one node via their Employee ID.
+  const cmMap = new Map<string, { rmid: string; name: string; reportees: number }>();
+  for (const r of activeInstr) {
+    const rmid = String(r.reporting_manager_employee_id || rmidFromName(r.reporting_manager) || "").trim();
+    const name = stripName(r.reporting_manager) || rmid;
+    if (!rmid && !name) continue;
+    const key = norm2(rmid) || `name:${norm2(name)}`; // dedupe by Employee ID; only fall back to name if no id
+    const ex = cmMap.get(key);
+    if (ex) { ex.reportees++; if (!ex.name && name) ex.name = name; }
+    else cmMap.set(key, { rmid: rmid || "", name, reportees: 1 });
+  }
 
   // Senior Managers (curated) — nodes keyed by their Employee ID, ready to receive their CMs.
   const smByEmp = new Map<string, any>();
   const seniors = (smDocs as any[]).map((s) => {
-    const node = { id: `sm:${s.employeeId || s.name}`, name: s.name || s.employeeId, employeeId: norm(s.employeeId), capabilityManagers: [] as any[] };
+    const node = { id: `sm:${s.employeeId || s.name}`, name: s.name || s.employeeId, employeeId: norm2(s.employeeId), capabilityManagers: [] as any[] };
     if (node.employeeId) smByEmp.set(node.employeeId, node);
     return node;
   });
 
-  // Capability Managers = the live unique reporting managers; nest each under its Senior Manager when resolvable.
+  // Nest each Capability Manager under the Senior Manager they report to (their own Darwinbox/Mongo manager).
   const unassignedCMs: any[] = [];
-  for (const cm of reportingManagers) {
-    const rmid = cm.managerId || "";
-    const node = { id: `cm:${rmid || cm.name}`, name: cm.name, rmid, reportees: cm.count };
-    const mgrEmp = rmid ? (empToManager.get(norm(rmid)) || "") : "";
+  for (const cm of cmMap.values()) {
+    const node = { id: `cm:${cm.rmid || cm.name}`, name: cm.name, rmid: cm.rmid, reportees: cm.reportees };
+    const mgrEmp = cm.rmid ? (empToManager.get(norm2(cm.rmid)) || "") : "";
     const sm = mgrEmp ? smByEmp.get(mgrEmp) : null;
     if (sm) sm.capabilityManagers.push(node); else unassignedCMs.push(node);
   }
-  for (const s of seniors) s.capabilityManagers.sort((a: any, b: any) => b.reportees - a.reportees || a.name.localeCompare(b.name));
+  const byReportees = (a: any, b: any) => b.reportees - a.reportees || String(a.name).localeCompare(String(b.name));
+  for (const s of seniors) s.capabilityManagers.sort(byReportees);
+  unassignedCMs.sort(byReportees);
 
   res.json({
     totalInstructors,
-    totalManagers: seniors.length + reportingManagers.length,
+    totalManagers: seniors.length + cmMap.size,
     opsAdmins: opsPeople.map((o) => ({ id: `ops:${o.employeeId}`, name: o.name, email: o.email })),
     seniors: seniors.map(({ employeeId, ...s }) => s), // drop the internal employeeId from the payload
     unassignedCMs,
