@@ -30,12 +30,13 @@ router.get("/dashboard", async (req, res) => {
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { loadLiveMasterRows } = await import("../lib/masterLive");
-  const { getOpsAdminPeople, isInstructorDept, darwinboxDirectory } = await import("../lib/staffRoles");
+  const { getOpsAdminPeople, isInstructorDept, isOpsDept, darwinboxDirectory } = await import("../lib/staffRoles");
   const { SeniorManager, Instructor } = await import("../models");
   const { norm } = await import("../lib/darwinboxSync");
   const { maybeDecrypt } = await import("../lib/crypto");
-  const [opsPeople, smDocs, live, mongoDocs, dir] = await Promise.all([
-    getOpsAdminPeople(),
+  const [opsPeople, opsUsers, smDocs, live, mongoDocs, dir] = await Promise.all([
+    getOpsAdminPeople(),                                              // live Delivery-Support people (Darwinbox)
+    User.find({ role: Role.OPS_ADMIN }).select("name email").lean(), // Ops-Admin users stored in MongoDB
     SeniorManager.find().select("employeeId name").sort({ name: 1 }).lean(),
     loadLiveMasterRows(),
     Instructor.find({}).select("employeeId values").lean(),
@@ -45,6 +46,27 @@ router.get("/org", async (req, res) => {
   const norm2 = (s: any) => norm(s);
   const rmidFromName = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
   const stripName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").trim();
+
+  // Ops Admins = the "Instructors – Delivery Support (Ops and Central managers)" department ONLY, taken
+  // from BOTH sources and deduped so each person appears exactly once:
+  //   1) live Darwinbox Delivery-Support people, and
+  //   2) the Ops-Admin users already in MongoDB (role OPS_ADMIN).
+  // A Mongo Ops-Admin user who is present in Darwinbox but in some OTHER department is rejected, so no
+  // non-Delivery-Support person leaks into the Ops Admins node.
+  const deptByEmail = new Map<string, string>((dir as any[]).map((p) => [norm2(p.email), p.department]));
+  const opsMap = new Map<string, { id: string; name: string; email: string }>();
+  const addOps = (name: any, email: any, employeeId: any) => {
+    const key = norm2(email) || norm2(employeeId) || norm2(name);
+    if (!key || opsMap.has(key)) return;
+    opsMap.set(key, { id: `ops:${employeeId || email || key}`, name: name || email || employeeId, email: email || "" });
+  };
+  for (const p of opsPeople) addOps(p.name, p.email, p.employeeId);                 // strictly Delivery-Support
+  for (const u of opsUsers as any[]) {
+    const dept = deptByEmail.get(norm2(u.email));
+    if (dept !== undefined && !isOpsDept(dept)) continue;                            // in Darwinbox but not Delivery-Support → skip
+    addOps(u.name, u.email, "");
+  }
+  const opsAdmins = [...opsMap.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   const liveRows: any[] = live.ok ? live.rows : [];
   // loadLiveMasterRows already unions Mongo-only instructors, so this covers Darwinbox + Mongo people.
@@ -122,7 +144,7 @@ router.get("/org", async (req, res) => {
   res.json({
     totalInstructors,
     totalManagers: seniors.length + cmCount,
-    opsAdmins: opsPeople.map((o) => ({ id: `ops:${o.employeeId}`, name: o.name, email: o.email })),
+    opsAdmins,
     seniors: seniors.map(({ employeeId, ...s }) => s), // drop the internal employeeId from the payload
     unassignedCMs,
   });
