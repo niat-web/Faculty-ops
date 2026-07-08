@@ -13,6 +13,8 @@ import { STATUS_OPTIONS, TONE, SHORT, statusTone } from "../training";
 import { computeSummary, summaryCell, COMPUTED_KEYS } from "../trainingScore";
 
 const COMPUTED = new Set<string>(COMPUTED_KEYS as readonly string[]);
+// Computed columns that ALSO accept a manual override (a hand-picked date beats the projection).
+const PRED_KEYS = new Set(["predicted_completion", "secondary_predicted_completion"]);
 
 // Each track is its own URL so only that track's rows are fetched (smaller payload, faster load).
 export const TRACK_SLUG: Record<string, string> = { tech: "tech-stats", math_aptitude: "mathematics-aptitude-stats", english: "english-stats" };
@@ -26,6 +28,10 @@ const MULTI_KEYS = new Set(["sem1", "sem2"]);
 const parseMulti = (v: string) => (v ? String(v).split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean) : []);
 
 const ID_W = 116, NAME_W = 200;
+// Free-text notes columns: fixed column width; both the wrapped display and the in-cell editing
+// textarea fill exactly that width (no floating wide box).
+const WIDE_TEXT_KEYS = new Set(["remarks", "other_learnings"]);
+const WIDE_TEXT_W = 240;
 
 function cellValue(row: any, col: any) { return (col.storage === "module" ? row.moduleStatus?.[col.key] : row.values?.[col.key]) ?? ""; }
 function statusDisplayValue(value: string, tone: string) {
@@ -133,6 +139,9 @@ function healthMeta(text: string): { label: string; dot: string; cls: string } {
 
 const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+// A manual Predicted-Completion override is stored ISO (yyyy-mm-dd); show it as dd-Mon-yyyy to match
+// the computed projection. Non-date text ("N/A", "Completed", a computed date) passes through unchanged.
+const fmtPredDate = (v: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return m ? `${m[3]}-${MONTHS3[+m[2] - 1]}-${m[1]}` : v; };
 const toISODate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 // Parse a stored value as a LOCAL date (avoids the UTC off-by-one that `new Date("YYYY-MM-DD")` causes).
 function parseDateVal(v: string): Date | null {
@@ -225,7 +234,8 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
       <td className="sticky z-20 border-b border-slate-100 bg-inherit px-3 py-2 font-mono text-[11px] text-slate-600" style={{ left: 0, width: ID_W, minWidth: ID_W }}>{r.employeeId}</td>
       <td className="sticky z-20 whitespace-nowrap border-b border-r border-slate-200 bg-inherit px-3 py-2 font-medium text-slate-800" style={{ left: ID_W, minWidth: NAME_W }}>{r.name}</td>
       {cols.map((col) => {
-        if (COMPUTED.has(col.key)) {
+        // Predicted Completion is computed but overridable → skip the read-only branch, render editable below.
+        if (COMPUTED.has(col.key) && !PRED_KEYS.has(col.key)) {
           const isHealth = col.key === "health_status" || col.key === "secondary_health_status";
           const { text, tone: ctone } = summaryCell(col.key, summary);
           return (
@@ -246,11 +256,15 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
         const selectLike = col.type === "STATUS" || col.type === "DROPDOWN";
         const multi = MULTI_KEYS.has(col.key);
+        // Predicted Completion overrides are picked from a date popover (its stored type is TEXT).
+        const isPredicted = PRED_KEYS.has(col.key);
+        const effType = isPredicted ? "DATE" : col.type;
         // Manually-editable cells get an amber tint (same cue as the Instructor Master) so
         // they're distinguishable from the read-only BigQuery-synced / computed columns.
         const editable = !isSynced;
+        const wideText = WIDE_TEXT_KEYS.has(col.key); // remarks / other learnings → fixed-width in-cell textarea
         return (
-          <td key={col.id} className={`border-b border-slate-100 px-1.5 text-center ${editable ? "bg-amber-50/60 group-even:bg-amber-50/80 group-hover:!bg-brand-50" : ""}`}>
+          <td key={col.id} className={`border-b border-slate-100 px-1.5 text-center ${editable ? "bg-amber-50/60 group-even:bg-amber-50/80 group-hover:!bg-brand-50" : ""}`} style={wideText ? { width: WIDE_TEXT_W, minWidth: WIDE_TEXT_W, maxWidth: WIDE_TEXT_W } : undefined}>
             {isSynced ? (
               // Live BigQuery value → compact read-only chip. Transparent cell so the row bg flows through.
               <div className="flex min-h-[36px] w-full items-center justify-center whitespace-nowrap">
@@ -265,20 +279,21 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
                     className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100 flex items-center justify-between gap-1"
                     options={[...baseOpts.map((s: string) => ({ value: s, label: s })), { value: "", label: "— clear —" }]} />
                 )
-              ) : col.type === "DATE" ? (
+              ) : effType === "DATE" ? (
                 <DatePopover value={val} onSave={(v) => onSave(r, col, v)} onCancel={onCancel} />
               ) : col.type === "NUMBER" ? (
                 <div className="flex min-h-[36px] w-full items-center">
                   <input ref={editRef as any} autoFocus aria-label={col.label} type="number" defaultValue={val} onBlur={(e) => onSave(r, col, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} className="w-full rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] outline-none ring-2 ring-brand-100" />
                 </div>
               ) : (
-                // Text → comfortable auto-growing textarea (Notion/Airtable style) so long remarks/notes are fully readable.
+                // Text → auto-growing textarea. Notes columns (remarks / other learnings) edit IN the cell at
+                // the column's own width; other text cells expand into a wider floating box for readability.
                 <div className="flex min-h-[36px] w-full items-start">
                   <textarea ref={(el) => { (editRef as any).current = el; if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }} autoFocus rows={1} aria-label={col.label} defaultValue={val}
                     onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
                     onBlur={(e) => onSave(r, col, e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-                    className="block w-[280px] min-w-[180px] max-w-[60vw] resize-none rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] leading-snug shadow-lg outline-none ring-2 ring-brand-100" />
+                    className={`block resize-none rounded border border-brand-400 bg-white px-1.5 py-1 text-[11px] leading-snug outline-none ring-2 ring-brand-100 ${wideText ? "w-full text-left" : "w-[280px] min-w-[180px] max-w-[60vw] shadow-lg"}`} />
                 </div>
               )
             ) : isStatus ? (
@@ -291,10 +306,16 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
               <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full flex-col items-center justify-center gap-0.5 rounded px-1.5 text-[11px] text-slate-600 transition hover:bg-brand-50/40">
                 {parseMulti(val).length ? parseMulti(val).map((t, i) => <span key={i} className="w-full truncate text-center leading-tight">{t}</span>) : <span className="text-slate-300">Select</span>}
               </button>
+            ) : wideText ? (
+              // Notes columns → wrapped text filling the cell width (reads like a textarea), click to edit in-cell.
+              <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-start rounded px-1.5 py-1 text-left text-[11px] text-slate-600 transition hover:bg-brand-50/40">
+                <span className={`w-full whitespace-pre-wrap break-words leading-snug ${val ? "" : "text-slate-300"}`}>{val || "Select"}</span>
+              </button>
             ) : (
-              // All other editable value cells (Department, tracks, dates, reporting, remarks…) → plain, no box.
+              // All other editable value cells (Department, tracks, dates, reporting…) → plain, no box.
+              // Predicted Completion shows its date (override or projection); click to set a manual override.
               <button onClick={() => onEdit(r.id, col.key)} className="flex min-h-[36px] w-full items-center justify-center rounded px-1.5 text-[11px] text-slate-600 transition hover:bg-brand-50/40">
-                <span className={`truncate ${col.key === "department" ? "max-w-[150px]" : (col.key === "remarks" || col.key === "other_learnings") ? "max-w-[180px]" : ""} ${val ? "" : "text-slate-300"}`}>{val || "Select"}</span>
+                <span className={`truncate ${col.key === "department" ? "max-w-[150px]" : ""} ${val ? "" : "text-slate-300"}`}>{isPredicted ? (fmtPredDate(val) || "Set date") : (val || "Select")}</span>
               </button>
             )}
           </td>
@@ -503,7 +524,7 @@ export default function TrainingPage() {
   const grouped = segs.filter((s) => s.group);
   // A column is manually editable unless it's a computed summary or a read-only BigQuery-synced
   // course column. Editable headers get an amber tint — the same cue used on the Instructor Master.
-  const colEditable = (c: any) => !COMPUTED.has(c.key) && !isSyncedCourseColumn(c);
+  const colEditable = (c: any) => (!COMPUTED.has(c.key) || PRED_KEYS.has(c.key)) && !isSyncedCourseColumn(c);
   const editHead = "z-10 border-b border-slate-200 bg-amber-50 text-amber-900";
 
   return (
@@ -557,7 +578,7 @@ export default function TrainingPage() {
               <th rowSpan={2} className={`${frozenHead} whitespace-nowrap border-r border-slate-200 px-3 py-2 text-left font-semibold`} style={{ left: ID_W, minWidth: NAME_W }}>Name</th>
               {segs.map((s, i) => s.group
                 ? <th key={i} colSpan={s.cols.length} className={`${head} border-l border-slate-200 px-2 py-2 text-center font-semibold`}>{s.group}</th>
-                : s.cols.map((c) => <th key={c.id} rowSpan={2} className={`${colEditable(c) ? editHead : head} border-l border-slate-200 px-2 py-2 text-left font-semibold`} style={{ minWidth: 100 }}>{c.label}</th>)
+                : s.cols.map((c) => <th key={c.id} rowSpan={2} className={`${colEditable(c) ? editHead : head} border-l border-slate-200 px-2 py-2 text-left font-semibold`} style={WIDE_TEXT_KEYS.has(c.key) ? { width: WIDE_TEXT_W, minWidth: WIDE_TEXT_W, maxWidth: WIDE_TEXT_W } : { minWidth: 100 }}>{c.label}</th>)
               )}
             </tr>
             <tr>

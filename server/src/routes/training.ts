@@ -16,6 +16,8 @@ const staffGuard = (req: any, res: any, next: any) => (STAFF.includes(req.user.r
 const opsGuard = (req: any, res: any, next: any) => (req.user.role === Role.OPS_ADMIN ? next() : res.status(403).json({ error: "Only the Super Admin can manage training columns" }));
 const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
 const MULTI_KEYS = new Set(["sem1", "sem2"]); // accept several options (newline/comma-joined)
+// Predicted-Completion cells are computed BUT accept a manual override date (see POST handler + GET merge).
+const PRED_OVERRIDE_KEYS = new Set(["predicted_completion", "secondary_predicted_completion"]);
 const colOut = (c: any) => ({ id: String(c._id), track: c.track, group: c.group || "", label: c.label, key: c.key, courseId: c.courseId || "", storage: c.storage, type: c.type, options: c.options || [], order: c.order });
 
 async function loadColumns() {
@@ -75,9 +77,14 @@ router.get("/", staffGuard, async (req, res) => {
     if (wantTrack && tab !== wantTrack) continue; // only build rows for the requested track
     const vals: Record<string, string> = {};
     for (const k of valueKeys) vals[k] = (sensitiveKeys.has(k) ? maybeDecrypt(values[k]) : values[k]) ?? "";
+    // A hand-picked Predicted-Completion date (manual override) wins over the projection; stash it
+    // before the summary overwrite so it survives, and re-apply on the non-fast overlay pass too.
+    const predOverride: Record<string, string> = {};
+    for (const k of PRED_OVERRIDE_KEYS) if (vals[k]) predOverride[k] = vals[k];
     // Summary cells are always computed live from the dropdowns — never trust stale stored numbers.
     Object.assign(vals, summaryStored(computeSummary(vals, moduleStatus, tab)));
-    rows.push({ id: String(d._id), tab, employeeId: d.employeeId, email: d.email || "", uid: d.uid || "", name: d.name, manager: d.currentManagerId ? (mgrName[String(d.currentManagerId)] || "—") : "—", values: vals, moduleStatus });
+    Object.assign(vals, predOverride);
+    rows.push({ id: String(d._id), tab, _predOverride: predOverride, employeeId: d.employeeId, email: d.email || "", uid: d.uid || "", name: d.name, manager: d.currentManagerId ? (mgrName[String(d.currentManagerId)] || "—") : "—", values: vals, moduleStatus });
   }
   rows.sort((a, b) => (a.employeeId || "").localeCompare(b.employeeId || ""));
 
@@ -100,9 +107,10 @@ router.get("/", staffGuard, async (req, res) => {
       }
       row.moduleStatus = nextStatus;
       Object.assign(row.values, summaryStored(computeSummary(row.values, row.moduleStatus, row.tab)));
+      Object.assign(row.values, row._predOverride);
     }
   }
-  for (const row of rows) { delete row.email; delete row.uid; }
+  for (const row of rows) { delete row.email; delete row.uid; delete row._predOverride; }
   const tracks = TRACK_META.map((t) => ({ ...t, count: trackCount[t.key] || 0, columns: (columns[t.key] || []).length }));
   res.json({ rows, columns, tracks, role: req.user!.role, canDelete: req.user!.role === Role.OPS_ADMIN, progressSync: progress });
 });
@@ -219,7 +227,9 @@ router.post("/", staffGuard, async (req, res) => {
   if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
 
   // Summary cells are calculated from the dropdowns — they can't be edited directly.
-  if (target === "value" && (COMPUTED_KEYS as readonly string[]).includes(key)) return res.status(400).json({ error: "This column is calculated automatically and can't be edited." });
+  // Exception: the Predicted Completion dates accept a MANUAL OVERRIDE (a hand-picked date);
+  // when set it wins over the projection, when cleared it falls back to the computed date.
+  if (target === "value" && (COMPUTED_KEYS as readonly string[]).includes(key) && !PRED_OVERRIDE_KEYS.has(key)) return res.status(400).json({ error: "This column is calculated automatically and can't be edited." });
 
   // The key MUST be a real training column (prevents writing arbitrary/sensitive keys here).
   const col: any = await TrainingColumn.findOne({ key, storage: target, archivedAt: null, ...(track ? { track } : {}) }).lean();

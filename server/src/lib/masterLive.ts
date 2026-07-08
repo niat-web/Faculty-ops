@@ -25,6 +25,16 @@ const DARWINBOX_VALUE_KEYS = new Set<string>([
 // Core Darwinbox-owned keys (shown as read-only, sourced from Darwinbox).
 const DARWINBOX_CORE_KEYS = new Set<string>(["employeeId", "name", "email", "campus", "uid"]);
 
+// The instructor's current lifecycle stage, shown in the Master's Lifecycle column. Reflects a CM's
+// finalised exit outcome when present, otherwise the plain active/exited (or in-progress) state.
+function lifecycleLabel(outcome: string | undefined, exited: boolean, rawStatus?: string): string {
+  if (outcome === "UNIVERSITY_PAYROLL") return "University Payroll";
+  if (outcome === "CONSULTANT_REHIRE") return "Consultant → FTE";
+  if (outcome === "EXITED") return "Exited";
+  if (String(rawStatus || "") === "EXIT_IN_PROGRESS") return "Exit In Progress";
+  return exited ? "Exited" : "Active";
+}
+
 export type LiveMasterRow = Record<string, any> & { id: string | null; employeeId: string; exited: boolean };
 
 export type LiveMasterResult = {
@@ -112,6 +122,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.email = row.email || "";
     row.campus = row.campus || "";
     row.status = exited ? "EXITED" : "ACTIVE";
+    row.lifecycle = lifecycleLabel(outcome, exited);
     // Training % quick-view: the stored BigQuery-derived primary % for this employee (computed via UID on
     // the Training Stats page and persisted to Mongo), joined here by Employee ID — same value the Master
     // showed before the live-join. Blank only when we have no stored figure. No BigQuery call on the grid.
@@ -154,6 +165,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.email = row.email || "";
     row.campus = row.campus || "";
     row.status = exited ? "EXITED" : "ACTIVE";
+    row.lifecycle = lifecycleLabel(outcome, exited, String(d.status || ""));
     const pctRaw = mv("primary_pct");
     const pctNum = Number(pctRaw);
     row.training = pctRaw !== "" && !isNaN(pctNum) ? pctNum : null;

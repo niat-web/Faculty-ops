@@ -70,6 +70,9 @@ export const MASTER_COLUMNS: MasterColumnDef[] = [
   { key: "payroll_entity", label: "Payroll", source: "value", type: "DROPDOWN", options: PAYROLL_OPTS, editable: true },
   { key: "access_status", label: "Portal / Assets / Drive Access", source: "value", type: "TEXT", editable: true },
   { key: "remarks", label: "Remarks", source: "value", type: "TEXT", editable: true },
+  // Computed lifecycle stage (Active / Exit In Progress / Exited / University Payroll / Consultant → FTE),
+  // derived in masterLive from status + a CM's finalised exit outcome. Read-only, always LAST.
+  { key: "lifecycle", label: "Lifecycle", source: "core", type: "TEXT", editable: false },
 ];
 
 // Columns removed from the grid during reconciliation (archived, not deleted — instructor values kept).
@@ -175,8 +178,10 @@ async function reconcileMasterColumns() {
 export async function getActiveMasterColumns(): Promise<any[]> {
   await seedMasterColumns();
   const cols = await MasterColumn.find({ archivedAt: null }).sort({ order: 1 }).lean();
+  // Read-only columns: Employee ID (identity) and Lifecycle (computed from status + exit outcome).
+  const readonly = new Set(["employeeId", "lifecycle"]);
   return (cols as any[]).map((c) => ({
     key: c.key, label: c.label, source: c.source, type: c.type, options: c.options || [],
-    locked: !!c.locked, editable: c.key !== "employeeId",
+    locked: !!c.locked, editable: !readonly.has(c.key),
   }));
 }
