@@ -16,9 +16,10 @@ import { useSort, SortHeader } from "../components/SortHeader";
 import InstructorDetailDrawer from "../components/InstructorDetailDrawer";
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
-type Meta = { columns: Column[]; managers: { id: string; name: string }[]; filters: { departments: string[]; payrolls: string[]; regions: string[]; campuses: string[] } };
-type Filters = { managerId: string[]; department: string[]; payroll: string[]; region: string[]; campus: string[] };
-const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [], campus: [] };
+type MetaFilters = { departments: string[]; roles: string[]; payrolls: string[]; regions: string[]; campuses: string[]; qualifications: string[]; genders: string[]; domains: string[]; states: string[]; workspaces: string[] };
+type Meta = { columns: Column[]; managers: { id: string; name: string }[]; reportingManagers: { id: string; name: string }[]; filters: MetaFilters };
+type Filters = { reportingManager: string[]; managerId: string[]; department: string[]; designation: string[]; payroll: string[]; region: string[]; campus: string[]; qualification: string[]; gender: string[]; domain: string[]; state: string[]; workspace: string[] };
+const EMPTY: Filters = { reportingManager: [], managerId: [], department: [], designation: [], payroll: [], region: [], campus: [], qualification: [], gender: [], domain: [], state: [], workspace: [] };
 
 // Deep-link filters from the URL (e.g. the Contribution pages link to
 // /app/instructors/master?campus=X / ?managerId=Y). Read once on mount so click-throughs
@@ -26,7 +27,7 @@ const EMPTY: Filters = { managerId: [], department: [], payroll: [], region: [],
 function filtersFromSearch(): Filters {
   const p = new URLSearchParams(window.location.search);
   const arr = (k: string) => (p.get(k) || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return { managerId: arr("managerId"), department: arr("department"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus") };
+  return { reportingManager: arr("rmid"), managerId: arr("managerId"), department: arr("department"), designation: arr("designation"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus"), qualification: arr("qualification"), gender: arr("gender"), domain: arr("domain"), state: arr("state"), workspace: arr("workspace") };
 }
 
 export default function InstructorMasterPage() {
@@ -89,13 +90,9 @@ export default function InstructorMasterPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [role, setRole] = useState(searchParams.get("role") || "");
   const [contribution, setContribution] = useState(searchParams.get("contribution") || "");
-  // Darwinbox reporting-manager drill-down (from Capability Manager Distribution): rmid = employee-id code, rmname = display.
-  const [rmid, setRmid] = useState(searchParams.get("rmid") || "");
-  const [rmname, setRmname] = useState(searchParams.get("rmname") || "");
-  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setRmid(searchParams.get("rmid") || ""); setRmname(searchParams.get("rmname") || ""); setPage(1); }, [searchParams]);
+  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
-  function clearRm() { const sp = new URLSearchParams(searchParams); sp.delete("rmid"); sp.delete("rmname"); setSearchParams(sp, { replace: true }); }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
 
@@ -112,19 +109,25 @@ export default function InstructorMasterPage() {
     if (dq) p.set("q", dq);
     if (role) p.set("role", role);
     if (contribution) p.set("contribution", contribution);
-    if (rmid) p.set("rmid", rmid);
+    if (applied.reportingManager.length) p.set("rmid", applied.reportingManager.join(","));
     if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
     if (applied.department.length) p.set("department", applied.department.join(","));
+    if (applied.designation.length) p.set("designation", applied.designation.join(","));
     if (applied.payroll.length) p.set("payroll", applied.payroll.join(","));
     if (applied.region.length) p.set("region", applied.region.join(","));
     if (applied.campus.length) p.set("campus", applied.campus.join(","));
+    if (applied.qualification.length) p.set("qualification", applied.qualification.join(","));
+    if (applied.gender.length) p.set("gender", applied.gender.join(","));
+    if (applied.domain.length) p.set("domain", applied.domain.join(","));
+    if (applied.state.length) p.set("state", applied.state.join(","));
+    if (applied.workspace.length) p.set("workspace", applied.workspace.join(","));
     // Department quick-filter: only send `depts` once the user has made an explicit choice; until then
     // the server applies its default (all except the 2 support departments).
     if (deptSel) p.set("depts", [...deptSel].join(","));
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role, contribution, rmid, sort.sort, sort.dir, deptSel]);
+  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir, deptSel]);
 
   // Sticky header during PAGE scroll (same technique as the Training Stats grid): the page (<main>)
   // scrolls vertically while the card scrolls horizontally. CSS `position: sticky` can't pin the header
@@ -273,12 +276,6 @@ export default function InstructorMasterPage() {
               <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
             </span>
           )}
-          {rmid && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
-              Reporting manager: {rmname || rmid}
-              <button onClick={clearRm} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
-            </span>
-          )}
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
             <SlidersHorizontal className="h-4 w-4" /> Filters
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
@@ -363,7 +360,7 @@ export default function InstructorMasterPage() {
                 {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`bg-slate-50 px-3 py-3 font-semibold ${
+                      className={`px-3 py-3 font-semibold ${c.editable && !darwinboxKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
                         c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px]`
                           : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-30 min-w-[130px] border-r border-slate-200`
                             : "z-20"}`} />
@@ -409,7 +406,7 @@ export default function InstructorMasterPage() {
                             type="button"
                             disabled={!editable}
                             onClick={() => editable && setEdit({ empId: row.employeeId, key: c.key })}
-                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text hover:bg-brand-50" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""} ${c.key === "employeeId" ? "font-mono text-xs" : ""}`}
+                            className={`block w-full max-w-[280px] truncate rounded px-2 py-1 text-left ${editable ? "cursor-text bg-amber-50 ring-1 ring-inset ring-amber-100 hover:bg-amber-100" : "cursor-default text-slate-500"} ${display === "—" ? "text-slate-300" : ""} ${c.key === "employeeId" ? "font-mono text-xs" : ""}`}
                             title={typeof display === "string" ? display : ""}
                           >
                             {display}
@@ -495,22 +492,34 @@ export default function InstructorMasterPage() {
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/30" onClick={() => setDrawer(false)} />
-          <div className="relative flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
+          <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h2 className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4 text-brand-600" /> Filters</h2>
               <button onClick={() => setDrawer(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
             </div>
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
               <div><label className="label">Capability Manager</label>
-                <MultiSelect values={draft.managerId} onChange={(v) => setDraft({ ...draft, managerId: v })} options={meta.managers.map((m) => ({ value: m.id, label: m.name }))} placeholder="All managers" /></div>
+                <MultiSelect values={draft.reportingManager} onChange={(v) => setDraft({ ...draft, reportingManager: v })} options={meta.reportingManagers.map((m) => ({ value: m.id, label: m.name }))} placeholder="All managers" /></div>
               <div><label className="label">Department</label>
                 <MultiSelect values={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} options={meta.filters.departments.map((d) => ({ value: d, label: d }))} placeholder="All departments" /></div>
+              <div><label className="label">Role</label>
+                <MultiSelect values={draft.designation} onChange={(v) => setDraft({ ...draft, designation: v })} options={meta.filters.roles.map((d) => ({ value: d, label: d }))} placeholder="All roles" /></div>
               <div><label className="label">Payroll</label>
                 <MultiSelect values={draft.payroll} onChange={(v) => setDraft({ ...draft, payroll: v })} options={meta.filters.payrolls.map((d) => ({ value: d, label: d }))} placeholder="All" /></div>
               <div><label className="label">Contribution Region</label>
                 <MultiSelect values={draft.region} onChange={(v) => setDraft({ ...draft, region: v })} options={meta.filters.regions.map((d) => ({ value: d, label: d }))} placeholder="All regions" /></div>
               <div><label className="label">Work Location</label>
                 <MultiSelect values={draft.campus} onChange={(v) => setDraft({ ...draft, campus: v })} options={meta.filters.campuses.map((d) => ({ value: d, label: d }))} placeholder="All locations" /></div>
+              <div><label className="label">Qualification</label>
+                <MultiSelect values={draft.qualification} onChange={(v) => setDraft({ ...draft, qualification: v })} options={meta.filters.qualifications.map((d) => ({ value: d, label: d }))} placeholder="All qualifications" /></div>
+              <div><label className="label">Gender</label>
+                <MultiSelect values={draft.gender} onChange={(v) => setDraft({ ...draft, gender: v })} options={meta.filters.genders.map((d) => ({ value: d, label: d }))} placeholder="All" /></div>
+              <div><label className="label">Domain</label>
+                <MultiSelect values={draft.domain} onChange={(v) => setDraft({ ...draft, domain: v })} options={meta.filters.domains.map((d) => ({ value: d, label: d }))} placeholder="All domains" /></div>
+              <div><label className="label">State</label>
+                <MultiSelect values={draft.state} onChange={(v) => setDraft({ ...draft, state: v })} options={meta.filters.states.map((d) => ({ value: d, label: d }))} placeholder="All states" /></div>
+              <div><label className="label">Workspace</label>
+                <MultiSelect values={draft.workspace} onChange={(v) => setDraft({ ...draft, workspace: v })} options={meta.filters.workspaces.map((d) => ({ value: d, label: d }))} placeholder="All workspaces" /></div>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
               <button onClick={() => setDraft(EMPTY)} className="btn btn-ghost btn-sm">Clear</button>
@@ -545,15 +554,15 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") onCancel(); }} />
     );
   }
-  // Text/date → a comfortable auto-growing textarea (Notion/Airtable style): wide enough to read at a
-  // glance, wraps + grows VERTICALLY so long values are never clipped. Esc cancels, click-away saves.
+  // Text/date → an auto-growing textarea that keeps the CELL's width (doesn't widen the column) and
+  // grows VERTICALLY so long values wrap and are never clipped. Esc cancels, click-away saves.
   return (
     <textarea
       autoFocus
       rows={1}
       defaultValue={value}
       ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; el.setSelectionRange(el.value.length, el.value.length); } }}
-      className="block w-[360px] min-w-[240px] max-w-[70vw] resize-none rounded border border-brand-400 px-2 py-1 text-sm leading-snug shadow-lg outline-none ring-2 ring-brand-100"
+      className="block w-full resize-none overflow-hidden rounded border border-brand-400 px-2 py-1 text-sm leading-snug outline-none ring-2 ring-brand-100"
       onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${t.scrollHeight}px`; }}
       onBlur={(e) => onCommit(e.target.value)}
       onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}

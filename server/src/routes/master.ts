@@ -50,22 +50,37 @@ async function roleEmailCondition(role: string): Promise<any | null> {
 // Column defs (from the editable MasterColumn docs) + dropdown filter lists + the CM picker list.
 router.get("/meta", guard, async (req, res) => {
   const columns = await getActiveMasterColumns();
-  const scope = instructorScopeFilter(req.user!);
-  const [managers, departments, payrolls, regions, campuses] = await Promise.all([
-    User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name").sort({ name: 1 }).lean(),
-    Instructor.distinct("values.department", scope),
-    Instructor.distinct("values.payroll_entity", scope),
-    Instructor.distinct("values.contribution_region", scope),
-    Instructor.distinct("campus", scope),
-  ]);
+  const managers = await User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name").sort({ name: 1 }).lean();
+  // Filter dropdown values come from the SAME live rows the grid shows (Darwinbox + Mongo union), so
+  // every option is a REAL value present in the sheet — not a stale Mongo-only distinct.
+  const live = await loadLiveMasterRows();
+  const rows: any[] = live.ok ? live.rows : [];
+  const uniq = (key: string) => [...new Set(rows.map((r) => String(r[key] ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  // Reporting managers as shown in the grid — from the live rows (Darwinbox + Mongo union), keyed by
+  // their NW employee-id code. This is what the Capability Manager filter uses (rmid), so it actually works.
+  const rmMap = new Map<string, string>();
+  for (const r of rows) {
+    const raw = String(r.reporting_manager || "").trim();
+    const id = (raw.match(/\((NW[^)]+)\)/i) || [])[1] || "";
+    if (!id || rmMap.has(id)) continue;
+    rmMap.set(id, raw.replace(/\s*\(NW[^)]*\)\s*$/i, "").trim() || raw);
+  }
+  const reportingManagers = [...rmMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   res.json({
     columns,
     managers: managers.map((m: any) => ({ id: String(m._id), name: m.name })),
+    reportingManagers,
     filters: {
-      departments: (departments as string[]).filter(Boolean).sort(),
-      payrolls: (payrolls as string[]).filter(Boolean).sort(),
-      regions: (regions as string[]).filter(Boolean).sort(),
-      campuses: (campuses as string[]).filter(Boolean).sort(),
+      departments: uniq("department"),
+      roles: uniq("designation"),
+      payrolls: uniq("payroll_entity"),
+      regions: uniq("contribution_region"),
+      campuses: uniq("campus"),
+      qualifications: uniq("qualification"),
+      genders: uniq("gender"),
+      domains: uniq("domain"),
+      states: uniq("emp_state"),
+      workspaces: uniq("workspace"),
     },
   });
 });
@@ -94,6 +109,12 @@ router.get("/", guard, async (req, res) => {
   const regions = listParam(req.query.region);
   const contributions = listParam(req.query.contribution);
   const rmids = listParam(req.query.rmid); // Darwinbox reporting-manager employee-id (CM Distribution drill-down)
+  const designations = listParam(req.query.designation);
+  const qualifications = listParam(req.query.qualification);
+  const genders = listParam(req.query.gender);
+  const domains = listParam(req.query.domain);
+  const states = listParam(req.query.state);
+  const workspaces = listParam(req.query.workspace);
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -136,6 +157,12 @@ router.get("/", guard, async (req, res) => {
     if (regions.length && !has(regions, r.contribution_region)) return false;
     if (contributions.length && !has(contributions, r.contribution)) return false;
     if (rmids.length && !has(rmids, r.reporting_manager_employee_id)) return false;
+    if (designations.length && !has(designations, r.designation)) return false;
+    if (qualifications.length && !has(qualifications, r.qualification)) return false;
+    if (genders.length && !has(genders, r.gender)) return false;
+    if (domains.length && !has(domains, r.domain)) return false;
+    if (states.length && !has(states, r.emp_state)) return false;
+    if (workspaces.length && !has(workspaces, r.workspace)) return false;
     if (q) {
       const hay = `${r.name} ${r.employeeId} ${r.email} ${r.uid}`.toLowerCase();
       if (!hay.includes(q)) return false;

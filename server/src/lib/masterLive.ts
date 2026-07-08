@@ -61,7 +61,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   // Mongo manual columns, indexed by Employee ID (only the non-Darwinbox value keys + _id).
   const activeCols = await getActiveMasterColumns();
   const manualValueKeys = activeCols.filter((c) => c.source === "value" && !DARWINBOX_VALUE_KEYS.has(c.key)).map((c) => c.key);
-  const mongoDocs = await Instructor.find({}).select("employeeId _id uid values").lean();
+  const mongoDocs = await Instructor.find({}).select("employeeId _id uid name email campus status exit values").lean();
   const byEmp = new Map<string, any>();
   for (const d of mongoDocs as any[]) { const k = norm(d.employeeId); if (k) byEmp.set(k, d); }
 
@@ -122,6 +122,42 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     // Manual columns from Mongo (blank if no record).
     for (const key of manualValueKeys) row[key] = mongoVal(key);
 
+    rows.push(row);
+  }
+
+  // Mongo-only instructors: master data that exists in MongoDB but is NOT in the current Darwinbox feed
+  // (imported/older records, exited people, or anyone Darwinbox no longer returns). Show them too, with
+  // EVERY column sourced from Mongo (core fields from the doc, the rest from the values map, by key).
+  const EXIT_STATES = new Set(["EXITED", "EXIT_IN_PROGRESS"]);
+  for (const d of mongoDocs as any[]) {
+    const empKey = norm(d.employeeId);
+    if (!empKey || seen.has(empKey)) continue; // already shown via the Darwinbox feed
+    seen.add(empKey);
+    const mv = (key: string) => (maybeDecrypt(d.values?.[key] ?? "") ?? "");
+    let exited = EXIT_STATES.has(String(d.status || ""));
+    const outcome = outcomeByEmp.get(empKey);
+    if (outcome === "EXITED") exited = true;
+    else if (outcome === "UNIVERSITY_PAYROLL" || outcome === "CONSULTANT_REHIRE") exited = false;
+
+    const row: LiveMasterRow = { id: String(d._id), employeeId: clean(d.employeeId), exited };
+    // Every mapped column from Mongo: core fields from the doc, value fields from the values map.
+    for (const { t } of resolved) {
+      if (t.key === "name") row.name = d.name || "";
+      else if (t.key === "email") row.email = d.email || "";
+      else if (t.key === "campus") row.campus = d.campus || "";
+      else { let v = mv(t.key); if (t.date) v = normDate(v); row[t.key] = v; }
+    }
+    row.uid = clean(d.uid) || "";
+    row.exit_date = mv("exit_date") || clean(d.exit?.lastWorkingDay);
+    row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || (String(row.reporting_manager || "").match(/\((NW[^)]+)\)\s*$/i) || [])[1] || "";
+    row.name = row.name || "";
+    row.email = row.email || "";
+    row.campus = row.campus || "";
+    row.status = exited ? "EXITED" : "ACTIVE";
+    const pctRaw = mv("primary_pct");
+    const pctNum = Number(pctRaw);
+    row.training = pctRaw !== "" && !isNaN(pctNum) ? pctNum : null;
+    for (const key of manualValueKeys) row[key] = mv(key);
     rows.push(row);
   }
 

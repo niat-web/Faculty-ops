@@ -17,6 +17,8 @@ export type MasterColumnDef = {
 
 // ── Option sets (mirror the master spreadsheet's data-validation dropdowns) ──
 const CONTRIBUTION_REGION_OPTS = ["Hindi", "Kannada", "Malayalam", "Marathi", "Central", "Tamil", "Telugu", "Work From Home"];
+// Contribution buckets (the client also prepends any existing value not in this list, so nothing is lost).
+const CONTRIBUTION_OPTS = ["NIAT 1 & 2 (2023 & 2024)", "NIAT 3 (2025)", "NIAT 4 (2026)", "Academy", "Central"];
 const PAYROLL_OPTS = ["Nxtwave", "University"];
 const GENDER_OPTS = ["Male", "Female"];
 const QUALIFICATION_OPTS = ["MA", "MBA", "MCA", "MCom", "MSc", "M.Tech", "PGDM", "PHD", "M.Tech(Integrated)", "BCom", "BCA", "BBA", "B.E", "B.A", "B.Sc", "B.Tech", "B.Ed & B.Sc", "MA Linguistics"];
@@ -62,7 +64,7 @@ export const MASTER_COLUMNS: MasterColumnDef[] = [
   { key: "emp_city", label: "City", source: "value", type: "TEXT", editable: true },
   { key: "exit_date", label: "Exit Date", source: "value", type: "TEXT", editable: true },
   // --- Manually-editable, FacultyOps-managed (LAST; never touched by Darwinbox sync) ---
-  { key: "contribution", label: "Contribution", source: "value", type: "TEXT", editable: true },
+  { key: "contribution", label: "Contribution", source: "value", type: "DROPDOWN", options: CONTRIBUTION_OPTS, editable: true },
   { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
   { key: "contribution_region", label: "Contribution Region", source: "value", type: "DROPDOWN", options: CONTRIBUTION_REGION_OPTS, editable: true },
   { key: "payroll_entity", label: "Payroll", source: "value", type: "DROPDOWN", options: PAYROLL_OPTS, editable: true },
@@ -91,6 +93,7 @@ const DROPDOWN_FIELDS: { key: string; options: string[] }[] = [
   { key: "contribution_region", options: CONTRIBUTION_REGION_OPTS },
   { key: "department", options: DEPARTMENT_OPTS },
   { key: "qualification", options: QUALIFICATION_OPTS },
+  { key: "contribution", options: CONTRIBUTION_OPTS },
 ];
 
 let _ensured = false;
