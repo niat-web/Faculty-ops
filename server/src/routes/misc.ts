@@ -18,25 +18,38 @@ router.get("/dashboard", async (req, res) => {
   res.json(await dashboardData(req.user!, live, live ? { fresh: true } : undefined));
 });
 
-// Org chart tree: Org → Senior Managers → their Capability Managers.
+// Org chart tree: Org → Senior Managers → their Capability Managers. Reportee counts + the total come
+// from the SAME live-Darwinbox master the grid uses (by reporting manager), not a stale Mongo aggregation.
+// Each CM carries `rmid` (their Darwinbox employee-id) so clicking opens the Master filtered to them.
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
-  const [ops, sms, cms, counts, totalInstructors] = await Promise.all([
+  const { loadLiveMasterRows } = await import("../lib/masterLive");
+  const { darwinboxDirectory, isInstructorDept } = await import("../lib/staffRoles");
+  const { norm } = await import("../lib/darwinboxSync");
+  const [ops, sms, cms, live, dir] = await Promise.all([
     User.find({ role: Role.OPS_ADMIN, active: true }).select("name email").sort({ name: 1 }).lean(),
-    User.find({ role: Role.SENIOR_MANAGER, active: true }).select("name").sort({ name: 1 }).lean(),
-    User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name managerId").sort({ name: 1 }).lean(),
-    Instructor.aggregate([{ $group: { _id: "$currentManagerId", n: { $sum: 1 } } }]),
-    Instructor.countDocuments(),
+    User.find({ role: Role.SENIOR_MANAGER, active: true }).select("name email").sort({ name: 1 }).lean(),
+    User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name managerId email").sort({ name: 1 }).lean(),
+    loadLiveMasterRows(),
+    darwinboxDirectory(),
   ]);
-  const countByCm = Object.fromEntries(counts.map((c: any) => [String(c._id), c.n]));
+  const activeRows = live.ok ? live.rows.filter((r: any) => !r.exited && isInstructorDept(r.department)) : [];
+  const rmCount = new Map<string, number>(); // Darwinbox reporting-manager code → live reportee count
+  for (const r of activeRows) { const id = norm(r.reporting_manager_employee_id); if (id) rmCount.set(id, (rmCount.get(id) || 0) + 1); }
+  const totalInstructors = activeRows.length;
+  const empIdByEmail = new Map((dir as any[]).map((p) => [String(p.email || "").toLowerCase(), p.employeeId]));
+  const toCm = (c: any) => {
+    const rmid = empIdByEmail.get(String(c.email || "").toLowerCase()) || "";
+    return { id: String(c._id), name: c.name, rmid, reportees: rmid ? (rmCount.get(norm(rmid)) || 0) : 0 };
+  };
   res.json({
     totalInstructors, totalManagers: sms.length + cms.length,
     opsAdmins: ops.map((o: any) => ({ id: String(o._id), name: o.name, email: o.email })),
     seniors: sms.map((s: any) => ({
       id: String(s._id), name: s.name,
-      capabilityManagers: cms.filter((c: any) => String(c.managerId) === String(s._id)).map((c: any) => ({ id: String(c._id), name: c.name, reportees: countByCm[String(c._id)] || 0 })),
+      capabilityManagers: cms.filter((c: any) => String(c.managerId) === String(s._id)).map(toCm),
     })),
-    unassignedCMs: cms.filter((c: any) => !c.managerId).map((c: any) => ({ id: String(c._id), name: c.name, reportees: countByCm[String(c._id)] || 0 })),
+    unassignedCMs: cms.filter((c: any) => !c.managerId).map(toCm),
   });
 });
 
@@ -281,18 +294,20 @@ router.post("/settings/data/prune", async (req, res) => {
 // ── Exit alerts (Ops only): how many days before a last-working-day to raise an alert ──
 router.get("/settings/exit-alerts", async (req, res) => {
   if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
-  const { getExitAlerts } = await import("../lib/settings");
+  const { getExitAlerts, getUniversities } = await import("../lib/settings");
   const { ExitAlert } = await import("../models");
-  const [exitAlerts, pending] = await Promise.all([getExitAlerts(), ExitAlert.countDocuments({ status: "PENDING" })]);
-  res.json({ exitAlerts, counts: { pending } });
+  const [exitAlerts, universities, pending] = await Promise.all([getExitAlerts(), getUniversities(), ExitAlert.countDocuments({ status: "PENDING" })]);
+  res.json({ exitAlerts, universities, counts: { pending } });
 });
 router.patch("/settings/exit-alerts", async (req, res) => {
   if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
-  const { setExitAlerts } = await import("../lib/settings");
-  const exitAlerts = await setExitAlerts(req.body || {});
+  const { setExitAlerts, setUniversities, getExitAlerts, getUniversities } = await import("../lib/settings");
+  const b = req.body || {};
+  const exitAlerts = b.leadDays != null ? await setExitAlerts(b) : await getExitAlerts();
+  const universities = Array.isArray(b.universities) ? await setUniversities(b.universities) : await getUniversities();
   const { writeAudit } = await import("../lib/services");
-  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Exit alert lead days", newValue: `${exitAlerts.leadDays} days`, reason: "Exit alert settings" });
-  res.json({ exitAlerts });
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Exit alert settings", newValue: `lead ${exitAlerts.leadDays}d · ${universities.length} universities`, reason: "Exit alert settings" });
+  res.json({ exitAlerts, universities });
 });
 
 // ── Senior Managers (Ops only): admin-curated list, picked from Darwinbox ──

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox, RefreshCw } from "lucide-react";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox, RefreshCw, MoreHorizontal, ChevronDown } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
@@ -37,6 +37,8 @@ export default function InstructorMasterPage() {
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<any>(null);
   const [importing, setImporting] = useState<any[] | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -95,6 +97,13 @@ export default function InstructorMasterPage() {
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
+  // Close the Actions menu on outside click.
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const onClick = (e: MouseEvent) => { if (actionsRef.current && !actionsRef.current.contains(e.target as Node)) setActionsOpen(false); };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [actionsOpen]);
 
   // Sticky header during PAGE scroll: the page (<main>) scrolls vertically while the table keeps
   // its own horizontal scroll. CSS sticky can't pin the header to the page through an overflow-x
@@ -281,10 +290,18 @@ export default function InstructorMasterPage() {
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
           </button>
           {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
-          <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</a>
           <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
-          {isOps && <button onClick={() => fileRef.current?.click()} className="btn btn-ghost btn-sm"><Upload className="h-4 w-4" /> Import CSV</button>}
-          {isOps && <button onClick={() => setAdding(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add instructor</button>}
+          {/* Actions menu — Add instructor / Import / Export collapsed into one button. */}
+          <div ref={actionsRef} className="relative">
+            <button onClick={() => setActionsOpen((o) => !o)} className="btn btn-primary btn-sm"><MoreHorizontal className="h-4 w-4" /> Actions <ChevronDown className={`h-3.5 w-3.5 transition ${actionsOpen ? "rotate-180" : ""}`} /></button>
+            {actionsOpen && (
+              <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                {isOps && <button onClick={() => { setAdding(true); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Plus className="h-4 w-4 text-slate-400" /> Add instructor</button>}
+                {isOps && <button onClick={() => { fileRef.current?.click(); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Upload className="h-4 w-4 text-slate-400" /> Import CSV</button>}
+                <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} onClick={() => setActionsOpen(false)} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4 text-slate-400" /> Export CSV</a>
+              </div>
+            )}
+          </div>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
         </div>
       </div>
@@ -475,7 +492,7 @@ export default function InstructorMasterPage() {
 
       {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 
-      {adding && <AddInstructorModal managers={meta.managers} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
+      {adding && <AddInstructorDrawer managers={meta.managers} columns={meta.columns} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {editing && <EditInstructorModal inst={editing} managers={meta.managers} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
       {importing && <ImportModal rows={importing} onClose={() => setImporting(null)} onDone={() => { setImporting(null); reload(); }} />}
       {bulkOpen && (
@@ -571,31 +588,95 @@ function CellEditor({ col, managers, value, onCommit, onCancel }: { col: Column;
 }
 
 // Add a new instructor — migrated from the Instructors page (POST /instructors).
-function AddInstructorModal({ managers, onClose, onDone }: { managers: { id: string; name: string }[]; onClose: () => void; onDone: () => void }) {
-  const [f, setF] = useState({ employeeId: "", name: "", email: "", campus: "", status: "ONBOARDING", managerId: "" });
+// Full Add-instructor drawer (right side, scrollable) — every master field, grouped into sections.
+const ADD_CORE = new Set(["employeeId", "name", "email", "campus", "uid"]);
+const ADD_REQUIRED = new Set(["employeeId", "name"]);
+const ADD_TEXTAREA = new Set(["hod_interaction", "access_status", "remarks"]);
+const ADD_SECTIONS: { title: string; keys: string[] }[] = [
+  { title: "Identity", keys: ["employeeId", "name", "email", "campus", "uid"] },
+  { title: "Reporting & Department", keys: ["department", "designation", "reporting_manager_employee_id", "reporting_manager"] },
+  { title: "Personal & Location", keys: ["phone", "doj", "qualification", "domain", "gender", "native_language", "workspace", "emp_state", "emp_district", "emp_city"] },
+  { title: "FacultyOps", keys: ["contribution", "hod_interaction", "contribution_region", "payroll_entity", "access_status", "remarks", "exit_date"] },
+];
+const EMPTY_ADD = { employeeId: "", name: "", email: "", campus: "", uid: "", status: "ONBOARDING", managerId: "", values: {} as Record<string, string> };
+
+function AddInstructorDrawer({ managers, columns, onClose, onDone }: { managers: { id: string; name: string }[]; columns: Column[]; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState<typeof EMPTY_ADD>({ ...EMPTY_ADD, values: {} });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
+  const colByKey = new Map(columns.map((c) => [c.key, c]));
+  const get = (k: string) => (ADD_CORE.has(k) ? (f as any)[k] : (f.values[k] || ""));
+  const put = (k: string, v: string) => setF((p) => (ADD_CORE.has(k) ? { ...p, [k]: v } : { ...p, values: { ...p.values, [k]: v } }));
+
   async function save() {
+    if (!f.employeeId.trim() || !f.name.trim()) { setErr("Employee ID and Name are required."); return; }
     setBusy(true); setErr(null);
-    try { await api.post("/instructors", { ...f, managerId: f.managerId || null }); onDone(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+    try {
+      await api.post("/instructors", { employeeId: f.employeeId, name: f.name, email: f.email, campus: f.campus, uid: f.uid, status: f.status, managerId: f.managerId || null, values: f.values });
+      onDone();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
-  return (
-    <Modal title="Add instructor" onClose={onClose}>
-      <div className="space-y-3">
-        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
-        <div><label className="label">Employee ID</label><input className="input" value={f.employeeId} onChange={(e) => set("employeeId", e.target.value)} /></div>
-        <div><label className="label">Name</label><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} /></div>
-        <div><label className="label">Email</label><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
-        <div><label className="label">Campus</label><input className="input" value={f.campus} onChange={(e) => set("campus", e.target.value)} /></div>
-        <div><label className="label">Capability Manager</label>
-          <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => set("managerId", v)}
-            options={[{ value: "", label: "— Unassigned —" }, ...(managers || []).map((c) => ({ value: c.id, label: c.name }))]} />
-        </div>
-        <div><label className="label">Status</label><select className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-        <div className="flex justify-end gap-2 pt-1"><button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Create"}</button></div>
+
+  const renderField = (key: string) => {
+    const col = colByKey.get(key);
+    const label = col?.label || key;
+    const req = ADD_REQUIRED.has(key);
+    const val = get(key);
+    return (
+      <div key={key}>
+        <label className="label">{label}{req && <span className="text-rose-500"> *</span>}</label>
+        {col?.type === "DROPDOWN" ? (
+          <ScrollSelect value={val} onChange={(v) => put(key, v)} placeholder="— select —" options={[{ value: "", label: "— select —" }, ...(col.options || []).map((o) => ({ value: o, label: o }))]} />
+        ) : ADD_TEXTAREA.has(key) ? (
+          <textarea className="input min-h-[64px]" value={val} onChange={(e) => put(key, e.target.value)} />
+        ) : col?.type === "DATE" ? (
+          <input className="input" placeholder="YYYY-MM-DD" value={val} onChange={(e) => put(key, e.target.value)} />
+        ) : (
+          <input className="input" value={val} onChange={(e) => put(key, e.target.value)} />
+        )}
       </div>
-    </Modal>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-slate-900/30" onClick={onClose} />
+      <div className="relative flex h-full w-full max-w-lg flex-col bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h2 className="flex items-center gap-2 font-semibold"><Plus className="h-4 w-4 text-brand-600" /> Add instructor</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+          {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+          {ADD_SECTIONS.map((sec) => (
+            <div key={sec.title}>
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{sec.title}</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {sec.keys.map(renderField)}
+                {sec.title === "Identity" && (
+                  <>
+                    <div><label className="label">Capability Manager</label>
+                      <ScrollSelect value={f.managerId} placeholder="— Unassigned —" onChange={(v) => setF((p) => ({ ...p, managerId: v }))}
+                        options={[{ value: "", label: "— Unassigned —" }, ...(managers || []).map((c) => ({ value: c.id, label: c.name }))]} />
+                    </div>
+                    <div><label className="label">Status</label>
+                      <select className="input" value={f.status} onChange={(e) => setF((p) => ({ ...p, status: e.target.value }))}>{Object.entries(LIFECYCLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <div className="flex gap-2">
+            <button onClick={() => setF({ ...EMPTY_ADD, values: {} })} className="btn btn-ghost btn-sm border border-slate-200">Clear</button>
+            <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Create"}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

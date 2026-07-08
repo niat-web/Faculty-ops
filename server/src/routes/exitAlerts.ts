@@ -55,7 +55,8 @@ router.get("/", async (req, res) => {
   const rows = await ExitAlert.find(filter).sort({ exitDate: 1, createdAt: -1 }).limit(500).lean();
   // Only the Capability Manager the instructor reports to (or an Ops Admin) finalises the outcome.
   const canResolve = u.role === Role.CAPABILITY_MANAGER || u.role === Role.OPS_ADMIN;
-  res.json({ items: rows.map(serialize), canResolve });
+  const { getUniversities } = await import("../lib/settings");
+  res.json({ items: rows.map(serialize), canResolve, universities: await getUniversities() });
 });
 
 // Unread/pending count for the caller (banner + polling).
@@ -75,6 +76,8 @@ router.post("/:id/resolve", async (req, res) => {
   const resolution = String(req.body?.resolution || "") as Resolution;
   if (!RESOLUTIONS[resolution]) return res.status(400).json({ error: "Choose a valid exit outcome." });
   const note = String(req.body?.note || "").trim().slice(0, 500);
+  const university = String(req.body?.university || "").trim().slice(0, 120);
+  if (resolution === "UNIVERSITY_PAYROLL" && !university) return res.status(400).json({ error: "Select the university name." });
 
   const alert: any = await ExitAlert.findById(req.params.id);
   if (!alert) return res.status(404).json({ error: "Not found" });
@@ -101,8 +104,10 @@ router.post("/:id/resolve", async (req, res) => {
     inst.exit.typeOfExit = inst.exit.typeOfExit || "Exit";
     inst.values.set("exit_date", alert.exitDate);
   } else if (resolution === "UNIVERSITY_PAYROLL") {
-    // Not an exit — moved to the NxtWave University payroll entity. Stays on the Master; Payroll = University.
+    // Not an exit — moved to a University payroll entity. Stays on the Master; Payroll = University,
+    // Workspace = the chosen university.
     inst.values.set("payroll_entity", "University");
+    if (university) inst.values.set("workspace", university);
     inst.values.set("exit_date", "");
     if (inst.exit) inst.exit.lastWorkingDay = null;
     if (["EXITED", "EXIT_IN_PROGRESS"].includes(inst.status)) inst.status = "CONFIRMED";
@@ -118,6 +123,7 @@ router.post("/:id/resolve", async (req, res) => {
 
   alert.status = "RESOLVED";
   alert.resolution = resolution;
+  alert.university = resolution === "UNIVERSITY_PAYROLL" ? university : null;
   alert.resolutionNote = note || null;
   alert.resolvedById = u.id;
   alert.resolvedByName = u.name;

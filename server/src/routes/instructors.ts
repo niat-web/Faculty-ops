@@ -8,7 +8,7 @@ import { escapeRegex } from "../lib/text";
 import { getProfileForViewer } from "../lib/profile";
 import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
 import { sendInstructorMail, listInstructorMails } from "../lib/instructorMail";
-import { maybeDecrypt } from "../lib/crypto";
+import { maybeDecrypt, encrypt } from "../lib/crypto";
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
 import { loadLiveMasterRows } from "../lib/masterLive";
 import { isOpsDept, isInstructorDept } from "../lib/staffRoles";
@@ -553,17 +553,31 @@ router.get("/:id", async (req, res) => {
   res.json(profile);
 });
 
-// Create an instructor (Ops Admin).
+// Create an instructor (Ops Admin). Accepts core fields + an optional `values` map (all master columns)
+// + uid, so the Add-instructor drawer can capture every detail at once.
 router.post("/", async (req, res) => {
   if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
-  const { employeeId, name, campus = null, managerId = null, status = "ONBOARDING" } = req.body || {};
+  const { employeeId, name, campus = null, managerId = null, status = "ONBOARDING", uid = null } = req.body || {};
   const email = normEmail(req.body?.email);
   if (!String(employeeId || "").trim() || !String(name || "").trim()) return res.status(400).json({ error: "Employee ID and name are required" });
   if (email && !EMAIL_RE.test(email)) return res.status(400).json({ error: "Enter a valid email address." });
   if (await Instructor.findOne({ employeeId: String(employeeId).trim() })) return res.status(409).json({ error: "Employee ID already exists" });
   if (email && await emailConflict(email)) return res.status(409).json({ error: "That email is already linked to another instructor." });
+  // Build the dynamic values (skip blanks; encrypt sensitive fields for parity with every edit path).
+  const values: Record<string, string> = {};
+  const incoming = req.body?.values;
+  if (incoming && typeof incoming === "object") {
+    const defs = await FieldDefinition.find({ archivedAt: null }).select("key visibility").lean();
+    const sensitive = new Set((defs as any[]).filter((d) => d.visibility === "SENSITIVE").map((d) => d.key));
+    for (const [k, v] of Object.entries(incoming)) {
+      const s = String(v ?? "").trim();
+      if (!s) continue;
+      values[k] = sensitive.has(k) ? (encrypt(s) ?? "") : s;
+    }
+  }
   const inst = await Instructor.create({
     employeeId: String(employeeId).trim(), name: String(name).trim(), email, campus, status,
+    uid: String(uid || "").trim() || null, values,
     currentManagerId: managerId || null,
     assignments: managerId ? [{ managerId, assignedById: req.user!.id }] : [],
     lifecycle: [{ status, note: "Created", actorId: req.user!.id, actorName: req.user!.name }],

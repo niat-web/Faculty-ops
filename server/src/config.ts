@@ -18,6 +18,10 @@ export const config = {
     dataset: process.env.BIGQUERY_DATASET || "",
     table: process.env.BIGQUERY_TABLE || "",
   },
+  // Google Drive — certificate uploads land in this (Shared Drive) folder, using the same
+  // service-account credentials as BigQuery. Files are made "anyone with the link (viewer)".
+  googleCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
+  driveCertFolderId: process.env.GDRIVE_CERTIFICATES_FOLDER_ID || "",
   darwinbox: {
     endpoint: process.env.DARWINBOX_ENDPOINT || "",
     username: process.env.DARWINBOX_USERNAME || "",

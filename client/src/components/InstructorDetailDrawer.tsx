@@ -289,7 +289,7 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
 
         {sections.includes("EXIT") && p.exit && <div ref={setRef("EXIT")}><ExitTab exit={p.exit} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
         <div ref={setRef("NOTES")}><NotesTab notes={inst.notes} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>
-        {sections.includes("DOCUMENTS") && p.documents !== null && <div ref={setRef("DOCUMENTS")}><DocumentsTab documents={p.documents} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
+        {sections.includes("DOCUMENTS") && p.documents !== null && <div ref={setRef("DOCUMENTS")}><DocumentsTab documents={p.documents} instructorId={instructorId} employeeId={inst.employeeId} canEdit={canEdit} onChange={reload} /></div>}
         <div ref={setRef("HISTORY")}><HistoryTab instructorId={instructorId} /></div>
         {sections.includes("MAILS") && <div ref={setRef("MAILS")}><MailsTab instructorId={instructorId} canSend={canEdit} /></div>}
         {sections.includes("AUDIT") && <div ref={setRef("AUDIT")}><AuditTab instructorId={instructorId} /></div>}

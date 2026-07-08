@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { api } from "../api";
 import { useToast } from "../toast";
 import Modal from "./Modal";
+import ScrollSelect from "./ScrollSelect";
 
 // Darwinbox-driven exit alerts. Shown as a single-row dashboard banner for Ops Admin,
 // Senior Manager and Capability Manager. The Capability Manager the instructor reports to
@@ -29,19 +30,22 @@ export default function ExitAlertBanner() {
   const { data, reload } = useCachedGet<any>("/exit-alerts");
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<Record<string, string>>({});
+  const [uni, setUni] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
   const items: any[] = data?.items || [];
   if (!items.length) return null;
   const isCM = user?.role === "CAPABILITY_MANAGER";
+  const universities: string[] = data?.universities || [];
   const n = items.length;
 
   async function resolve(a: any) {
     const resolution = sel[a.id];
     if (!resolution) { toast.error("Choose an exit outcome first."); return; }
+    if (resolution === "UNIVERSITY_PAYROLL" && !uni[a.id]) { toast.error("Select the university name."); return; }
     setBusy(a.id);
     try {
-      await api.post(`/exit-alerts/${a.id}/resolve`, { resolution });
+      await api.post(`/exit-alerts/${a.id}/resolve`, { resolution, university: uni[a.id] || "" });
       toast.success(`Exit finalised for ${a.name}.`);
       await reload();
     } catch (e: any) { toast.error(e.message); }
@@ -98,6 +102,17 @@ export default function ExitAlertBanner() {
                         </label>
                       ))}
                     </div>
+                    {/* University name — only when "Moved to University Payroll" is chosen. */}
+                    {sel[a.id] === "UNIVERSITY_PAYROLL" && (
+                      <div className="mt-3">
+                        <div className="mb-1 text-xs font-medium text-slate-500">University name</div>
+                        {universities.length ? (
+                          <ScrollSelect value={uni[a.id] || ""} onChange={(v) => setUni((m) => ({ ...m, [a.id]: v }))} options={universities.map((x) => ({ value: x, label: x }))} placeholder="Select university…" />
+                        ) : (
+                          <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">No universities configured yet — add them in Settings → Exit Alerts.</div>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-3 flex justify-end">
                       <button disabled={busy === a.id} onClick={() => resolve(a)} className="btn btn-primary btn-sm disabled:opacity-50">{busy === a.id ? "Saving…" : "Confirm outcome"}</button>
                     </div>

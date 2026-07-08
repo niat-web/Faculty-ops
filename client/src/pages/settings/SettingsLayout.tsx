@@ -5,14 +5,9 @@ import { Settings as SettingsIcon } from "lucide-react";
 // in the <Outlet/> below (NOT a new browser tab, NOT an inline accordion).
 const TABS = [
   { to: "/app/settings", label: "Dynamic Fields", end: true },
-  { to: "/app/settings/notifications", label: "Notifications" },
-  { to: "/app/settings/emails", label: "Emails" },
-  { to: "/app/settings/general", label: "General" },
-  { to: "/app/settings/security", label: "Security" },
-  { to: "/app/settings/senior-managers", label: "Senior Managers" },
-  { to: "/app/settings/access", label: "Account Access" },
-  { to: "/app/settings/data", label: "Data & Retention" },
-  { to: "/app/settings/exit-alerts", label: "Exit Alerts" },
+  { to: "/app/settings/communications", label: "Notifications & Emails" },
+  { to: "/app/settings/system", label: "System" },
+  { to: "/app/settings/operations", label: "Operations" },
 ];
 
 export default function SettingsLayout() {

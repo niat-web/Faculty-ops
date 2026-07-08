@@ -178,7 +178,7 @@ export default function InstructorProfilePage() {
           )}
           {active === "EXIT" && p.exit && <ExitTab exit={p.exit} instructorId={id!} canEdit={canEdit} onChange={load} />}
           {active === "NOTES" && <NotesTab notes={inst.notes} instructorId={id!} canEdit={canEdit} onChange={load} />}
-          {active === "DOCUMENTS" && p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} canEdit={canEdit} onChange={load} />}
+          {active === "DOCUMENTS" && p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} employeeId={inst.employeeId} canEdit={canEdit} onChange={load} />}
           {active === "HISTORY" && <HistoryTab instructorId={id!} />}
           {active === "MAILS" && <MailsTab instructorId={id!} canSend={canEdit} />}
           {active === "AUDIT" && <AuditTab instructorId={id!} />}
@@ -367,12 +367,23 @@ export function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
   );
 }
 
-export function DocumentsTab({ documents, instructorId, canEdit, onChange }: any) {
+export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onChange }: any) {
   const toast = useToast();
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [docName, setDocName] = useState("");
+  // Certificates submitted via the public form (stored on Google Drive), matched by Employee ID.
+  const [certs, setCerts] = useState<any[]>([]);
+  useEffect(() => {
+    if (!employeeId || employeeId === "NA") { setCerts([]); return; }
+    api.get(`/certifications/for-employee/${encodeURIComponent(employeeId)}`).then((r) => setCerts(r.items || [])).catch(() => setCerts([]));
+  }, [employeeId]);
+  const certLinks = certs.flatMap((c: any) => [
+    c.odLink && { name: "Original Degree (OD)", url: c.odLink, when: c.createdAt },
+    c.cmmLink && { name: "Consolidated Marksheet (CMM)", url: c.cmmLink, when: c.createdAt },
+    c.pcLink && { name: "Provisional Certificate (PC)", url: c.pcLink, when: c.createdAt },
+  ].filter(Boolean));
   async function upload() {
     if (!file) return;
     const form = new FormData(); form.append("file", file); form.append("name", docName.trim() || file.name);
@@ -400,6 +411,22 @@ export function DocumentsTab({ documents, instructorId, canEdit, onChange }: any
           </li>
         )) : <li className="py-4 text-sm text-slate-400">No documents uploaded.</li>}
       </ul>
+
+      {/* Certificates submitted via the public form → Google Drive links. */}
+      {certLinks.length > 0 && (
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <h3 className="mb-2 text-sm font-semibold text-slate-700">Certificates (public form)</h3>
+          <ul className="divide-y divide-slate-100">
+            {certLinks.map((c: any, i: number) => (
+              <li key={i} className="flex items-center gap-3 py-2.5 text-sm">
+                <FileText className="h-4 w-4 text-slate-400" />
+                <div className="min-w-0 flex-1"><div className="truncate font-medium text-slate-700">{c.name}</div><div className="text-[11px] text-slate-400">Submitted {new Date(c.when).toLocaleDateString()}</div></div>
+                <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-brand-600 hover:bg-brand-50 hover:underline">View <Download className="h-3.5 w-3.5" /></a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

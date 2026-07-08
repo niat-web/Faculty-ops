@@ -247,6 +247,7 @@ const ExitAlertSchema = new Schema(
     exitDate: { type: String, required: true }, // yyyy-mm-dd (last working day)
     status: { type: String, default: "PENDING" }, // PENDING | RESOLVED
     resolution: { type: String, default: null },  // UNIVERSITY_PAYROLL | EXITED | CONSULTANT_REHIRE
+    university: { type: String, default: null },   // chosen university (only for UNIVERSITY_PAYROLL)
     resolutionNote: { type: String, default: null },
     resolvedById: { type: Schema.Types.ObjectId, ref: "User", default: null },
     resolvedByName: String,
@@ -297,6 +298,10 @@ const AppSettingSchema = new Schema(
     // Exit alerts (/app/settings/exit-alerts): { leadDays } — raise an alert this many days
     // before an instructor's Darwinbox last-working-day.
     exitAlerts: { type: Schema.Types.Mixed, default: {} },
+    // Certificates public form (/app/settings/certifications): { enabled, requireLogin }.
+    certForm: { type: Schema.Types.Mixed, default: {} },
+    // University names an Ops Admin manages — offered in the CM exit modal when moving to University payroll.
+    universities: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -312,6 +317,31 @@ const SeniorManagerSchema = new Schema(
     designation: String,
     addedById: { type: Schema.Types.ObjectId, ref: "User" },
     addedByName: String,
+  },
+  { timestamps: true }
+);
+
+// Certification — one submission of the public Certificates form (per employee, keyed by Employee ID).
+// Uploaded files go to Google Drive; only the shareable links are stored here.
+const CertificationSchema = new Schema(
+  {
+    employeeId: { type: String, default: "NA", index: true },
+    fullName: String,
+    email: String,
+    department: String,
+    capabilityManagerName: String,
+    degreeType: String,          // Current Highest Degree Type
+    highestQualification: String,
+    domain: String,              // Domain / Specialization
+    yearOfPassing: String,
+    odHave: String,              // Do you have your Original Degree (OD)?
+    odExpected: String,          // OD — Expected Month & Year
+    cmmHave: String, cmmExpected: String,
+    pcHave: String, pcExpected: String,
+    remarks: String,
+    odLink: String,              // Drive links
+    cmmLink: String,
+    pcLink: String,
   },
   { timestamps: true }
 );
@@ -357,6 +387,7 @@ export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);
 export const ExitAlert = compile("ExitAlert", ExitAlertSchema);
 export const SeniorManager = compile("SeniorManager", SeniorManagerSchema);
+export const Certification = compile("Certification", CertificationSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
 export const LoginEvent = compile("LoginEvent", LoginEventSchema);
 export type ID = Types.ObjectId | string;

@@ -1,5 +1,6 @@
 // Admin-configurable system settings (single "global" AppSetting document).
 // Cached in-process and invalidated on write so per-request reads are cheap.
+import { randomUUID } from "crypto";
 import { AppSetting } from "../models";
 import { config } from "../config";
 
@@ -198,4 +199,44 @@ export async function setExitAlerts(patch: Partial<ExitAlertSettings>) {
   if (patch.leadDays != null) clean.leadDays = clampInt(patch.leadDays, 0, 365, DEFAULT_EXIT_ALERTS.leadDays);
   await writeGroup("exitAlerts", clean);
   return getExitAlerts();
+}
+
+// ── Certificates public form ──────────────────────────────────────────
+// enabled: form accepts submissions. requireLogin: needs a signed-in session (else the link is enough).
+// token: a UUID in the URL (/certifications/<token>) — the form only opens for the exact token, so the
+// link is unguessable and can be revoked by regenerating it.
+export type CertFormSettings = { enabled: boolean; requireLogin: boolean; token: string };
+export async function getCertForm(): Promise<CertFormSettings> {
+  const c = (await getSettings()).certForm || {};
+  return { enabled: c.enabled !== false, requireLogin: c.requireLogin === true, token: String(c.token || "") };
+}
+export async function setCertForm(patch: Partial<CertFormSettings>) {
+  const clean: Record<string, any> = {};
+  if (patch.enabled != null) clean.enabled = !!patch.enabled;
+  if (patch.requireLogin != null) clean.requireLogin = !!patch.requireLogin;
+  await writeGroup("certForm", clean);
+  return getCertForm();
+}
+// Ensure a token exists (first use); returns the current config.
+export async function ensureCertToken(): Promise<CertFormSettings> {
+  const c = await getCertForm();
+  if (!c.token) { await writeGroup("certForm", { token: randomUUID() }); return getCertForm(); }
+  return c;
+}
+// Mint a NEW token — instantly invalidates any previously shared link.
+export async function regenerateCertToken(): Promise<CertFormSettings> {
+  await writeGroup("certForm", { token: randomUUID() });
+  return getCertForm();
+}
+
+// ── Universities (for the CM exit "University Payroll" outcome) ────────
+export async function getUniversities(): Promise<string[]> {
+  const u = (await getSettings()).universities;
+  return Array.isArray(u) ? u.filter((s: any) => typeof s === "string" && s.trim()) : [];
+}
+export async function setUniversities(list: string[]) {
+  const clean = [...new Set((Array.isArray(list) ? list : []).map((s) => String(s || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const doc = await AppSetting.findOneAndUpdate({ key: KEY }, { $set: { universities: clean } }, { new: true, upsert: true });
+  cache = doc.toObject(); cacheAt = Date.now();
+  return clean;
 }

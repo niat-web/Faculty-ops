@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UserMinus } from "lucide-react";
+import { UserMinus, Building2, Plus, X } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
 import { FormSkeleton } from "../../components/skeletons";
@@ -11,6 +11,8 @@ export default function ExitAlertsSettingsPage() {
   const toast = useToast();
   const [days, setDays] = useState<number | "">("");
   const [pending, setPending] = useState<number | null>(null);
+  const [universities, setUniversities] = useState<string[]>([]);
+  const [newUni, setNewUni] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -18,6 +20,7 @@ export default function ExitAlertsSettingsPage() {
     const r = await api.get("/settings/exit-alerts");
     setDays(r.exitAlerts.leadDays);
     setPending(r.counts?.pending ?? 0);
+    setUniversities(r.universities || []);
     setLoaded(true);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, []);
@@ -27,6 +30,18 @@ export default function ExitAlertsSettingsPage() {
     try { const r = await api.patch("/settings/exit-alerts", { leadDays: Number(days) || 0 }); setDays(r.exitAlerts.leadDays); toast.success("Exit alert lead time saved."); }
     catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
+  }
+  // Universities are saved immediately on add/remove.
+  async function saveUnis(list: string[]) {
+    setUniversities(list);
+    try { const r = await api.patch("/settings/exit-alerts", { universities: list }); setUniversities(r.universities || list); }
+    catch (e: any) { toast.error(e.message); }
+  }
+  function addUni() {
+    const v = newUni.trim();
+    if (!v) return;
+    if (universities.some((u) => u.toLowerCase() === v.toLowerCase())) { setNewUni(""); return; }
+    saveUnis([...universities, v]); setNewUni("");
   }
 
   if (!loaded) return <FormSkeleton />;
@@ -59,6 +74,26 @@ export default function ExitAlertsSettingsPage() {
         <div className="mt-4 flex justify-end">
           <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
         </div>
+      </div>
+
+      {/* University names — offered in the CM exit modal for the "University Payroll" outcome. */}
+      <div className="card p-6">
+        <div className="mb-1 flex items-center gap-2"><Building2 className="h-5 w-5 text-brand-600" /><h2 className="font-semibold">University names</h2></div>
+        <p className="mb-4 text-sm text-slate-500">When a Capability Manager marks an exit as "Moved to University Payroll," they pick one of these universities. Changes save automatically.</p>
+        <div className="mb-4 flex max-w-md gap-2">
+          <input className="input" placeholder="Add a university name…" value={newUni} onChange={(e) => setNewUni(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUni(); } }} />
+          <button onClick={addUni} className="btn btn-primary btn-sm shrink-0"><Plus className="h-4 w-4" /> Add</button>
+        </div>
+        {universities.length ? (
+          <div className="flex flex-wrap gap-2">
+            {universities.map((u) => (
+              <span key={u} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                {u}
+                <button onClick={() => saveUnis(universities.filter((x) => x !== u))} title="Remove" className="rounded-full p-0.5 text-slate-400 hover:bg-slate-200 hover:text-rose-600"><X className="h-3.5 w-3.5" /></button>
+              </span>
+            ))}
+          </div>
+        ) : <p className="text-sm text-slate-400">No universities added yet.</p>}
       </div>
     </div>
   );

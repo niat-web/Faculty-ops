@@ -32,6 +32,7 @@ function RouteFallback() {
 import LoginPage from "./pages/LoginPage";
 import ResetPage from "./pages/ResetPage";
 const PrintProfilePage = lazy(() => import("./pages/PrintProfilePage"));
+const CertificationFormPage = lazy(() => import("./pages/CertificationFormPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const InstructorsPage = lazy(() => import("./pages/InstructorsPage"));
 const InstructorMasterPage = lazy(() => import("./pages/InstructorMasterPage"));
@@ -54,14 +55,10 @@ const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
-const NotificationsSettingsPage = lazy(() => import("./pages/settings/NotificationsSettingsPage"));
-const EmailsSettingsPage = lazy(() => import("./pages/settings/EmailsSettingsPage"));
-const GeneralSettingsPage = lazy(() => import("./pages/settings/GeneralSettingsPage"));
-const SecuritySettingsPage = lazy(() => import("./pages/settings/SecuritySettingsPage"));
-const DataSettingsPage = lazy(() => import("./pages/settings/DataSettingsPage"));
-const AccountAccessPage = lazy(() => import("./pages/settings/AccountAccessPage"));
-const ExitAlertsSettingsPage = lazy(() => import("./pages/settings/ExitAlertsSettingsPage"));
-const SeniorManagersSettingsPage = lazy(() => import("./pages/settings/SeniorManagersSettingsPage"));
+// Settings tabs merged into 4 grouped pages (each wrapper renders the existing sub-pages unchanged).
+const CommunicationsSettingsPage = lazy(() => import("./pages/settings/CommunicationsSettingsPage"));
+const SystemSettingsPage = lazy(() => import("./pages/settings/SystemSettingsPage"));
+const OperationsSettingsPage = lazy(() => import("./pages/settings/OperationsSettingsPage"));
 
 // Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
 // instead of a blank white screen. (Bug B7)
@@ -131,6 +128,9 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/reset" element={<ResetPage />} />
+      {/* Public Certificates form — opens only for the exact UUID link; access also gated server-side. */}
+      <Route path="/certifications/:token" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
+      <Route path="/certifications" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
       <Route path="/print/instructors/:id" element={<Protected><Suspense fallback={<Loading full />}><PrintProfilePage /></Suspense></Protected>} />
       <Route
         path="/app/*"
@@ -172,14 +172,19 @@ export default function App() {
                 {/* Admin Settings (Ops only) — tabbed, each tab an in-app sub-route */}
                 <Route path="settings" element={<RequireRole roles={["OPS_ADMIN"]}><SettingsLayout /></RequireRole>}>
                   <Route index element={<FieldsPage />} />
-                  <Route path="notifications" element={<NotificationsSettingsPage />} />
-                  <Route path="emails" element={<EmailsSettingsPage />} />
-                  <Route path="general" element={<GeneralSettingsPage />} />
-                  <Route path="security" element={<SecuritySettingsPage />} />
-                  <Route path="access" element={<AccountAccessPage />} />
-                  <Route path="data" element={<DataSettingsPage />} />
-                  <Route path="exit-alerts" element={<ExitAlertsSettingsPage />} />
-                  <Route path="senior-managers" element={<SeniorManagersSettingsPage />} />
+                  <Route path="communications" element={<CommunicationsSettingsPage />} />
+                  <Route path="system" element={<SystemSettingsPage />} />
+                  <Route path="operations" element={<OperationsSettingsPage />} />
+                  {/* Old per-tab URLs → redirect to their new merged tab (keeps existing links working). */}
+                  <Route path="notifications" element={<Navigate to="/app/settings/communications" replace />} />
+                  <Route path="emails" element={<Navigate to="/app/settings/communications" replace />} />
+                  <Route path="general" element={<Navigate to="/app/settings/system" replace />} />
+                  <Route path="security" element={<Navigate to="/app/settings/system" replace />} />
+                  <Route path="access" element={<Navigate to="/app/settings/system" replace />} />
+                  <Route path="data" element={<Navigate to="/app/settings/system" replace />} />
+                  <Route path="senior-managers" element={<Navigate to="/app/settings/operations" replace />} />
+                  <Route path="exit-alerts" element={<Navigate to="/app/settings/operations" replace />} />
+                  <Route path="certifications" element={<Navigate to="/app/settings/operations" replace />} />
                 </Route>
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />

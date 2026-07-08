@@ -246,8 +246,11 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         const baseOpts: string[] = col.options?.length ? col.options : (isStatus ? STATUS_OPTIONS : []);
         const selectLike = col.type === "STATUS" || col.type === "DROPDOWN";
         const multi = MULTI_KEYS.has(col.key);
+        // Manually-editable cells get an amber tint (same cue as the Instructor Master) so
+        // they're distinguishable from the read-only BigQuery-synced / computed columns.
+        const editable = !isSynced;
         return (
-          <td key={col.id} className="border-b border-slate-100 px-1.5 text-center">
+          <td key={col.id} className={`border-b border-slate-100 px-1.5 text-center ${editable ? "bg-amber-50/60 group-even:bg-amber-50/80 group-hover:!bg-brand-50" : ""}`}>
             {isSynced ? (
               // Live BigQuery value → compact read-only chip. Transparent cell so the row bg flows through.
               <div className="flex min-h-[36px] w-full items-center justify-center whitespace-nowrap">
@@ -498,6 +501,10 @@ export default function TrainingPage() {
   const head = "z-10 border-b border-slate-200 bg-slate-50 text-slate-600";
   const frozenHead = "sticky z-30 border-b border-slate-200 bg-slate-50 text-slate-600";
   const grouped = segs.filter((s) => s.group);
+  // A column is manually editable unless it's a computed summary or a read-only BigQuery-synced
+  // course column. Editable headers get an amber tint — the same cue used on the Instructor Master.
+  const colEditable = (c: any) => !COMPUTED.has(c.key) && !isSyncedCourseColumn(c);
+  const editHead = "z-10 border-b border-slate-200 bg-amber-50 text-amber-900";
 
   return (
     // Normal page flow (like Master/Users): the PAGE (<main>) scrolls vertically, the card only
@@ -550,11 +557,11 @@ export default function TrainingPage() {
               <th rowSpan={2} className={`${frozenHead} whitespace-nowrap border-r border-slate-200 px-3 py-2 text-left font-semibold`} style={{ left: ID_W, minWidth: NAME_W }}>Name</th>
               {segs.map((s, i) => s.group
                 ? <th key={i} colSpan={s.cols.length} className={`${head} border-l border-slate-200 px-2 py-2 text-center font-semibold`}>{s.group}</th>
-                : s.cols.map((c) => <th key={c.id} rowSpan={2} className={`${head} border-l border-slate-200 px-2 py-2 text-left font-semibold`} style={{ minWidth: 100 }}>{c.label}</th>)
+                : s.cols.map((c) => <th key={c.id} rowSpan={2} className={`${colEditable(c) ? editHead : head} border-l border-slate-200 px-2 py-2 text-left font-semibold`} style={{ minWidth: 100 }}>{c.label}</th>)
               )}
             </tr>
             <tr>
-              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${head} whitespace-nowrap px-1.5 py-2 text-center font-medium`} style={{ minWidth: 88 }}><div className="leading-tight">{c.label}</div></th>)}
+              {grouped.flatMap((s) => s.cols).map((c) => <th key={c.id} className={`${colEditable(c) ? editHead : head} whitespace-nowrap px-1.5 py-2 text-center font-medium`} style={{ minWidth: 88 }}><div className="leading-tight">{c.label}</div></th>)}
             </tr>
           </thead>
           <tbody>
