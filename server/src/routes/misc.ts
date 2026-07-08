@@ -30,15 +30,16 @@ router.get("/dashboard", async (req, res) => {
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { loadLiveMasterRows } = await import("../lib/masterLive");
-  const { getOpsAdminPeople, isInstructorDept } = await import("../lib/staffRoles");
+  const { getOpsAdminPeople, isInstructorDept, darwinboxDirectory } = await import("../lib/staffRoles");
   const { SeniorManager, Instructor } = await import("../models");
   const { norm } = await import("../lib/darwinboxSync");
   const { maybeDecrypt } = await import("../lib/crypto");
-  const [opsPeople, smDocs, live, mongoDocs] = await Promise.all([
+  const [opsPeople, smDocs, live, mongoDocs, dir] = await Promise.all([
     getOpsAdminPeople(),
     SeniorManager.find().select("employeeId name").sort({ name: 1 }).lean(),
     loadLiveMasterRows(),
     Instructor.find({}).select("employeeId values").lean(),
+    darwinboxDirectory(),
   ]);
 
   const norm2 = (s: any) => norm(s);
@@ -50,31 +51,46 @@ router.get("/org", async (req, res) => {
   const activeInstr = liveRows.filter((r) => !r.exited && isInstructorDept(r.department));
   const totalInstructors = activeInstr.length;
 
+  // normalised person name → their real Employee ID. Lets us canonicalise a reporting-manager that is
+  // written as just a NAME (no "(NWxxxx)" and blank reporting_manager_employee_id) back to one identity,
+  // so the SAME manager never splits into an id-keyed node AND a name-keyed node (the duplicate bug).
+  const nameToId = new Map<string, string>();
+  const addName = (name: any, id: any) => { const n = norm2(stripName(name)); const e = String(id || "").trim(); if (n && e && !nameToId.has(n)) nameToId.set(n, e); };
+  for (const r of liveRows) addName(r.name, r.employeeId);
+  for (const p of dir as any[]) addName(p.name, p.employeeId);
+
+  // Resolve any reporting-manager reference (id, "(NWxxxx)" in the name, or a bare name) to one Employee ID.
+  const resolveRmid = (rmIdField: any, rmName: any): string => {
+    const direct = String(rmIdField || rmidFromName(rmName) || "").trim();
+    if (direct) return direct;
+    return nameToId.get(norm2(stripName(rmName))) || "";
+  };
+
   // employee → their OWN manager's Employee ID. Merged from live Darwinbox (fresh) first, then MongoDB
   // as a fallback, so a Capability Manager whose manager is missing in the current feed still resolves.
   const empToManager = new Map<string, string>();
   for (const r of liveRows) {
     const e = norm2(r.employeeId); if (!e) continue;
-    const mgr = norm2(r.reporting_manager_employee_id) || norm2(rmidFromName(r.reporting_manager));
+    const mgr = norm2(resolveRmid(r.reporting_manager_employee_id, r.reporting_manager));
     if (mgr) empToManager.set(e, mgr);
   }
   for (const d of mongoDocs as any[]) {
     const e = norm2(d.employeeId); if (!e || empToManager.has(e)) continue;
     const v = d.values || {};
-    const mgr = norm2(maybeDecrypt(v.reporting_manager_employee_id)) || norm2(rmidFromName(maybeDecrypt(v.reporting_manager)));
+    const mgr = norm2(resolveRmid(maybeDecrypt(v.reporting_manager_employee_id), maybeDecrypt(v.reporting_manager)));
     if (mgr) empToManager.set(e, mgr);
   }
 
   // Capability Managers = the unique reporting managers, keyed by Employee ID (NO duplicates), with a
-  // live reportee count. Same person under name variants collapses to one node via their Employee ID.
+  // live reportee count. Name variants of the same person collapse to one node via their Employee ID.
   const cmMap = new Map<string, { rmid: string; name: string; reportees: number }>();
   for (const r of activeInstr) {
-    const rmid = String(r.reporting_manager_employee_id || rmidFromName(r.reporting_manager) || "").trim();
+    const rmid = resolveRmid(r.reporting_manager_employee_id, r.reporting_manager);
     const name = stripName(r.reporting_manager) || rmid;
     if (!rmid && !name) continue;
-    const key = norm2(rmid) || `name:${norm2(name)}`; // dedupe by Employee ID; only fall back to name if no id
+    const key = norm2(rmid) || `name:${norm2(name)}`; // one identity per Employee ID; name-key only when no id
     const ex = cmMap.get(key);
-    if (ex) { ex.reportees++; if (!ex.name && name) ex.name = name; }
+    if (ex) { ex.reportees++; if (!ex.rmid && rmid) ex.rmid = rmid; if (!ex.name && name) ex.name = name; }
     else cmMap.set(key, { rmid: rmid || "", name, reportees: 1 });
   }
 
@@ -86,11 +102,16 @@ router.get("/org", async (req, res) => {
     return node;
   });
 
-  // Nest each Capability Manager under the Senior Manager they report to (their own Darwinbox/Mongo manager).
+  // Nest each Capability Manager under the Senior Manager they report to. A person who is themselves a
+  // curated Senior Manager is shown ONLY as the SM node (never also as a CM leaf → no duplicate).
   const unassignedCMs: any[] = [];
+  let cmCount = 0;
   for (const cm of cmMap.values()) {
+    const cmEmp = norm2(cm.rmid);
+    if (cmEmp && smByEmp.has(cmEmp)) continue; // already rendered as a Senior Manager node
+    cmCount++;
     const node = { id: `cm:${cm.rmid || cm.name}`, name: cm.name, rmid: cm.rmid, reportees: cm.reportees };
-    const mgrEmp = cm.rmid ? (empToManager.get(norm2(cm.rmid)) || "") : "";
+    const mgrEmp = cmEmp ? (empToManager.get(cmEmp) || "") : "";
     const sm = mgrEmp ? smByEmp.get(mgrEmp) : null;
     if (sm) sm.capabilityManagers.push(node); else unassignedCMs.push(node);
   }
@@ -100,7 +121,7 @@ router.get("/org", async (req, res) => {
 
   res.json({
     totalInstructors,
-    totalManagers: seniors.length + cmMap.size,
+    totalManagers: seniors.length + cmCount,
     opsAdmins: opsPeople.map((o) => ({ id: `ops:${o.employeeId}`, name: o.name, email: o.email })),
     seniors: seniors.map(({ employeeId, ...s }) => s), // drop the internal employeeId from the payload
     unassignedCMs,
