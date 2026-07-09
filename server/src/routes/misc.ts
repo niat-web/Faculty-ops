@@ -45,7 +45,9 @@ router.get("/org", async (req, res) => {
 
   const norm2 = (s: any) => norm(s);
   const rmidFromName = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
-  const stripName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").trim();
+  // strip the "(NWxxxx)" suffix AND collapse internal whitespace so name lookups are match-stable
+  // (identical to masterLive, so the Org chart and the Master rmid filter resolve the same ids).
+  const stripName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
 
   // Ops Admins = the "Instructors – Delivery Support (Ops and Central managers)" department ONLY, taken
   // from BOTH sources and deduped so each person appears exactly once:

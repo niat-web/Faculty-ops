@@ -95,6 +95,12 @@ export default function InstructorMasterPage() {
   useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
+  // Reporting-Manager deep-link (Org Chart CM click → ?rmid=<Employee ID>&rmname=<name>).
+  const rmName = searchParams.get("rmname") || "";
+  function clearReportingManager() {
+    const sp = new URLSearchParams(searchParams); sp.delete("rmid"); sp.delete("rmname"); setSearchParams(sp, { replace: true });
+    setApplied((f) => ({ ...f, reportingManager: [] })); setDraft((f) => ({ ...f, reportingManager: [] })); setPage(1);
+  }
 
   useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
   // Close the Actions menu on outside click.
@@ -283,6 +289,12 @@ export default function InstructorMasterPage() {
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
               Contribution: {contribution}
               <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
+            </span>
+          )}
+          {applied.reportingManager.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+              Reporting Manager: {rmName || applied.reportingManager.join(", ")}
+              <button onClick={clearReportingManager} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
             </span>
           )}
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">

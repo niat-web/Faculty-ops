@@ -63,7 +63,21 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   const statusCol = pickCol(cols, STATUS_KEYS);
   const exitDateCol = pickCol(cols, EXIT_DATE_KEYS);
   const deptCol = pickCol(cols, ["department", "department_name", "dept"]);
+  const nameCol2 = pickCol(cols, ["full_name", "employee_name", "name", "display_name"]);
+  const mgrIdCol = pickCol(cols, ["direct_manager_employee_id", "reporting_manager_employee_id", "manager_employee_id", "direct_manager_id", "reporting_manager_id", "manager_id"]);
   const resolved = TARGETS.map((t) => ({ t, col: pickCol(cols, t.candidates) }));
+
+  // Reporting-Manager Employee ID must be CANONICAL so an Org-chart CM click (?rmid=NWxxxx) returns
+  // exactly that CM's instructors — even when the manager is written on some rows by a bare/abbreviated
+  // NAME (no "(NWxxxx)"). Build a name→id map from EVERY Darwinbox employee to resolve those.
+  const rmid2 = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
+  // strip the "(NWxxxx)" suffix AND collapse internal whitespace so name lookups are match-stable.
+  const strip2 = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
+  const dirNameToId = new Map<string, string>();
+  if (nameCol2 && empCol) for (const r of data.rows) { const n = norm(strip2(r[nameCol2])); const e = clean(r[empCol]); if (n && e && !dirNameToId.has(n)) dirNameToId.set(n, e); }
+  // Resolve a row's reporting-manager Employee ID: "(NWxxxx)" in the name → a manager-id column → name→id.
+  const resolveMgrId = (raw: any, rmName: string): string =>
+    rmid2(rmName) || (mgrIdCol ? clean(raw[mgrIdCol]) : "") || dirNameToId.get(norm(strip2(rmName))) || "";
 
   // In-scope Darwinbox rows (instructor departments only).
   const inScope = deptCol ? data.rows.filter((r) => isOurDepartment(clean(r[deptCol]))) : data.rows;
@@ -115,8 +129,9 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     // matching); fall back to the Darwinbox candidate_uid for rows that exist only in Darwinbox.
     row.uid = clean(mongo?.uid) || (uidCol ? clean(raw[uidCol]) : "");
     row.exit_date = exitDate;
-    // Derived: Reporting Manager Employee ID from direct_manager "(NWxxxx)".
-    row.reporting_manager_employee_id = ((row.reporting_manager || "").match(/\((NW[^)]+)\)\s*$/i) || [])[1] || "";
+    // Reporting Manager Employee ID — canonical (id in the name → manager-id column → name→id lookup),
+    // so a bare/abbreviated manager name still resolves and the Org-chart CM click-through matches.
+    row.reporting_manager_employee_id = resolveMgrId(raw, String(row.reporting_manager || "")) || mongoVal("reporting_manager_employee_id");
     // Core aliases the grid expects.
     row.name = row.name || "";
     row.email = row.email || "";
@@ -160,7 +175,8 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     }
     row.uid = clean(d.uid) || "";
     row.exit_date = mv("exit_date") || clean(d.exit?.lastWorkingDay);
-    row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || (String(row.reporting_manager || "").match(/\((NW[^)]+)\)\s*$/i) || [])[1] || "";
+    // Canonical Reporting Manager Employee ID (stored → "(NWxxxx)" in the name → name→id lookup).
+    row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || dirNameToId.get(norm(strip2(row.reporting_manager))) || "";
     row.name = row.name || "";
     row.email = row.email || "";
     row.campus = row.campus || "";
