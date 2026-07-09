@@ -47,27 +47,20 @@ export default function OrgPage() {
   const needle = q.trim().toLowerCase();
   const cmTotal = seniors.reduce((n, s) => n + (s.capabilityManagers?.length || 0), 0) + unassigned.length;
 
-  const filtered = useMemo(() => {
-    if (!needle) return seniors;
-    return seniors
-      .map((s) => {
-        const smMatch = s.name.toLowerCase().includes(needle);
-        const cms = smMatch ? s.capabilityManagers : (s.capabilityManagers || []).filter((c: any) => c.name.toLowerCase().includes(needle));
-        return smMatch || cms.length ? { ...s, capabilityManagers: cms } : null;
-      })
-      .filter(Boolean) as any[];
-  }, [seniors, needle]);
+  // Search NEVER filters the chart — the whole tree always renders. Typing a name highlights the
+  // matching node(s) and auto-pans/zooms the first match into view (see the centre-on effect below).
+  const hit = (name: any) => !!needle && String(name || "").toLowerCase().includes(needle);
 
-  // Branch list = an "Ops Admins" group (top) + senior managers (+ an "Unassigned" branch), when not searching.
+  // Branch list = an "Ops Admins" group (top) + senior managers + an "Unassigned" branch (always present).
   const branches = useMemo(() => {
-    const list = filtered.map((s, i) => ({ ...s, _id: s.id, accent: BRANCH[i % BRANCH.length] }));
-    if (!needle && opsAdmins.length) list.unshift({ _id: "OPS", name: "Ops Admins", capabilityManagers: opsAdmins, accent: OPS_ACCENT, _ops: true } as any);
-    if (!needle && unassigned.length) list.push({ _id: "UNASSIGNED", name: "Unassigned", capabilityManagers: unassigned, accent: AMBER, _unassigned: true } as any);
+    const list = seniors.map((s, i) => ({ ...s, _id: s.id, accent: BRANCH[i % BRANCH.length] }));
+    if (opsAdmins.length) list.unshift({ _id: "OPS", name: "Ops Admins", capabilityManagers: opsAdmins, accent: OPS_ACCENT, _ops: true } as any);
+    if (unassigned.length) list.push({ _id: "UNASSIGNED", name: "Unassigned", capabilityManagers: unassigned, accent: AMBER, _unassigned: true } as any);
     return list;
-  }, [filtered, unassigned, opsAdmins, needle]);
+  }, [seniors, unassigned, opsAdmins]);
 
-  // Expanded by default; search forces open. The Ops Admins group is collapsed by default so its
-  // (often long) list doesn't crowd the Senior Manager → Capability Manager tree — click to expand.
+  // Expanded by default; an active search forces every branch open so any matched CM is visible/scroll-able.
+  // The Ops Admins group is collapsed by default (long list) unless searching — click to expand.
   const isOpen = (id: string) => (needle ? true : open[id] ?? (id === "OPS" ? false : true));
 
   // Draw curved connectors between the measured node boxes. Coordinates are divided by the
@@ -102,6 +95,37 @@ export default function OrgPage() {
     window.addEventListener("resize", measure);
     return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, [branches, open, needle]);
+
+  // Live search → pan/zoom the FIRST matching node to the centre of the viewport (no re-search, no
+  // filtering). Runs after the branches render (all forced open while searching) so the node exists.
+  const firstMatchId = useCallback((): string | null => {
+    if (!needle) return null;
+    for (const b of branches) {
+      if (String(b.name || "").toLowerCase().includes(needle) && b._id !== "OPS" && b._id !== "UNASSIGNED") return b._id;
+      for (const cm of b.capabilityManagers || []) if (String(cm.name || "").toLowerCase().includes(needle)) return cm.id;
+    }
+    // fall back to a matching branch header (Ops Admins / Unassigned) if only those matched
+    for (const b of branches) if (String(b.name || "").toLowerCase().includes(needle)) return b._id;
+    return null;
+  }, [branches, needle]);
+
+  useEffect(() => {
+    if (!needle) return;
+    const raf = requestAnimationFrame(() => {
+      const id = firstMatchId();
+      const vp = viewportRef.current, wrap = wrapRef.current, node = id ? nodes.current[id] : null;
+      if (!vp || !wrap || !node) return;
+      const z = zoomRef.current || 1;
+      const wr = wrap.getBoundingClientRect(), nr = node.getBoundingClientRect();
+      // node centre in the stage's UN-scaled coordinate space
+      const cxU = (nr.left - wr.left) / z + nr.width / z / 2;
+      const cyU = (nr.top - wr.top) / z + nr.height / z / 2;
+      const Z = 0.8; // readable zoom for the focused node
+      setZoom(Z);
+      setPan({ x: vp.clientWidth / 2 - cxU * Z, y: vp.clientHeight / 2 - cyU * Z });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [needle, branches, firstMatchId]);
 
   // Wheel-zoom toward the cursor (native non-passive listener so we can preventDefault).
   useEffect(() => {
@@ -166,7 +190,7 @@ export default function OrgPage() {
     const cms: any[] = b.capabilityManagers || [];
     const expanded = isOpen(b._id);
     return (
-      <div ref={setNode(b._id)} className="w-64 shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div ref={setNode(b._id)} className={`w-64 shrink-0 rounded-2xl border bg-white shadow-sm transition ${hit(b.name) ? "border-brand-500 ring-2 ring-brand-400 ring-offset-2" : "border-slate-200"}`}>
         <div className="flex items-center gap-2.5 px-3.5 py-3">
           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${b.accent.avatar}`}>{b._unassigned ? <UserX className="h-5 w-5" /> : b._ops ? <ShieldCheck className="h-5 w-5" /> : b.name.charAt(0)}</span>
           <div className="min-w-0 flex-1"><div className="truncate font-semibold text-slate-800">{b.name}</div><div className="text-[11px] text-slate-400">{b._unassigned ? "No Senior Manager" : b._ops ? "Organization admins" : "Senior Manager"}</div></div>
@@ -192,13 +216,13 @@ export default function OrgPage() {
 
   // A child card — an Ops Admin (static) or a Capability Manager (click → filtered master grid).
   const renderChild = (b: any, cm: any) => b._ops ? (
-    <div key={cm.id} ref={setNode(cm.id)} className="flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+    <div key={cm.id} ref={setNode(cm.id)} className={`flex w-56 shrink-0 items-center gap-2.5 rounded-xl border bg-white p-2.5 shadow-sm transition ${hit(cm.name) ? "border-brand-500 ring-2 ring-brand-400 ring-offset-2" : "border-slate-200"}`}>
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${b.accent.avatar}`}>{cm.name.charAt(0)}</span>
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">Ops Admin</span></span>
     </div>
   ) : (
     <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(cm.rmid ? `/app/instructors/master?rmid=${encodeURIComponent(cm.rmid)}&rmname=${encodeURIComponent(cm.name)}` : `/app/instructors/master?managerId=${cm.id}`)}
-      className="group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md">
+      className={`group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${hit(cm.name) ? "border-brand-500 ring-2 ring-brand-400 ring-offset-2" : "border-slate-200 hover:border-brand-300"}`}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>
       <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
@@ -206,23 +230,23 @@ export default function OrgPage() {
   );
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-2xl font-bold">Org Chart</h1>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setAll(true)} className="btn btn-ghost btn-sm">Expand all</button>
-          <button onClick={() => setAll(false)} className="btn btn-ghost btn-sm">Collapse all</button>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manager…" className="input w-56 pl-9" />
-          </div>
-        </div>
-      </div>
-
+    <div className="flex h-full flex-col">
       {/* Full-height viewport: chart pans/zooms INSIDE this; the page itself never scrolls. */}
       <div ref={viewportRef} onMouseDown={onPointerDown} className="card relative min-h-0 flex-1 cursor-grab overflow-hidden active:cursor-grabbing">
-        {/* Vertical control toolbar (top-right) */}
-        <div className="absolute right-4 top-4 z-20 flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-md">
+        {/* Controls INSIDE the chart, top-right — search + expand/collapse. */}
+        <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manager…" className="input w-56 bg-white/95 pl-9 shadow-sm backdrop-blur" />
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white/95 p-0.5 shadow-sm backdrop-blur">
+            <button onClick={() => setAll(true)} className="rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">Expand all</button>
+            <button onClick={() => setAll(false)} className="rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900">Collapse all</button>
+          </div>
+        </div>
+
+        {/* Zoom toolbar (bottom-right, out of the way of the top controls). */}
+        <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-md">
           <ToolBtn title="Zoom in" onClick={() => zoomBy(1.15)}><Plus className="h-4 w-4" /></ToolBtn>
           <div className="px-1 text-center text-[10px] font-medium tabular-nums text-slate-400">{Math.round(zoom * 100)}%</div>
           <ToolBtn title="Zoom out" onClick={() => zoomBy(0.87)}><Minus className="h-4 w-4" /></ToolBtn>
@@ -264,7 +288,7 @@ export default function OrgPage() {
 
             {/* Columns 4 & 5 — Senior Managers + their Capability Managers (each SM aligns with its CM column) */}
             <div className="relative z-10 flex flex-col gap-6">
-              {mgrBranches.length === 0 && <div className="px-6 py-4 text-sm text-slate-400">No managers match "{q}".</div>}
+              {mgrBranches.length === 0 && <div className="px-6 py-4 text-sm text-slate-400">No managers to show yet.</div>}
               {mgrBranches.map((b: any) => {
                 const cms: any[] = b.capabilityManagers || [];
                 const expanded = isOpen(b._id);
