@@ -30,7 +30,7 @@ router.get("/dashboard", async (req, res) => {
 router.get("/org", async (req, res) => {
   if (!canViewAudit(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { loadLiveMasterRows } = await import("../lib/masterLive");
-  const { getOpsAdminPeople, isInstructorDept, isOpsDept, darwinboxDirectory } = await import("../lib/staffRoles");
+  const { getOpsAdminPeople, isInstructorDept, isOpsDept, darwinboxFullDirectory } = await import("../lib/staffRoles");
   const { SeniorManager, Instructor } = await import("../models");
   const { norm } = await import("../lib/darwinboxSync");
   const { maybeDecrypt } = await import("../lib/crypto");
@@ -40,7 +40,7 @@ router.get("/org", async (req, res) => {
     SeniorManager.find().select("employeeId name").sort({ name: 1 }).lean(),
     loadLiveMasterRows(),
     Instructor.find({}).select("employeeId values").lean(),
-    darwinboxDirectory(),
+    darwinboxFullDirectory(), // EVERY Darwinbox employee + their own manager (covers CMs not on the master)
   ]);
 
   const norm2 = (s: any) => norm(s);
@@ -73,13 +73,13 @@ router.get("/org", async (req, res) => {
   const activeInstr = liveRows.filter((r) => !r.exited && isInstructorDept(r.department));
   const totalInstructors = activeInstr.length;
 
-  // normalised person name → their real Employee ID. Lets us canonicalise a reporting-manager that is
-  // written as just a NAME (no "(NWxxxx)" and blank reporting_manager_employee_id) back to one identity,
-  // so the SAME manager never splits into an id-keyed node AND a name-keyed node (the duplicate bug).
+  // normalised person name → their real Employee ID. Built from the FULL Darwinbox directory (every
+  // employee) plus master rows, so a reporting-manager written as just a NAME (no "(NWxxxx)") still
+  // resolves to one identity — the SAME manager never splits into an id-keyed and a name-keyed node.
   const nameToId = new Map<string, string>();
   const addName = (name: any, id: any) => { const n = norm2(stripName(name)); const e = String(id || "").trim(); if (n && e && !nameToId.has(n)) nameToId.set(n, e); };
-  for (const r of liveRows) addName(r.name, r.employeeId);
   for (const p of dir as any[]) addName(p.name, p.employeeId);
+  for (const r of liveRows) addName(r.name, r.employeeId);
 
   // Resolve any reporting-manager reference (id, "(NWxxxx)" in the name, or a bare name) to one Employee ID.
   const resolveRmid = (rmIdField: any, rmName: any): string => {
@@ -88,11 +88,17 @@ router.get("/org", async (req, res) => {
     return nameToId.get(norm2(stripName(rmName))) || "";
   };
 
-  // employee → their OWN manager's Employee ID. Merged from live Darwinbox (fresh) first, then MongoDB
-  // as a fallback, so a Capability Manager whose manager is missing in the current feed still resolves.
+  // employee → their OWN manager's Employee ID. Sourced FIRST from the full Darwinbox directory (has
+  // EVERY employee incl. Capability Managers who aren't on the Instructor Master), then master rows and
+  // MongoDB fill any gaps. This is what lets an off-master CM still nest under the correct Senior Manager.
   const empToManager = new Map<string, string>();
+  for (const p of dir as any[]) {
+    const e = norm2(p.employeeId); if (!e) continue;
+    const mgr = norm2(p.managerEmployeeId) || norm2(nameToId.get(norm2(stripName(p.managerName))) || "");
+    if (mgr) empToManager.set(e, mgr);
+  }
   for (const r of liveRows) {
-    const e = norm2(r.employeeId); if (!e) continue;
+    const e = norm2(r.employeeId); if (!e || empToManager.has(e)) continue;
     const mgr = norm2(resolveRmid(r.reporting_manager_employee_id, r.reporting_manager));
     if (mgr) empToManager.set(e, mgr);
   }

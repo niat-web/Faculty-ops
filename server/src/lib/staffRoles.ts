@@ -105,6 +105,41 @@ export async function darwinboxDirectory(): Promise<StaffPerson[]> {
     .filter((p) => p.employeeId);
 }
 
+// Manager columns in the raw Darwinbox feed — the manager's NAME ("Name (NWxxxx)") and, when present,
+// a dedicated manager-employee-id column.
+const MANAGER_NAME_KEYS = ["direct_manager", "reporting_manager", "reporting_manager_name", "direct_manager_name", "manager_name", "reporting_to"];
+const MANAGER_ID_KEYS = ["direct_manager_employee_id", "reporting_manager_employee_id", "manager_employee_id", "direct_manager_id", "reporting_manager_id", "manager_id"];
+
+// Full Darwinbox directory WITH each person's own manager — the authoritative source for the org chart.
+// Darwinbox has EVERY employee (managers included) and their reporting line, so a Capability Manager who
+// isn't on the Instructor Master can still be placed under the right Senior Manager from here.
+export type DirectoryPerson = StaffPerson & { managerName: string; managerEmployeeId: string };
+export async function darwinboxFullDirectory(): Promise<DirectoryPerson[]> {
+  const data = await getDarwinboxData(false);
+  if (!data.ok) return [];
+  const cols = data.columns;
+  const empCol = pickCol(cols, EMPLOYEE_ID_KEYS);
+  const nameCol = pickCol(cols, NAME_KEYS), emailCol = pickCol(cols, EMAIL_KEYS);
+  const deptCol = pickCol(cols, DEPT_KEYS), desigCol = pickCol(cols, DESIG_KEYS);
+  const mgrNameCol = pickCol(cols, MANAGER_NAME_KEYS), mgrIdCol = pickCol(cols, MANAGER_ID_KEYS);
+  if (!empCol) return [];
+  const rmidFromName = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
+  return data.rows
+    .map((r) => {
+      const managerName = clean(mgrNameCol ? r[mgrNameCol] : "");
+      return {
+        employeeId: clean(r[empCol]),
+        name: clean(nameCol ? r[nameCol] : "") || clean(r[empCol]),
+        email: clean(emailCol ? r[emailCol] : ""),
+        department: clean(deptCol ? r[deptCol] : ""),
+        designation: clean(desigCol ? r[desigCol] : ""),
+        managerName,
+        managerEmployeeId: clean(mgrIdCol ? r[mgrIdCol] : "") || rmidFromName(managerName),
+      };
+    })
+    .filter((p) => p.employeeId);
+}
+
 export async function searchDarwinbox(q: string, limit = 20): Promise<StaffPerson[]> {
   const dir = await darwinboxDirectory();
   const n = q.trim().toLowerCase();
