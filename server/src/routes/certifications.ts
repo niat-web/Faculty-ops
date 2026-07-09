@@ -133,12 +133,22 @@ router.get("/", requireUser(), opsOnly, async (_req, res) => {
   res.json({ schema: await getCertSchema(), items: rows.map(serialize) });
 });
 
-// Submissions for one employee (any staff) — for the profile Documents section. Each item carries a
+// Submissions for one employee (staff, scoped) — for the profile Documents section. Each item carries a
 // `files` list (label + Drive url) for the schema's FILE fields, so the profile shows them as links.
 router.get("/for-employee/:employeeId", requireUser(), staffOnly, async (req, res) => {
+  const employeeId = clean(req.params.employeeId);
+  // Scope check (Bug 1.5): a Capability Manager may only read certs for their OWN reportees. Ops/SM pass.
+  // canAccessInstructor takes an Instructor _id, so resolve the Darwinbox employeeId → record first.
+  if (req.user!.role === Role.CAPABILITY_MANAGER) {
+    const { Instructor } = await import("../models");
+    const { canAccessInstructor } = await import("../lib/rbac");
+    const inst: any = await Instructor.findOne({ employeeId }).select("_id").lean();
+    // No record (or out of scope) → don't leak another employee's certificates.
+    if (!inst || !(await canAccessInstructor(req.user!, String(inst._id)))) return res.status(403).json({ error: "Out of scope" });
+  }
   const { getCertSchema } = await import("../lib/settings");
   const fileFields = (await getCertSchema()).fields.filter((f) => f.type === "FILE");
-  const rows = await Certification.find({ employeeId: clean(req.params.employeeId) }).sort({ createdAt: -1 }).lean();
+  const rows = await Certification.find({ employeeId }).sort({ createdAt: -1 }).lean();
   const items = rows.map((c) => {
     const s = serialize(c);
     const files = fileFields.map((f) => ({ label: f.label, url: s.answers[f.key] })).filter((x) => x.url);

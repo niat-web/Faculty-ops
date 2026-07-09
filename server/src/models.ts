@@ -164,6 +164,8 @@ const EditRequestSchema = new Schema(
     instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", required: true },
     instructorName: String,
     fieldKey: String, fieldLabel: String, oldValue: String, newValue: String,
+    // SENSITIVE fields: oldValue/newValue are stored ENCRYPTED and masked to "••••" in the API/emails. (Bug 1.4)
+    sensitive: { type: Boolean, default: false },
     reason: { type: String, required: true },
     proofPath: { type: String, default: null },
     status: { type: String, default: "PENDING" },
@@ -190,6 +192,8 @@ const BatchItemSchema = new Schema(
     instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", required: true },
     instructorName: String,
     fieldKey: String, fieldLabel: String, oldValue: String, newValue: String,
+    // SENSITIVE fields: oldValue/newValue stored ENCRYPTED, masked in the API. (Bug 1.4)
+    sensitive: { type: Boolean, default: false },
   },
   { _id: true }
 );

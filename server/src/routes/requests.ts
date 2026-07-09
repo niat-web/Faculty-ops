@@ -4,7 +4,13 @@ import { EditRequest, EditRequestBatch, FieldDefinition, Instructor, User } from
 import { Role } from "../enums";
 import { canApproveRequests, canAccessInstructor } from "../lib/rbac";
 import { applyFieldChange, notify, writeAudit, validateValue } from "../lib/services";
-import { maybeDecrypt } from "../lib/crypto";
+import { maybeDecrypt, encrypt } from "../lib/crypto";
+
+// SENSITIVE-field masking (Bug 1.4): values are encrypted at rest on the request and masked in the API/
+// emails so a secret masked in the audit log isn't exposed through the request workflow.
+const MASK = "••••";
+const encMaybe = (sensitive: boolean, v: any) => (sensitive ? encrypt(String(v ?? "")) : (v ?? ""));
+const showMaybe = (sensitive: boolean, v: any) => (sensitive ? MASK : (maybeDecrypt(v) ?? v ?? ""));
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
 import { requireUser } from "../middleware";
 
@@ -45,7 +51,7 @@ router.get("/", async (req, res) => {
   res.json({
     requests: rows.map((r: any) => ({
       id: String(r._id), instructorId: String(r.instructorId), instructorName: r.instructorName,
-      fieldLabel: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: r.reason,
+      fieldLabel: r.fieldLabel, oldValue: showMaybe(!!r.sensitive, r.oldValue), newValue: showMaybe(!!r.sensitive, r.newValue), reason: r.reason,
       status: r.status, requesterName: r.requesterName, decisionComment: r.decisionComment,
       proofPath: r.proofPath || null,
       decidable: isOps || String(r.approverId) === u.id, // can THIS viewer approve/reject it
@@ -57,7 +63,7 @@ router.get("/", async (req, res) => {
       decisionComment: b.decisionComment, createdAt: b.createdAt,
       decidable: isOps || String(b.approverId) === u.id,
       deletable: String(b.requesterId) === u.id && b.status === "PENDING",
-      items: (b.items || []).map((it: any) => ({ instructorId: String(it.instructorId), instructorName: it.instructorName, fieldLabel: it.fieldLabel, oldValue: it.oldValue, newValue: it.newValue })),
+      items: (b.items || []).map((it: any) => ({ instructorId: String(it.instructorId), instructorName: it.instructorName, fieldLabel: it.fieldLabel, oldValue: showMaybe(!!it.sensitive, it.oldValue), newValue: showMaybe(!!it.sensitive, it.newValue) })),
     })),
   });
 });
@@ -90,9 +96,11 @@ router.post("/batch", async (req, res) => {
     const newValue = String(it?.newValue ?? "");
     const verr = validateValue(def.type, newValue, { min: def.min, max: def.max, pattern: def.pattern });
     if (verr) return res.status(400).json({ error: `${def.label} (${inst.name}): ${verr}` });
+    const sensitive = def.visibility === "SENSITIVE";
     items.push({
-      instructorId, instructorName: inst.name, fieldKey, fieldLabel: def.label,
-      oldValue: maybeDecrypt((inst.values || {})[fieldKey]) || "", newValue,
+      instructorId, instructorName: inst.name, fieldKey, fieldLabel: def.label, sensitive,
+      // Sensitive values encrypted at rest + masked in the API (Bug 1.4).
+      oldValue: encMaybe(sensitive, maybeDecrypt((inst.values || {})[fieldKey]) || ""), newValue: encMaybe(sensitive, newValue),
     });
   }
 
@@ -129,10 +137,12 @@ router.post("/batch/:id/decide", async (req, res) => {
   if (b.status !== "PENDING") return res.status(409).json({ error: "Already decided" });
 
   if (decision === "APPROVE") {
-    // Apply every item. Each applyFieldChange re-reads the real oldValue + writes its own audit row.
+    // Apply every item. Each applyFieldChange re-reads the real oldValue + writes its own (masked) audit row.
+    // Sensitive items are stored encrypted (Bug 1.4) — decrypt the real value to apply; applyFieldChange re-encrypts.
     for (const it of b.items) {
       try {
-        await applyFieldChange({ actor: u, instructorId: String(it.instructorId), fieldKey: it.fieldKey, fieldLabel: it.fieldLabel, oldValue: it.oldValue, newValue: it.newValue, reason: b.reason || "Batch edit" });
+        const realNew = it.sensitive ? (maybeDecrypt(it.newValue) ?? "") : it.newValue;
+        await applyFieldChange({ actor: u, instructorId: String(it.instructorId), fieldKey: it.fieldKey, fieldLabel: it.fieldLabel, newValue: realNew, reason: b.reason || "Batch edit" });
       } catch (e: any) { console.error("[batch] apply failed:", it.fieldKey, e?.message); }
     }
     b.status = "APPROVED"; b.decisionComment = comment; b.decidedAt = new Date(); await b.save();
@@ -180,12 +190,14 @@ router.post("/", uploadProof, async (req, res) => {
   if (!approverId) return res.status(400).json({ error: u.role === Role.SENIOR_MANAGER ? "No Ops Admin available to approve." : "No Senior Manager available to approve." });
 
   const proofPath = proof ? await uploadBuffer(proof.originalname || "proof", proof.mimetype || "application/octet-stream", proof.buffer) : null;
+  const sensitive = def.visibility === "SENSITIVE";
   let r: any;
   try {
     r = await EditRequest.create({
-      instructorId, instructorName: inst.name, fieldKey, fieldLabel: def.label,
-      oldValue: maybeDecrypt(inst.values?.[fieldKey]) || "", newValue, reason, proofPath,
-      status: "PENDING", requesterId: u.id, requesterName: u.name, approverId,
+      instructorId, instructorName: inst.name, fieldKey, fieldLabel: def.label, sensitive,
+      // Sensitive values are encrypted at rest here (and masked in the list/emails). (Bug 1.4)
+      oldValue: encMaybe(sensitive, maybeDecrypt(inst.values?.[fieldKey]) || ""), newValue: encMaybe(sensitive, newValue),
+      reason, proofPath, status: "PENDING", requesterId: u.id, requesterName: u.name, approverId,
     });
   } catch (e) { if (proofPath) await deleteFile(proofPath); throw e; } // don't orphan the proof blob
   // Deep link straight to THIS request so the approver lands on exactly the one to review.
@@ -223,17 +235,24 @@ router.post("/:id/decide", async (req, res) => {
   if (!isOps && String(r.approverId) !== req.user!.id) return res.status(403).json({ error: "Not your request to decide" });
   if (r.status !== "PENDING") return res.status(409).json({ error: "Already decided" });
 
+  // For a SENSITIVE request the stored values are encrypted (Bug 1.4) — decrypt the real newValue to apply,
+  // but mask it in the audit trail and never put it in the notification body.
+  const sensitive = !!r.sensitive;
+  const realNew = sensitive ? (maybeDecrypt(r.newValue) ?? "") : r.newValue;
+  const auditNew = sensitive ? MASK : r.newValue;
+  const auditOld = sensitive ? MASK : r.oldValue;
   if (decision === "APPROVE") {
-    await applyFieldChange({ actor: req.user!, instructorId: String(r.instructorId), fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: r.reason, proofPath: r.proofPath });
+    // applyFieldChange re-resolves sensitivity + re-encrypts/masks internally; give it the real value.
+    await applyFieldChange({ actor: req.user!, instructorId: String(r.instructorId), fieldKey: r.fieldKey, fieldLabel: r.fieldLabel, newValue: realNew, reason: r.reason, proofPath: r.proofPath });
     r.status = "APPROVED"; r.decisionComment = comment; r.decidedAt = new Date(); await r.save();
     // Audit the decision itself (who approved), in addition to the field change.
-    await writeAudit({ instructorId: r.instructorId, instructorName: r.instructorName, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "REQUEST_DECISION", fieldName: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: `Approved${comment ? ": " + comment : ""}` });
-    await notify(String(r.requesterId), { type: "EDIT_REQUEST_APPROVED", title: "Your edit request was approved", body: `${r.fieldLabel} → ${r.newValue}`, link: `/app/instructors/${r.instructorId}` });
+    await writeAudit({ instructorId: r.instructorId, instructorName: r.instructorName, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "REQUEST_DECISION", fieldName: r.fieldLabel, oldValue: auditOld, newValue: auditNew, reason: `Approved${comment ? ": " + comment : ""}` });
+    await notify(String(r.requesterId), { type: "EDIT_REQUEST_APPROVED", title: "Your edit request was approved", body: sensitive ? `${r.fieldLabel} updated` : `${r.fieldLabel} → ${r.newValue}`, link: `/app/instructors/${r.instructorId}` });
   } else if (decision === "REJECT") {
     r.status = "REJECTED"; r.decisionComment = comment; r.decidedAt = new Date();
     if (r.proofPath) { await deleteFile(r.proofPath); r.proofPath = null; } // proof no longer needed
     await r.save();
-    await writeAudit({ instructorId: r.instructorId, instructorName: r.instructorName, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "REQUEST_DECISION", fieldName: r.fieldLabel, oldValue: r.oldValue, newValue: r.newValue, reason: `Rejected: ${comment || "no comment"}` });
+    await writeAudit({ instructorId: r.instructorId, instructorName: r.instructorName, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "REQUEST_DECISION", fieldName: r.fieldLabel, oldValue: auditOld, newValue: auditNew, reason: `Rejected: ${comment || "no comment"}` });
     await notify(String(r.requesterId), { type: "EDIT_REQUEST_REJECTED", title: "Your edit request was rejected", body: comment || "No comment provided", link: `/app/instructors/${r.instructorId}` });
   } else return res.status(400).json({ error: "Bad decision" });
   res.json({ ok: true });
@@ -250,7 +269,7 @@ router.delete("/:id", async (req, res) => {
   const { approverId, fieldLabel, instructorName, instructorId, oldValue, newValue, proofPath } = r;
   if (proofPath) { try { await deleteFile(proofPath); } catch { /* ignore */ } }
   await r.deleteOne();
-  await writeAudit({ instructorId, instructorName, actorId: u.id, actorName: u.name, actorRole: u.role, action: "REQUEST_DELETE", fieldName: fieldLabel, oldValue, newValue, reason: "Edit request withdrawn by requester" });
+  await writeAudit({ instructorId, instructorName, actorId: u.id, actorName: u.name, actorRole: u.role, action: "REQUEST_DELETE", fieldName: fieldLabel, oldValue: r.sensitive ? MASK : oldValue, newValue: r.sensitive ? MASK : newValue, reason: "Edit request withdrawn by requester" });
   if (approverId) await notify(String(approverId), { type: "EDIT_REQUEST_REJECTED", title: `${u.name} withdrew an edit request`, body: `${fieldLabel} for ${instructorName}`, link: "/app/requests", email: false });
   res.json({ ok: true });
 });

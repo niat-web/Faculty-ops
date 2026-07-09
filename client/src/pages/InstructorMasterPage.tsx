@@ -299,10 +299,10 @@ export default function InstructorMasterPage() {
     const prevRow = { ...row };
     setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? { ...r, payroll_entity: "University", workspace: uni } : r)));
     try {
-      const r = await api.post("/master/cell", { instructorId: row.id || null, employeeId: row.employeeId, name: row.name, key: "payroll_entity", value: "University" });
-      const iid = r?.instructorId || row.id || null;
-      if (iid && !row.id) setRows((rs) => rs.map((x) => (x.employeeId === row.employeeId ? { ...x, id: iid } : x)));
-      await api.post("/master/cell", { instructorId: iid, employeeId: row.employeeId, name: row.name, key: "workspace", value: uni });
+      // ONE atomic request sets both payroll_entity=University AND workspace=<university> (Bug 1.1 fix):
+      // the two can never diverge, so the university name is never lost.
+      const r = await api.post("/master/move-university", { instructorId: row.id || null, employeeId: row.employeeId, name: row.name, university: uni });
+      if (r?.instructorId && !row.id) setRows((rs) => rs.map((x) => (x.employeeId === row.employeeId ? { ...x, id: r.instructorId } : x)));
       toast.success(`${row.name} moved to University payroll: ${uni}`);
     } catch (e: any) {
       setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? prevRow : r)));

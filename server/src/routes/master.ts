@@ -416,6 +416,42 @@ router.post("/cell", guard, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Move to University payroll (ATOMIC) ────────────────────────────────────────────────────────────
+// Sets Payroll = University AND Workspace = <university> in ONE request, so the two can never diverge.
+// (The old client flow POSTed /cell twice; the 2nd write — key "workspace" — was rejected by the Darwinbox
+// read-only guard, leaving payroll=University with the university name lost. Bug 1.1.) Mirrors the
+// exit-alert "University payroll" outcome (exitAlerts.ts), which also writes both fields together.
+router.post("/move-university", guard, async (req, res) => {
+  let { instructorId } = req.body || {};
+  const employeeId = String(req.body?.employeeId || "").trim();
+  const name = String(req.body?.name || "").trim();
+  const university = String(req.body?.university || "").trim();
+  if (!university) return res.status(400).json({ error: "Pick the university / campus name." });
+
+  // Auto-create a minimal Mongo record for a Darwinbox-only row (same pattern as /cell).
+  if (!instructorId) {
+    if (!employeeId) return res.status(400).json({ error: "Employee ID is required to save this row." });
+    const existing: any = await Instructor.findOne({ employeeId }).select("_id").lean();
+    if (existing) instructorId = String(existing._id);
+    else {
+      const created = await Instructor.create({
+        employeeId, name: name || employeeId, status: "ONBOARDING",
+        lifecycle: [{ status: "ONBOARDING", note: "Created via Master edit (Darwinbox row)", actorId: req.user!.id, actorName: req.user!.name }],
+      });
+      instructorId = String(created._id);
+      await writeAudit({ instructorId: created._id, instructorName: created.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "INSTRUCTOR_CREATE", newValue: employeeId, reason: "Master edit" });
+    }
+  }
+  if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
+
+  // Both writes go through applyFieldChange (audited). payroll_entity is a managed FacultyOps column;
+  // workspace is written here directly (bypassing the /cell Darwinbox read-only guard) as part of the move.
+  await ensureMasterFields();
+  await applyFieldChange({ actor: req.user!, instructorId, fieldKey: "payroll_entity", fieldLabel: "Payroll", newValue: "University", reason: "Moved to University payroll" });
+  await applyFieldChange({ actor: req.user!, instructorId, fieldKey: "workspace", fieldLabel: "University / Campus", newValue: university, reason: "Moved to University payroll" });
+  res.json({ ok: true, instructorId });
+});
+
 // ─── Bulk edit: set common fields across many selected instructors at once ──
 // Identity / contact columns are intentionally NOT bulk-editable (these are per-person and would be
 // nonsensical to set in bulk). Everything else editable is allowed (Work Location, Contribution, Dept,
