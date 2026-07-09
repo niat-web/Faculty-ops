@@ -83,11 +83,24 @@ router.get("/org", async (req, res) => {
   for (const p of dir as any[]) addName(p.name, p.employeeId);
   for (const r of liveRows) addName(r.name, r.employeeId);
 
+  // Abbreviated-surname index: "Akhilendar Reddy Karri" → key "akhilendar reddy k" so a manager written
+  // as "Akhilendar Reddy K" still resolves. Value "" marks an AMBIGUOUS key (2+ people) → never used.
+  const abbrevKey = (name: any): string => { const t = norm2(stripName(name)).split(" ").filter(Boolean); if (t.length < 2 || !t[t.length - 1]) return ""; return [...t.slice(0, -1), t[t.length - 1][0]].join(" "); };
+  const abbrevToId = new Map<string, string>();
+  const addAbbrev = (name: any, id: any) => { const k = abbrevKey(name); const e = String(id || "").trim(); if (!k || !e) return; const ex = abbrevToId.get(k); if (ex === undefined) abbrevToId.set(k, e); else if (ex && norm2(ex) !== norm2(e)) abbrevToId.set(k, ""); };
+  for (const p of dir as any[]) addAbbrev(p.name, p.employeeId);
+  for (const r of liveRows) addAbbrev(r.name, r.employeeId);
+  // Resolve a bare NAME → Employee ID: exact match first, then the unambiguous abbreviation fallback.
+  const resolveNameToId = (name: any): string => {
+    const exact = nameToId.get(norm2(stripName(name))); if (exact) return exact;
+    const ab = abbrevToId.get(abbrevKey(name)); return ab && ab.length ? ab : "";
+  };
+
   // Resolve any reporting-manager reference (id, "(NWxxxx)" in the name, or a bare name) to one Employee ID.
   const resolveRmid = (rmIdField: any, rmName: any): string => {
     const direct = String(rmIdField || rmidFromName(rmName) || "").trim();
     if (direct) return direct;
-    return nameToId.get(norm2(stripName(rmName))) || "";
+    return resolveNameToId(rmName);
   };
 
   // employee → their OWN manager's Employee ID. Sourced FIRST from the full Darwinbox directory (has
@@ -96,7 +109,7 @@ router.get("/org", async (req, res) => {
   const empToManager = new Map<string, string>();
   for (const p of dir as any[]) {
     const e = norm2(p.employeeId); if (!e) continue;
-    const mgr = norm2(p.managerEmployeeId) || norm2(nameToId.get(norm2(stripName(p.managerName))) || "");
+    const mgr = norm2(p.managerEmployeeId) || norm2(resolveNameToId(p.managerName));
     if (mgr) empToManager.set(e, mgr);
   }
   for (const r of liveRows) {
@@ -125,7 +138,7 @@ router.get("/org", async (req, res) => {
   const managerIdOfCm = (rmid: string, person: any): string => {
     const fromDir = norm2(person?.managerEmployeeId)
       || norm2(dirByName.get(norm2(stripName(person?.managerName)))?.employeeId || "")
-      || norm2(nameToId.get(norm2(stripName(person?.managerName))) || "");
+      || norm2(resolveNameToId(person?.managerName));
     if (fromDir) return fromDir;
     return norm2(rmid) ? (empToManager.get(norm2(rmid)) || "") : "";
   };
@@ -140,7 +153,7 @@ router.get("/org", async (req, res) => {
     const self = dirById.get(norm2(r.employeeId)); // the instructor's own Darwinbox record
     const rmid = String(
       (self && self.managerEmployeeId) || r.reporting_manager_employee_id || rmidFromName(r.reporting_manager) || ""
-    ).trim() || (nameToId.get(norm2(stripName((self && self.managerName) || r.reporting_manager))) || "");
+    ).trim() || resolveNameToId((self && self.managerName) || r.reporting_manager);
     // Prefer the manager's canonical directory name; fall back to the (stripped) name on the row.
     const canon = rmid ? dirById.get(norm2(rmid)) : null;
     const name = stripName((canon && canon.name) || (self && self.managerName) || r.reporting_manager) || rmid;

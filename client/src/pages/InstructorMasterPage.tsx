@@ -95,10 +95,13 @@ export default function InstructorMasterPage() {
   useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
-  // Reporting-Manager deep-link (Org Chart CM click → ?rmid=<Employee ID>&rmname=<name>).
+  // Reporting-Manager deep-link (Org Chart CM click). Resolved CM → ?rmid=<Employee ID>&rmname=<name>;
+  // an id-less (Unassigned) CM → ?rmnameFilter=<name>&rmname=<name> (filter the Master by manager name).
   const rmName = searchParams.get("rmname") || "";
+  const rmNameFilter = searchParams.get("rmnameFilter") || "";
+  const rmFilterActive = applied.reportingManager.length > 0 || !!rmNameFilter;
   function clearReportingManager() {
-    const sp = new URLSearchParams(searchParams); sp.delete("rmid"); sp.delete("rmname"); setSearchParams(sp, { replace: true });
+    const sp = new URLSearchParams(searchParams); sp.delete("rmid"); sp.delete("rmname"); sp.delete("rmnameFilter"); setSearchParams(sp, { replace: true });
     setApplied((f) => ({ ...f, reportingManager: [] })); setDraft((f) => ({ ...f, reportingManager: [] })); setPage(1);
   }
 
@@ -125,6 +128,7 @@ export default function InstructorMasterPage() {
     if (role) p.set("role", role);
     if (contribution) p.set("contribution", contribution);
     if (applied.reportingManager.length) p.set("rmid", applied.reportingManager.join(","));
+    if (rmNameFilter) p.set("rmnameFilter", rmNameFilter);
     if (applied.managerId.length) p.set("managerId", applied.managerId.join(","));
     if (applied.department.length) p.set("department", applied.department.join(","));
     if (applied.designation.length) p.set("designation", applied.designation.join(","));
@@ -142,7 +146,7 @@ export default function InstructorMasterPage() {
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, scope, role, contribution, sort.sort, sort.dir, deptSel]);
+  }, [dq, applied, rmNameFilter, scope, role, contribution, sort.sort, sort.dir, deptSel]);
 
   // Sticky header during PAGE scroll (same technique as the Training Stats grid): the page (<main>)
   // scrolls vertically while the card scrolls horizontally. CSS `position: sticky` can't pin the header
@@ -291,9 +295,9 @@ export default function InstructorMasterPage() {
               <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
             </span>
           )}
-          {applied.reportingManager.length > 0 && (
+          {rmFilterActive && (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
-              Reporting Manager: {rmName || applied.reportingManager.join(", ")}
+              Reporting Manager: {rmName || rmNameFilter || applied.reportingManager.join(", ")}
               <button onClick={clearReportingManager} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
             </span>
           )}

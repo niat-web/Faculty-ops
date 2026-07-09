@@ -109,6 +109,9 @@ router.get("/", guard, async (req, res) => {
   const regions = listParam(req.query.region);
   const contributions = listParam(req.query.contribution);
   const rmids = listParam(req.query.rmid); // Darwinbox reporting-manager employee-id (CM Distribution drill-down)
+  // Fallback for an Org-chart CM that has NO resolved Employee ID: filter by the reporting-manager NAME.
+  const rmNameFilter = String(req.query.rmnameFilter || "").trim();
+  const stripRmName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
   const designations = listParam(req.query.designation);
   const qualifications = listParam(req.query.qualification);
   const genders = listParam(req.query.gender);
@@ -157,6 +160,7 @@ router.get("/", guard, async (req, res) => {
     if (regions.length && !has(regions, r.contribution_region)) return false;
     if (contributions.length && !has(contributions, r.contribution)) return false;
     if (rmids.length && !has(rmids, r.reporting_manager_employee_id)) return false;
+    if (rmNameFilter && norm(stripRmName(r.reporting_manager)) !== norm(stripRmName(rmNameFilter))) return false;
     if (designations.length && !has(designations, r.designation)) return false;
     if (qualifications.length && !has(qualifications, r.qualification)) return false;
     if (genders.length && !has(genders, r.gender)) return false;

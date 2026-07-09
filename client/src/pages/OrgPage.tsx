@@ -221,7 +221,9 @@ export default function OrgPage() {
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">Ops Admin</span></span>
     </div>
   ) : (
-    <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(cm.rmid ? `/app/instructors/master?rmid=${encodeURIComponent(cm.rmid)}&rmname=${encodeURIComponent(cm.name)}` : `/app/instructors/master?managerId=${cm.id}`)}
+    <button key={cm.id} ref={setNode(cm.id)} onClick={() => navigate(cm.rmid
+      ? `/app/instructors/master?rmid=${encodeURIComponent(cm.rmid)}&rmname=${encodeURIComponent(cm.name)}`
+      : `/app/instructors/master?rmnameFilter=${encodeURIComponent(cm.name)}&rmname=${encodeURIComponent(cm.name)}`)}
       className={`group flex w-56 shrink-0 items-center gap-2.5 rounded-xl border bg-white p-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${hit(cm.name) ? "border-brand-500 ring-2 ring-brand-400 ring-offset-2" : "border-slate-200 hover:border-brand-300"}`}>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">{cm.name.charAt(0)}</span>
       <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{cm.name}</span><span className="block text-[11px] text-slate-400">{cm.reportees} instructor{cm.reportees === 1 ? "" : "s"}</span></span>

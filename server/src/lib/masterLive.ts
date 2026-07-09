@@ -74,10 +74,18 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   // strip the "(NWxxxx)" suffix AND collapse internal whitespace so name lookups are match-stable.
   const strip2 = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
   const dirNameToId = new Map<string, string>();
-  if (nameCol2 && empCol) for (const r of data.rows) { const n = norm(strip2(r[nameCol2])); const e = clean(r[empCol]); if (n && e && !dirNameToId.has(n)) dirNameToId.set(n, e); }
+  // Abbreviated-surname index ("Akhilendar Reddy Karri" → "akhilendar reddy k"); "" = ambiguous → unused.
+  const abbrevKey = (name: any): string => { const t = norm(strip2(name)).split(" ").filter(Boolean); if (t.length < 2 || !t[t.length - 1]) return ""; return [...t.slice(0, -1), t[t.length - 1][0]].join(" "); };
+  const abbrevToId = new Map<string, string>();
+  if (nameCol2 && empCol) for (const r of data.rows) {
+    const n = norm(strip2(r[nameCol2])); const e = clean(r[empCol]);
+    if (n && e && !dirNameToId.has(n)) dirNameToId.set(n, e);
+    const k = abbrevKey(r[nameCol2]); if (k && e) { const ex = abbrevToId.get(k); if (ex === undefined) abbrevToId.set(k, e); else if (ex && norm(ex) !== norm(e)) abbrevToId.set(k, ""); }
+  }
+  const nameToIdResolve = (name: any): string => { const ex = dirNameToId.get(norm(strip2(name))); if (ex) return ex; const ab = abbrevToId.get(abbrevKey(name)); return ab && ab.length ? ab : ""; };
   // Resolve a row's reporting-manager Employee ID: "(NWxxxx)" in the name → a manager-id column → name→id.
   const resolveMgrId = (raw: any, rmName: string): string =>
-    rmid2(rmName) || (mgrIdCol ? clean(raw[mgrIdCol]) : "") || dirNameToId.get(norm(strip2(rmName))) || "";
+    rmid2(rmName) || (mgrIdCol ? clean(raw[mgrIdCol]) : "") || nameToIdResolve(rmName);
 
   // In-scope Darwinbox rows (instructor departments only).
   const inScope = deptCol ? data.rows.filter((r) => isOurDepartment(clean(r[deptCol]))) : data.rows;
@@ -176,7 +184,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.uid = clean(d.uid) || "";
     row.exit_date = mv("exit_date") || clean(d.exit?.lastWorkingDay);
     // Canonical Reporting Manager Employee ID (stored → "(NWxxxx)" in the name → name→id lookup).
-    row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || dirNameToId.get(norm(strip2(row.reporting_manager))) || "";
+    row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || nameToIdResolve(row.reporting_manager);
     row.name = row.name || "";
     row.email = row.email || "";
     row.campus = row.campus || "";
