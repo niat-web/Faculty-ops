@@ -113,6 +113,10 @@ router.get("/", async (req, res) => {
   // Scope-independent base (everything except the status/scope condition) — used for the bucket counts.
   const scope = String(req.query.scope || "").trim();
   const base: any = { ...instructorScopeFilter(user) };
+  // Exclude admin-hidden (removed) people so the list + counts match the Master everywhere.
+  const { removedEmployeeIdList } = await import("../lib/removed");
+  const removedIds = await removedEmployeeIdList();
+  if (removedIds.length) base.employeeId = { $nin: removedIds };
   if (campuses.length) base.campus = inOrEq(campuses);
   // Instructors page = teaching instructors only. A valid (non-excluded) department filter narrows
   // further; otherwise exclude the non-teaching departments (they remain in Instructor Master).
@@ -195,9 +199,13 @@ router.get("/exited", async (req, res) => {
   if (exitFrom) { const d = parseLooseDate(exitFrom); if (d) from = d; }
   if (exitTo) { const d = parseLooseDate(exitTo); if (d) { d.setHours(23, 59, 59, 999); to = d; } }
 
-  let filtered = all;
+  // Exclude admin-hidden (removed) people — same hide the Master/Org/Training apply.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const { norm: normEmp } = await import("../lib/darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
+  let filtered = removedSet.size ? (all as any[]).filter((r) => !removedSet.has(normEmp(r.employeeId))) : all;
   if (from || to) {
-    filtered = all.filter((r: any) => {
+    filtered = filtered.filter((r: any) => {
       const ds = r.exit?.lastWorkingDay || (r.values?.exit_date ? maybeDecrypt(r.values.exit_date) : "");
       const d = parseLooseDate(String(ds || ""));
       if (!d) return false; // no parseable exit date → excluded when a date filter is active
@@ -253,17 +261,29 @@ router.get("/roles", async (req, res) => {
   const byRole: Record<string, string[]> = { OPS_ADMIN: [], SENIOR_MANAGER: [], CAPABILITY_MANAGER: [] };
   const roleByEmail: Record<string, string> = {};
   for (const u of staff as any[]) { const e = (u.email || "").toLowerCase(); if (!e) continue; byRole[u.role]?.push(e); roleByEmail[e] = u.role; }
-  // All role counts derive from live Darwinbox (same source as the Instructor Master), so they agree:
+  // All role counts derive from the hourly-synced Mongo master (same source as the Instructor Master):
   //  Ops Admin = "Delivery Support" department · Instructor = every other instructor department ·
   //  Capability Manager = unique reporting managers · Senior Manager = the admin-curated list.
   const live = await loadLiveMasterRows();
-  const activeRows = live.ok ? live.rows.filter((r) => !r.exited) : [];
+  const activeRows = live.ok ? live.rows.filter((r) => !r.exited) : []; // already excludes removed people
   const opsCount = activeRows.filter((r) => isOpsDept(r.department)).length;
   const instr = activeRows.filter((r) => isInstructorDept(r.department)).length;
+  // A removed CM/SM must not be counted even if they still manage (non-removed) reportees.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const { norm: normId } = await import("../lib/darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
   const rmSet = new Set<string>();
-  for (const r of activeRows) { if (isInstructorDept(r.department)) { const raw = String(r.reporting_manager || "").trim(); if (raw) rmSet.add(raw); } }
+  for (const r of activeRows) {
+    if (!isInstructorDept(r.department)) continue;
+    const raw = String(r.reporting_manager || "").trim();
+    if (!raw) continue;
+    const cmId = (raw.match(/\((NW[^)]+)\)/i) || [])[1] || "";
+    if (cmId && removedSet.has(normId(cmId))) continue; // the manager themselves is removed → don't count
+    rmSet.add(raw);
+  }
   const cmCount = rmSet.size;
-  const smCount = await SeniorManager.countDocuments();
+  const smDocs = await SeniorManager.find().select("employeeId").lean();
+  const smCount = (smDocs as any[]).filter((s) => !removedSet.has(normId(s.employeeId))).length;
   const counts = { OPS_ADMIN: opsCount, SENIOR_MANAGER: smCount, CAPABILITY_MANAGER: cmCount, INSTRUCTOR: instr };
   const total = opsCount + smCount + cmCount + instr;
 
@@ -274,6 +294,10 @@ router.get("/roles", async (req, res) => {
       Instructor.find({ ...scopeF, $or: [{ name: rx }, { employeeId: rx }, { email: rx }] }).select("employeeId name email").limit(25).lean(),
       User.find({ role: { $in: [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER] }, active: true, $or: [{ name: rx }, { email: rx }] }).select("name email role").limit(25).lean(),
     ]);
+    // Exclude admin-hidden (removed) people from search results — same hide as everywhere else.
+    const { removedEmployeeIdSet } = await import("../lib/removed");
+    const { norm: normEmp } = await import("../lib/darwinboxSync");
+    const removedSet = await removedEmployeeIdSet();
     const seen = new Set<string>();
     matches = [
       ...(foundStaff as any[]).map((u) => {
@@ -282,22 +306,31 @@ router.get("/roles", async (req, res) => {
         return { id: String(u._id), employeeId: "", name: u.name, email: u.email || "", role: u.role, staffOnly: true };
       }),
       ...(found as any[])
-        .filter((f) => !seen.has((f.email || "").toLowerCase()))
+        .filter((f) => !seen.has((f.email || "").toLowerCase()) && !removedSet.has(normEmp(f.employeeId)))
         .map((f) => ({ id: String(f._id), employeeId: f.employeeId, name: f.name, email: f.email || "", role: roleByEmail[(f.email || "").toLowerCase()] || "INSTRUCTOR" })),
     ].slice(0, 25);
   }
   res.json({ counts, total, matches });
 });
 
+// Removed-aware scope for filter facets (so a hidden person's unique campus/dept doesn't linger).
+async function scopeExcludingRemoved(user: any): Promise<any> {
+  const { removedEmployeeIdList } = await import("../lib/removed");
+  const removedIds = await removedEmployeeIdList();
+  const f: any = { ...instructorScopeFilter(user) };
+  if (removedIds.length) f.employeeId = { $nin: removedIds };
+  return f;
+}
+
 // Distinct campuses (for filters).
 router.get("/campuses", async (req, res) => {
-  const list = await Instructor.distinct("campus", instructorScopeFilter(req.user!));
+  const list = await Instructor.distinct("campus", await scopeExcludingRemoved(req.user!));
   res.json({ campuses: list.filter(Boolean).sort() });
 });
 
 // Distinct departments (for the Instructors-page department filter).
 router.get("/departments", async (req, res) => {
-  const list = await Instructor.distinct("values.department", instructorScopeFilter(req.user!));
+  const list = await Instructor.distinct("values.department", await scopeExcludingRemoved(req.user!));
   res.json({ departments: (list as string[]).filter(Boolean).filter((d) => !isNonInstructorDept(d)).sort() });
 });
 
@@ -411,7 +444,12 @@ router.get("/export.csv", async (req, res) => {
     if (q) { const rx = new RegExp(escapeRegex(q), "i"); baseFilter.$or = [{ name: rx }, { employeeId: rx }, { campus: rx }, { uid: rx }]; }
     if (!isNaN(minTraining)) baseFilter.$expr = { $gte: [{ $convert: { input: "$values.primary_pct", to: "int", onError: 0, onNull: 0 } }, minTraining] };
   }
-  const rows = await Instructor.find(baseFilter).sort({ employeeId: 1 }).limit(20000).lean(); // cap to bound memory (Improvement)
+  const allRows = await Instructor.find(baseFilter).sort({ employeeId: 1 }).limit(20000).lean(); // cap to bound memory (Improvement)
+  // Exclude admin-hidden (removed) people — the export must match what the grid shows.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const { norm: normEmp } = await import("../lib/darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
+  const rows = removedSet.size ? (allRows as any[]).filter((r) => !removedSet.has(normEmp(r.employeeId))) : allRows;
   const defs = await FieldDefinition.find({ archivedAt: null, scope: "GLOBAL", visibility: { $ne: "SENSITIVE" } }).sort({ module: 1, createdAt: 1 }).lean();
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];

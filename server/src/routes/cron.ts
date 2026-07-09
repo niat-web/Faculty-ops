@@ -58,6 +58,14 @@ router.post("/recompute-summaries", async (_req, res) => {
   res.json({ ok: true, scanned: docs.length, updated });
 });
 
+// BigQuery → Mongo training persist (scheduled): same engine as the in-process hourly job.
+// Keeps values.primary_pct / moduleStatus fresh so the Master serves training % from MongoDB.
+router.post("/training-sync", async (_req, res) => {
+  const { persistBigQueryTraining } = await import("../lib/trainingSync");
+  const report = await persistBigQueryTraining();
+  res.status(report.ok ? 200 : 502).json(report);
+});
+
 // Darwinbox → Instructor Master sync (scheduled): same engine as the manual Data-page sync.
 // Department-scoped, Employee ID keyed; Darwinbox wins on synced fields only.
 router.post("/darwinbox-sync", async (_req, res) => {

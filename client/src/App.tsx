@@ -16,7 +16,7 @@ import { lazyWithReload as lazy, isChunkError, reloadOnce } from "./lazyWithRelo
 function routeSkeleton(p: string) {
   if (p === "/app" || p === "/app/") return <DashboardSkeleton />;
   if (p.startsWith("/app/training") || p.startsWith("/app/my-stats")) return <GridSkeleton cols={10} />;
-  if (p.startsWith("/app/instructors/master") || p.startsWith("/app/instructors/exited")) return <GridSkeleton />;
+  if (p.startsWith("/app/instructors/master") || p.startsWith("/app/instructors/exited") || p.startsWith("/app/instructors/moved")) return <GridSkeleton />;
   if (/^\/app\/instructors\/[^/]+$/.test(p)) return <FormSkeleton sections={3} />; // instructor profile
   if (p.startsWith("/app/settings") || p.startsWith("/app/account")) return <FormSkeleton />;
   if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/audit")) return <GridSkeleton />;
@@ -37,12 +37,14 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const InstructorsPage = lazy(() => import("./pages/InstructorsPage"));
 const InstructorMasterPage = lazy(() => import("./pages/InstructorMasterPage"));
 const InstructorExitedPage = lazy(() => import("./pages/InstructorExitedPage"));
+const InstructorMovedPage = lazy(() => import("./pages/InstructorMovedPage"));
 const RolesPage = lazy(() => import("./pages/RolesPage"));
 const InstructorProfilePage = lazy(() => import("./pages/InstructorProfilePage"));
 const MyStatsPage = lazy(() => import("./pages/MyStatsPage"));
 const TrainingPage = lazy(() => import("./pages/TrainingPage"));
 const TrainingColumnsPage = lazy(() => import("./pages/TrainingColumnsPage"));
 const MasterColumnsPage = lazy(() => import("./pages/MasterColumnsPage"));
+const CertFormBuilderPage = lazy(() => import("./pages/settings/CertFormBuilderPage"));
 const ContributionPage = lazy(() => import("./pages/ContributionPage"));
 const CampuswisePage = lazy(() => import("./pages/CampuswisePage"));
 const ManagerDistributionPage = lazy(() => import("./pages/ManagerDistributionPage"));
@@ -54,11 +56,13 @@ const AuditPage = lazy(() => import("./pages/AuditPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
+const DocsPage = lazy(() => import("./pages/DocsPage"));
 const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
 // Settings tabs merged into 4 grouped pages (each wrapper renders the existing sub-pages unchanged).
 const CommunicationsSettingsPage = lazy(() => import("./pages/settings/CommunicationsSettingsPage"));
 const SystemSettingsPage = lazy(() => import("./pages/settings/SystemSettingsPage"));
 const OperationsSettingsPage = lazy(() => import("./pages/settings/OperationsSettingsPage"));
+const RemovedSettingsPage = lazy(() => import("./pages/settings/RemovedSettingsPage"));
 
 // Catches render-time errors (e.g. an unexpected API shape) so a page degrades to a card
 // instead of a blank white screen. (Bug B7)
@@ -131,6 +135,8 @@ export default function App() {
       {/* Public Certificates form — opens only for the exact UUID link; access also gated server-side. */}
       <Route path="/certifications/:token" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
       <Route path="/certifications" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
+      {/* Public documentation — standalone page, no app shell, no login required. */}
+      <Route path="/docs" element={<Suspense fallback={<Loading full />}><DocsPage /></Suspense>} />
       <Route path="/print/instructors/:id" element={<Protected><Suspense fallback={<Loading full />}><PrintProfilePage /></Suspense></Protected>} />
       <Route
         path="/app/*"
@@ -148,6 +154,7 @@ export default function App() {
                 <Route path="instructors" element={<RedirectToMaster />} />
                 <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/exited" element={<RequireRole roles={STAFF}><InstructorExitedPage /></RequireRole>} />
+                <Route path="instructors/moved" element={<RequireRole roles={STAFF}><InstructorMovedPage /></RequireRole>} />
                 <Route path="instructors/roles" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />
                 <Route path="instructors/:id" element={<InstructorProfilePage />} />
                 <Route path="training" element={<Navigate to="/app/training/tech-stats" replace />} />
@@ -175,6 +182,7 @@ export default function App() {
                   <Route path="communications" element={<CommunicationsSettingsPage />} />
                   <Route path="system" element={<SystemSettingsPage />} />
                   <Route path="operations" element={<OperationsSettingsPage />} />
+                  <Route path="removed" element={<RemovedSettingsPage />} />
                   {/* Old per-tab URLs → redirect to their new merged tab (keeps existing links working). */}
                   <Route path="notifications" element={<Navigate to="/app/settings/communications" replace />} />
                   <Route path="emails" element={<Navigate to="/app/settings/communications" replace />} />
@@ -188,6 +196,7 @@ export default function App() {
                 </Route>
                 <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
                 <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />
+                <Route path="settings/certifications/builder" element={<RequireRole roles={["OPS_ADMIN"]}><CertFormBuilderPage /></RequireRole>} />
                 <Route path="*" element={<Navigate to="/app" replace />} />
               </Routes>
               </Suspense>

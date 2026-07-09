@@ -9,6 +9,7 @@ import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
 import { isOpsDept, isInstructorDept, seniorManagerIdSet, cmDarwinboxEmployeeId } from "../lib/staffRoles";
+import { getMasterDepartments, getMasterPayrollVisibility } from "../lib/settings";
 import { norm } from "../lib/darwinboxSync";
 import { requireUser } from "../middleware";
 
@@ -126,11 +127,28 @@ router.get("/", guard, async (req, res) => {
   const live = await loadLiveMasterRows(String(req.query.refresh || "") === "1");
   if (!live.ok) return res.status(502).json({ error: live.error, instructors: [], total: 0, page, per: PER, pages: 1, counts: { all: 0, active: 0, exited: 0 }, departments: [], defaultUnchecked: [] });
 
+  // Departments unchecked BY DEFAULT: an Ops Admin's explicit list (Settings → Operations) wins; when
+  // they've never configured one, fall back to the built-in non-teaching-support default. Matched by
+  // normalised exact name against the live department set.
+  const deptCfg = await getMasterDepartments();
+  const hiddenSet = new Set(deptCfg.hidden.map((d) => norm(d)));
+  const isDeptDefaultUnchecked = (dept: string) => deptCfg.configured ? hiddenSet.has(norm(dept)) : isDefaultUnchecked(dept);
+
+  // Payroll visibility (Ops-controlled global default): hide Nxtwave and/or University rows from the grid.
+  // Rows with a blank/other payroll are always shown. The Instructor-Moved page ignores this entirely.
+  const payVis = await getMasterPayrollVisibility();
+  const payrollAllowed = (r: any) => {
+    const p = norm(r.payroll_entity);
+    if (p === "nxtwave") return payVis.nxtwave;
+    if (p === "university") return payVis.university;
+    return true;
+  };
+
   // Department quick-filter: ?depts=<comma list> = show ONLY these departments (exact). When the param
-  // is ABSENT, default-exclude the non-teaching support depts (Delivery Support, Instructor Platform).
+  // is ABSENT, default-exclude whichever departments are marked unchecked-by-default (above).
   const deptParamPresent = req.query.depts != null;
   const deptInclude = new Set(listParam(req.query.depts).map((d) => norm(d)));
-  const deptAllowed = (dept: string) => deptParamPresent ? deptInclude.has(norm(dept)) : !isDefaultUnchecked(dept);
+  const deptAllowed = (dept: string) => deptParamPresent ? deptInclude.has(norm(dept)) : !isDeptDefaultUnchecked(dept);
 
   // Role deep-link from the Roles page — overrides the default department gate so support depts show:
   //  OPS_ADMIN → Delivery Support dept · INSTRUCTOR → every other instructor dept · SENIOR_MANAGER → curated list.
@@ -154,6 +172,7 @@ router.get("/", guard, async (req, res) => {
   const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
   const matchesNonScope = (r: any) => {
     if (!inScopeForUser(r)) return false;
+    if (!payrollAllowed(r)) return false;
     if (roleFilter ? !roleAllowed(r) : !deptAllowed(r.department)) return false;
     if (departments.length && !has(departments, r.department)) return false;
     if (payrolls.length && !has(payrolls, r.payroll_entity)) return false;
@@ -188,28 +207,68 @@ router.get("/", guard, async (req, res) => {
 
   const total = rows.length;
   const instructors = rows.slice((page - 1) * PER, (page - 1) * PER + PER);
-  // Live training % (BigQuery) for the CURRENT PAGE only — kept to one page (~50 rows) so the grid stays
-  // fast, and BigQuery is cached ~5min. Matched to each instructor via UID; best-effort: on any error the
-  // stored % from masterLive remains, so the grid never breaks.
-  try {
-    const ids = (instructors as any[]).map((r) => r.id).filter(Boolean);
-    if (ids.length) {
-      const [{ attachLiveTrainingSummaries }, docs] = await Promise.all([
-        import("../lib/analytics"),
-        Instructor.find({ _id: { $in: ids } }).select("employeeId email uid values moduleStatus").lean(),
-      ]);
-      await attachLiveTrainingSummaries(docs as any);
-      const pct = new Map<string, number>();
-      for (const d of docs as any[]) if (d.livePrimaryPct != null) pct.set(String(d._id), d.livePrimaryPct);
-      for (const r of instructors as any[]) if (r.id && pct.has(r.id)) r.training = pct.get(r.id)!;
-    }
-  } catch (e: any) { console.warn("[master] live training skipped:", e?.message || e); }
+  // Training % comes straight from Mongo (values.primary_pct via masterLive) — kept fresh by the
+  // hourly BigQuery → Mongo persist (lib/trainingSync.ts). No BigQuery call on a Master page load.
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
     counts, instructors, darwinboxKeys: live.darwinboxKeys, fetchedAt: live.fetchedAt,
     departments: live.departments,
-    defaultUnchecked: live.departments.filter(isDefaultUnchecked),
+    defaultUnchecked: live.departments.filter(isDeptDefaultUnchecked),
   });
+});
+
+// University names for the "Payroll → University" picker (staff can read; Ops manages the list in Settings).
+router.get("/universities", guard, async (_req, res) => {
+  const { getUniversities } = await import("../lib/settings");
+  res.json({ universities: await getUniversities() });
+});
+
+// Master payroll-visibility control (Ops-only) — which payroll entities the grid shows.
+router.get("/payroll-visibility", async (req, res) => {
+  const v = await getMasterPayrollVisibility();
+  res.json({ payrollVisibility: v });
+});
+router.patch("/payroll-visibility", opsGuard, async (req, res) => {
+  const { setMasterPayrollVisibility } = await import("../lib/settings");
+  const b = req.body || {};
+  // Never allow BOTH hidden (that would empty the payroll-typed rows entirely) — keep at least one on.
+  const next = { nxtwave: b.nxtwave, university: b.university };
+  if (next.nxtwave === false && next.university === false) return res.status(400).json({ error: "Show at least one payroll type." });
+  const v = await setMasterPayrollVisibility(next);
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Master payroll visibility", newValue: `Nxtwave:${v.nxtwave ? "on" : "off"} · University:${v.university ? "on" : "off"}`, reason: "Master payroll visibility" });
+  res.json({ payrollVisibility: v });
+});
+
+// Instructor Moved — everyone whose Payroll = University (moved to a University payroll entity), regardless
+// of how it was set. ALWAYS shows all University-payroll people (ignores the grid's payroll-visibility control),
+// but still respects a Capability Manager's reportee scope. Read from the live Master set (Mongo mirror).
+router.get("/moved", guard, async (req, res) => {
+  const live = await loadLiveMasterRows(false);
+  if (!live.ok) return res.status(502).json({ error: live.error, items: [] });
+
+  // CM scoping (same rule as the main grid): a CM sees only their own reportees.
+  let cmScopeId: string | null | undefined;
+  if (req.user!.role === Role.CAPABILITY_MANAGER) cmScopeId = await cmDarwinboxEmployeeId(req.user!);
+  const inScope = (r: any) => cmScopeId === undefined ? true : (!!cmScopeId && norm(r.reporting_manager_employee_id) === norm(cmScopeId));
+
+  // (Admin-removed people are already excluded by loadLiveMasterRows.)
+  const q = String(req.query.q || "").trim().toLowerCase();
+  const stripRmName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
+  const items = live.rows
+    .filter((r: any) => norm(r.payroll_entity) === "university" && inScope(r))
+    .filter((r: any) => !q || `${r.name} ${r.employeeId} ${r.workspace} ${r.email}`.toLowerCase().includes(q))
+    .map((r: any) => ({
+      id: r.id || null,
+      employeeId: r.employeeId,
+      name: r.name || "",
+      university: r.workspace || "",       // the university/campus captured when moved
+      campus: r.campus || "",
+      department: r.department || "",
+      manager: stripRmName(r.reporting_manager) || "",
+      exited: !!r.exited,
+    }))
+    .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+  res.json({ items, total: items.length });
 });
 
 // CSV export — all master columns, mirrors the active list filters (capped to bound memory).
@@ -233,7 +292,11 @@ router.get("/export.csv", guard, async (req, res) => {
   if (scope === "active") filter.status = { $nin: EXIT_STATES };
   else if (scope === "exited") filter.status = { $in: EXIT_STATES };
 
-  const rows = await Instructor.find(filter).sort({ employeeId: 1 }).limit(20000).lean();
+  const allRows = await Instructor.find(filter).sort({ employeeId: 1 }).limit(20000).lean();
+  // Exclude admin-hidden (removed) people — the export must match what the grid shows.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const removedSet = await removedEmployeeIdSet();
+  const rows = removedSet.size ? (allRows as any[]).filter((r) => !removedSet.has(norm(r.employeeId))) : allRows;
   const mgrIds = [...new Set(rows.map((r: any) => r.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));

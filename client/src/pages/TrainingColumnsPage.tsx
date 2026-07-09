@@ -4,9 +4,10 @@ import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, GripVertical, Rota
 import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
-import { ListPageSkeleton } from "../components/Skeleton";
+import { SkeletonRows } from "../components/scaffold";
 import Modal from "../components/Modal";
 import { STATUS_OPTIONS, TONE, SHORT } from "../training";
+import RowActionsMenu from "../components/RowActionsMenu";
 
 const TYPES = ["STATUS", "DROPDOWN", "TEXT", "NUMBER", "DATE"];
 const TYPE_HINT: Record<string, string> = {
@@ -106,13 +107,11 @@ export default function TrainingColumnsPage() {
     setCols((cur) => { persistOrder(cur); return cur; });
   }
 
-  if (loading) return <ListPageSkeleton title="Training columns" subtitle="Add, edit and reorder the columns shown in this track's Training Stats grid." cols={6} filters={false} />;
-
   return (
     <div className="space-y-5">
       <Link to="/app/settings" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> Dynamic Fields</Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 className="text-2xl font-bold">{label} — Training columns</h1><p className="text-sm text-slate-500">Drag rows to reorder · add, edit and type the columns shown in this track's Training Stats grid.</p></div>
+        <div><h1 className="text-2xl font-bold">{label ? `${label} — ` : ""}Training columns</h1><p className="text-sm text-slate-500">Drag rows to reorder · add, edit and type the columns shown in this track's Training Stats grid.</p></div>
         <button onClick={() => setEditing({})} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add column</button>
       </div>
 
@@ -132,12 +131,13 @@ export default function TrainingColumnsPage() {
 
       {/* Column list */}
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{cols.length} column(s)</div>
+        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{loading ? "Loading columns…" : `${cols.length} column(s)`}</div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Group</th><th className="px-5 py-3">Label</th><th className="px-5 py-3">Course ID</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Options</th><th className="px-5 py-3">In use</th><th className="px-5 py-3"></th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
+            {loading ? <SkeletonRows rows={12} cols={8} cellClass="px-5 py-2.5" /> : <>
             {cols.map((c, i) => (
               <tr
                 key={c.id}
@@ -164,14 +164,17 @@ export default function TrainingColumnsPage() {
                 <td className="px-5 py-2.5 text-xs text-slate-500">{(c.type === "DROPDOWN" || c.type === "STATUS") ? ((c.options?.length ? c.options : STATUS_OPTIONS).join(", ") || "—") : "—"}</td>
                 <td className="px-5 py-2.5 text-xs text-slate-400">{c.inUse || 0}</td>
                 <td className="px-5 py-2.5">
-                  <div className="flex justify-end gap-1">
-                    <button onClick={() => setEditing(c)} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                    <button onClick={() => del(c)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                  <div className="flex justify-end">
+                    <RowActionsMenu actions={[
+                      { label: "Edit", icon: Pencil, onClick: () => setEditing(c) },
+                      { label: "Delete", icon: Trash2, danger: true, onClick: () => del(c) },
+                    ]} />
                   </div>
                 </td>
               </tr>
             ))}
             {!cols.length && <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">No columns yet — add one.</td></tr>}
+            </>}
           </tbody>
         </table>
       </div>

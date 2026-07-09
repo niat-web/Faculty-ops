@@ -3,7 +3,7 @@ import { Lock, ShieldCheck } from "lucide-react";
 import { api } from "../../api";
 import { ROLE_LABEL } from "../../auth";
 import { useToast } from "../../toast";
-import { FormSkeleton } from "../../components/skeletons";
+import { Skeleton } from "../../components/Skeleton";
 
 // Order + helper text for each role row.
 const ROLE_ROWS: { key: string; desc: string }[] = [
@@ -35,8 +35,6 @@ export default function AccountAccessPage() {
     } finally { setBusy(null); }
   }
 
-  if (!access) return <FormSkeleton />;
-
   return (
     <div className="space-y-5">
       <div className="card p-6">
@@ -48,7 +46,7 @@ export default function AccountAccessPage() {
 
         <div className="divide-y divide-slate-100">
           {ROLE_ROWS.map(({ key, desc }) => {
-            const on = access[key] !== false;
+            const on = access ? access[key] !== false : false;
             const locked = key === "OPS_ADMIN";
             return (
               <div key={key} className="flex items-center justify-between gap-4 py-4">
@@ -56,20 +54,22 @@ export default function AccountAccessPage() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-800">{ROLE_LABEL[key] || key}</span>
                     {locked && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500"><Lock className="h-3 w-3" /> Always on</span>}
-                    <span className={`chip ${on ? "chip-public" : "chip-sensitive"}`}>{on ? "Active" : "Inactive"}</span>
+                    {access ? <span className={`chip ${on ? "chip-public" : "chip-sensitive"}`}>{on ? "Active" : "Inactive"}</span> : <Skeleton width="52px" height="20px" borderRadius="9999px" />}
                   </div>
                   <p className="mt-0.5 text-xs text-slate-500">{desc}</p>
                 </div>
-                <button
-                  role="switch"
-                  aria-checked={on}
-                  disabled={locked || busy === key}
-                  onClick={() => toggle(key, !on)}
-                  title={locked ? "Ops Admin access can't be disabled" : on ? "Disable access" : "Enable access"}
-                  className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-60 ${on ? "bg-brand-600" : "bg-slate-300"}`}
-                >
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${on ? "left-[22px]" : "left-0.5"}`} />
-                </button>
+                {access ? (
+                  <button
+                    role="switch"
+                    aria-checked={on}
+                    disabled={locked || busy === key}
+                    onClick={() => toggle(key, !on)}
+                    title={locked ? "Ops Admin access can't be disabled" : on ? "Disable access" : "Enable access"}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-60 ${on ? "bg-brand-600" : "bg-slate-300"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${on ? "left-[22px]" : "left-0.5"}`} />
+                  </button>
+                ) : <Skeleton width="44px" height="24px" borderRadius="9999px" />}
               </div>
             );
           })}

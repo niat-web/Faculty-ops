@@ -61,7 +61,29 @@ router.get("/", staffGuard, async (req, res) => {
   const sensitiveKeys = new Set((await FieldDefinition.find({ visibility: "SENSITIVE", archivedAt: null }).select("key").lean()).map((f: any) => f.key));
   const valueKeys = [...new Set((cols as any[]).filter((c) => c.storage === "value").map((c) => c.key))];
 
-  const docs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
+  // Exclude admin-hidden (removed) instructors — mirrors the Master/Org/Exited hide.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const { norm: normEmp } = await import("../lib/darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
+  // Department scoping — mirror the Instructor Master's default-department gate so Training Stats shows the
+  // SAME instructor population (Department comes from Darwinbox via `values.department`). An Ops Admin's
+  // Settings → Operations list wins; otherwise the built-in non-teaching-support default (Delivery Support /
+  // Instructor Platform / Product Team) is excluded. This keeps the two grids consistent and controllable
+  // from one place. Instructors with a blank department are kept (can't gate what we don't know).
+  const { getMasterDepartments } = await import("../lib/settings");
+  const { isDefaultUnchecked } = await import("../lib/masterLive");
+  const deptCfg = await getMasterDepartments();
+  const hiddenDeptSet = new Set(deptCfg.hidden.map((s) => normEmp(s)));
+  const deptExcluded = (dept: any) => {
+    const d = String(dept || "").trim();
+    if (!d) return false; // unknown department → don't hide
+    return deptCfg.configured ? hiddenDeptSet.has(normEmp(d)) : isDefaultUnchecked(d);
+  };
+  const allDocs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
+  const docs = (allDocs as any[]).filter((d) =>
+    !(removedSet.size && removedSet.has(normEmp(d.employeeId))) &&
+    !deptExcluded(d.values?.department)
+  );
   const mgrIds = [...new Set(docs.map((d: any) => d.currentManagerId).filter(Boolean).map(String))];
   const mgrs = mgrIds.length ? await User.find({ _id: { $in: mgrIds } }).select("name").lean() : [];
   const mgrName = Object.fromEntries(mgrs.map((m: any) => [String(m._id), m.name]));

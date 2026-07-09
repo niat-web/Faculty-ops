@@ -302,6 +302,13 @@ const AppSettingSchema = new Schema(
     certForm: { type: Schema.Types.Mixed, default: {} },
     // University names an Ops Admin manages — offered in the CM exit modal when moving to University payroll.
     universities: { type: [String], default: [] },
+    // Instructor-Master department quick-filter control (/app/settings/operations):
+    //   { hidden: string[] } — exact department names unchecked BY DEFAULT in the Master's Departments menu.
+    // When absent, the app falls back to the built-in non-teaching-support default (Delivery Support / Product Team / …).
+    masterDepartments: { type: Schema.Types.Mixed, default: {} },
+    // Which payroll entities the Instructor Master grid shows (Ops-controlled): { nxtwave, university } booleans.
+    // Missing = both true (show all). The Instructor-Moved page ignores this and shows ALL University-payroll people.
+    masterPayroll: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
@@ -342,6 +349,46 @@ const CertificationSchema = new Schema(
     odLink: String,              // Drive links
     cmmLink: String,
     pcLink: String,
+    // Schema-driven answers (the form is admin-configurable): every field's value keyed by field key.
+    // FILE fields store their Drive link here. New submissions use this; the legacy columns above are
+    // kept for older data + backward-compatible reads.
+    answers: { type: Map, of: String, default: {} },
+  },
+  { timestamps: true }
+);
+
+// DarwinboxEmployee — a MongoDB mirror of the FULL Darwinbox directory (every employee, all
+// departments), refreshed by the hourly Darwinbox sync. This is what lets the Org chart, the
+// Senior-Manager picker, CM scoping and the Removed-list enrichment serve from MongoDB instead of
+// calling Darwinbox live on a page load. One doc per Employee ID (upserted — no duplicates).
+const DarwinboxEmployeeSchema = new Schema(
+  {
+    employeeId: { type: String, required: true, unique: true, trim: true },
+    name: String,
+    email: { type: String, default: "", index: true }, // lowercased org email
+    department: String,
+    designation: String,
+    managerName: String,        // "Full Name (NWxxxx)" as Darwinbox writes it
+    managerEmployeeId: String,  // resolved NW code of their own manager
+    syncedAt: { type: Date, default: null }, // last time this row was seen in the Darwinbox feed
+  },
+  { timestamps: true }
+);
+
+// RemovedInstructor — a person (instructor OR staff) an admin has HIDDEN from the app. Keyed by
+// Employee ID (works even for Darwinbox-only people with no Instructor doc). This is a HIDE, not a
+// delete: the underlying Instructor doc and the Darwinbox record are untouched. Any row whose
+// Employee ID is here is excluded from the Master, Exited grid, Org chart (incl. CM counts), Training
+// Stats, Contribution rollups and role counts — everywhere in the app — until it is restored.
+const RemovedInstructorSchema = new Schema(
+  {
+    employeeId: { type: String, required: true, unique: true, trim: true },
+    name: String,
+    email: String,
+    department: String,
+    reason: { type: String, default: null },
+    removedById: { type: Schema.Types.ObjectId, ref: "User" },
+    removedByName: String,
   },
   { timestamps: true }
 );
@@ -387,6 +434,8 @@ export const AuditLog = compile("AuditLog", AuditLogSchema);
 export const Notification = compile("Notification", NotificationSchema);
 export const ExitAlert = compile("ExitAlert", ExitAlertSchema);
 export const SeniorManager = compile("SeniorManager", SeniorManagerSchema);
+export const RemovedInstructor = compile("RemovedInstructor", RemovedInstructorSchema);
+export const DarwinboxEmployee = compile("DarwinboxEmployee", DarwinboxEmployeeSchema);
 export const Certification = compile("Certification", CertificationSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
 export const LoginEvent = compile("LoginEvent", LoginEventSchema);

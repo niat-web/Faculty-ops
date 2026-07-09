@@ -3,7 +3,29 @@ import { useNavigate } from "react-router-dom";
 import { Search, Building2, Users2, UserCog, ArrowRight, ChevronDown, ChevronRight, UserX, Plus, Minus, Maximize2, Download, ShieldCheck } from "lucide-react";
 import { useCachedGet } from "../hooks";
 import { useToast } from "../toast";
-import { GridSkeleton } from "../components/skeletons";
+import { Skeleton } from "../components/Skeleton";
+
+// Scaffold shown while the org data loads: the REAL viewport card + control bar chrome render instantly,
+// with shimmer node cards where the chart will draw — so the page frame appears immediately, not a blank.
+function OrgSkeleton() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="card relative min-h-0 flex-1 overflow-hidden">
+        <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+          <Skeleton width="224px" height="38px" borderRadius="10px" />
+          <Skeleton width="150px" height="34px" borderRadius="8px" />
+        </div>
+        <div className="absolute bottom-4 right-4 z-20"><Skeleton width="40px" height="150px" borderRadius="12px" /></div>
+        <div className="flex items-center gap-20 p-8">
+          <Skeleton width="224px" height="92px" borderRadius="16px" />
+          <div className="flex flex-col gap-6">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="256px" height="86px" borderRadius="16px" />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Per-branch colour (node accent + connector line) so each Senior Manager's tree is distinct.
 const BRANCH = [
@@ -174,7 +196,7 @@ export default function OrgPage() {
   }
 
   if (err && !raw) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!raw) return <GridSkeleton />;
+  if (!raw) return <OrgSkeleton />;
 
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !(o[id] ?? true) }));
   const setAll = (v: boolean) => setOpen(Object.fromEntries(branches.map((b: any) => [b._id, v])));

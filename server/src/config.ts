@@ -28,8 +28,9 @@ export const config = {
     password: process.env.DARWINBOX_PASSWORD || "",
     apiKey: process.env.DARWINBOX_API_KEY || "",
     datasetKey: process.env.DARWINBOX_DATASET_KEY || "",
-    // Auto-sync interval in hours (0 = disabled). Keeps the Instructor Master fresh from Darwinbox.
-    syncIntervalHours: Number(process.env.DARWINBOX_SYNC_INTERVAL_HOURS ?? 6),
+    // Auto-sync interval in hours (0 = disabled). Every tick pulls Darwinbox → MongoDB so the whole
+    // app serves fast from Mongo; default 1h.
+    syncIntervalHours: Number(process.env.DARWINBOX_SYNC_INTERVAL_HOURS ?? 1),
   },
   isProd,
 };

@@ -83,16 +83,16 @@ function fmtDate(ms: number): string {
 // Health Status from pace vs. elapsed time (sheet formula).
 function health(pct: number | null, startMs: number | null, deadlineMs: number | null, todayMs: number): string {
   if (pct == null) return "";
-  if (startMs == null || deadlineMs == null) return "⚫ Overdue";
-  if (deadlineMs <= startMs) return "⚫ Overdue";
-  if (todayMs > deadlineMs) return "⚫ Overdue";
-  if (pct === 0) return "❌ Not Started";
-  if (pct >= 1) return "🟢 On Track";
+  if (startMs == null || deadlineMs == null) return "Overdue";
+  if (deadlineMs <= startMs) return "Overdue";
+  if (todayMs > deadlineMs) return "Overdue";
+  if (pct === 0) return "Not Started";
+  if (pct >= 1) return "On Track";
   const expected = (todayMs - startMs) / (deadlineMs - startMs);
   const diff = expected - pct;
-  if (diff < 0.1) return "🟢 On Track";
-  if (diff < 0.25) return "🟡 Needs Monitoring";
-  return "🔴 At Risk";
+  if (diff < 0.1) return "On Track";
+  if (diff < 0.25) return "Needs Monitoring";
+  return "At Risk";
 }
 
 // Predicted Completion date from current pace (sheet formula).

@@ -24,6 +24,7 @@ import masterRoutes from "./routes/master";
 import dataRoutes from "./routes/data";
 import exitAlertRoutes from "./routes/exitAlerts";
 import certificationRoutes from "./routes/certifications";
+import removedRoutes from "./routes/removed";
 
 async function main() {
   await connectDB();
@@ -62,6 +63,7 @@ async function main() {
   app.use("/api/data", dataRoutes); // raw BigQuery/Darwinbox browser (Data page, Ops only)
   app.use("/api/exit-alerts", exitAlertRoutes); // Darwinbox-driven exit alerts (banner + finalise)
   app.use("/api/certifications", certificationRoutes); // public Certificates form + admin management
+  app.use("/api/removed", removedRoutes); // hide/restore people app-wide (Ops only) + removed list
   app.use("/api/cron", cronRoutes); // reminders, digest (x-cron-secret gated)
   app.use("/api", miscRoutes); // dashboard, org, audit, notifications, settings, saved views
 

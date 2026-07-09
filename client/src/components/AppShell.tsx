@@ -23,6 +23,7 @@ const NAV_SECTIONS: any[] = [
       { label: "Instructors", icon: Users2, roles: STAFF, children: [
         { to: "/app/instructors/master", label: "Instructor Master" },
         { to: "/app/instructors/exited", label: "Instructor Exited" },
+        { to: "/app/instructors/moved", label: "Instructor Moved" },
         { to: "/app/instructors/roles", label: "Roles", roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
       ] },
       { to: "/app/training", label: "Training Stats", icon: BookOpen, roles: STAFF },

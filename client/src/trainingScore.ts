@@ -75,15 +75,31 @@ function fmtDate(ms: number): string {
 }
 function health(pct: number | null, startMs: number | null, deadlineMs: number | null, now: number): string {
   if (pct == null) return "";
-  if (startMs == null || deadlineMs == null) return "⚫ Overdue";
-  if (deadlineMs <= startMs) return "⚫ Overdue";
-  if (now > deadlineMs) return "⚫ Overdue";
-  if (pct === 0) return "❌ Not Started";
-  if (pct >= 1) return "🟢 On Track";
+  if (startMs == null || deadlineMs == null) return "Overdue";
+  if (deadlineMs <= startMs) return "Overdue";
+  if (now > deadlineMs) return "Overdue";
+  if (pct === 0) return "Not Started";
+  if (pct >= 1) return "On Track";
   const diff = (now - startMs) / (deadlineMs - startMs) - pct;
-  if (diff < 0.1) return "🟢 On Track";
-  if (diff < 0.25) return "🟡 Needs Monitoring";
-  return "🔴 At Risk";
+  if (diff < 0.1) return "On Track";
+  if (diff < 0.25) return "Needs Monitoring";
+  return "At Risk";
+}
+
+// Health-status display helpers (label carries no emoji now; colour conveys the state instead).
+const HEALTH_KEYS = new Set(["health_status", "secondary_health_status"]);
+export const isHealthKey = (k: string) => HEALTH_KEYS.has(k);
+// Strip any leading emoji/symbol from legacy stored values so old data reads plain too.
+export const stripHealthEmoji = (v: any) => String(v ?? "").replace(/^[^A-Za-z0-9]+/, "").trim();
+// The chip colour matching the old emoji: On Track = green, Needs Monitoring = amber, At Risk / Not
+// Started = red, Overdue = grey.
+export function healthChipClass(v: any): string {
+  const s = stripHealthEmoji(v).toLowerCase();
+  if (s.includes("on track")) return "bg-emerald-50 text-emerald-700";
+  if (s.includes("needs monitoring")) return "bg-amber-50 text-amber-700";
+  if (s.includes("at risk") || s.includes("not started")) return "bg-rose-50 text-rose-600";
+  if (s.includes("overdue")) return "bg-slate-100 text-slate-600";
+  return "bg-slate-100 text-slate-500";
 }
 function predicted(pct: number | null, startMs: number | null, now: number): string {
   if (pct == null) return "";

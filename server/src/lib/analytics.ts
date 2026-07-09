@@ -65,7 +65,12 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   const scope = instructorScopeFilter(user);
   // Pull the scoped instructors once and compute most series in memory (mirrors the old app).
   // Deterministic order so an instructor with a duplicate email always resolves to the same self-record.
-  const docs: DocWithSummary[] = await Instructor.find(scope).select("employeeId name email uid status campus currentManagerId values moduleStatus createdAt").sort({ createdAt: -1 }).lean();
+  const allDocs: DocWithSummary[] = await Instructor.find(scope).select("employeeId name email uid status campus currentManagerId values moduleStatus createdAt").sort({ createdAt: -1 }).lean();
+  // Exclude admin-hidden (removed) people so every KPI/chart matches the Master's counts.
+  const { removedEmployeeIdSet } = await import("./removed");
+  const { norm: normEmp } = await import("./darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
+  const docs = removedSet.size ? allDocs.filter((d) => !removedSet.has(normEmp(d.employeeId))) : allDocs;
   const progress = live ? await attachLiveTrainingSummaries(docs, opts) : null;
 
   const total = docs.length;

@@ -1,28 +1,32 @@
 import { Instructor, ExitAlert } from "../models";
-import { getDarwinboxData } from "./darwinbox";
 import { maybeDecrypt } from "./crypto";
-import {
-  clean, norm, isOurDepartment, pickCol, normDate, isExited,
-  TARGETS, EMPLOYEE_ID_KEYS, UID_KEYS, STATUS_KEYS, EXIT_DATE_KEYS,
-} from "./darwinboxSync";
+import { clean, norm, normDate, TARGETS } from "./darwinboxSync";
 import { getActiveMasterColumns } from "./master";
+import { removedEmployeeIdSet } from "./removed";
 
-// LIVE Instructor Master: rows come DIRECTLY from Darwinbox (filtered to instructor departments,
-// keyed by Employee ID). The manually-editable FacultyOps columns (contribution, hod_interaction,
-// contribution_region, payroll_entity, access_status, remarks, domain) are joined from MongoDB by
-// Employee ID. No sync-into-Mongo — Darwinbox is read live (cached ~5min in getDarwinboxData).
+// MONGO-BACKED Instructor Master. Rows are read DIRECTLY from MongoDB — which the hourly Darwinbox
+// auto-sync (darwinboxScheduler → applyDarwinboxSync) keeps fresh. NO live Darwinbox call happens on
+// a page load, so every page (Master, Exited, Org, Roles counts, Contribution, Training) serves fast
+// from Mongo and keeps working even when Darwinbox is slow or down.
 //
-//  - Darwinbox columns are READ-ONLY (source of truth is Darwinbox).
-//  - Manual columns are editable → written to Mongo (auto-creating a minimal Instructor if needed).
-//  - Rows that exist only in Darwinbox still show (manual columns blank).
+//  - Darwinbox-owned fields (name/email/campus/uid + department, designation, reporting manager, DOJ,
+//    phone, qualification, gender, exit date, …) are written into Mongo by the hourly sync and are
+//    surfaced here as READ-ONLY (source of truth = Darwinbox; editing them is pointless — the next
+//    sync would overwrite).
+//  - The FacultyOps-managed columns (contribution, hod_interaction, contribution_region, payroll_entity,
+//    access_status, remarks, domain, …) live only in Mongo, are NEVER touched by the sync, and are
+//    the editable ones.
+//
+// `refresh` forces a Darwinbox→Mongo sync BEFORE reading (used by the manual "Refresh from Darwinbox"
+// button), so the grid reflects Darwinbox immediately without waiting for the hourly tick.
 
-// The Master value-keys that are NOT sourced from Darwinbox → come from Mongo. Anything a TARGET
-// maps to (plus the derived reporting_manager_employee_id, uid, exit_date) is Darwinbox-owned.
+// The value-keys the Darwinbox sync owns (read-only). Everything a TARGET maps to, plus the derived
+// reporting_manager_employee_id / exit_date. Manual FacultyOps columns are everything else.
 const DARWINBOX_VALUE_KEYS = new Set<string>([
   ...TARGETS.filter((t) => t.kind === "value").map((t) => t.key),
   "reporting_manager_employee_id", "exit_date",
 ]);
-// Core Darwinbox-owned keys (shown as read-only, sourced from Darwinbox).
+// Core Darwinbox-owned keys (shown as read-only, sourced from Darwinbox via the sync).
 const DARWINBOX_CORE_KEYS = new Set<string>(["employeeId", "name", "email", "campus", "uid"]);
 
 // The instructor's current lifecycle stage, shown in the Master's Lifecycle column. Reflects a CM's
@@ -44,156 +48,102 @@ export type LiveMasterResult = {
   rows: LiveMasterRow[];
   counts: { all: number; active: number; exited: number };
   darwinboxKeys: string[]; // which column keys are Darwinbox-owned (read-only) — for the client
-  departments: string[];   // unique department names in the live set (for the department quick-filter)
+  departments: string[];   // unique department names in the set (for the department quick-filter)
 };
 
 // Departments unchecked BY DEFAULT in the Master department filter (non-teaching support depts).
-// Matched against the actual department strings (which carry a code suffix).
-export const DEFAULT_UNCHECKED_DEPT_PATTERNS = [/delivery support/i, /^\s*instructor platform/i];
+// This is the built-in FALLBACK used only when an Ops Admin has not configured the list in
+// Settings → Operations. When they have, the explicit set (getHiddenMasterDepartments) wins — see
+// resolveDefaultUnchecked() below (used by the /master route to build `defaultUnchecked`).
+export const DEFAULT_UNCHECKED_DEPT_PATTERNS = [/delivery support/i, /^\s*instructor platform/i, /product team/i];
 export const isDefaultUnchecked = (dept: string) => DEFAULT_UNCHECKED_DEPT_PATTERNS.some((re) => re.test(clean(dept)));
 
-// Build every instructor-department row from Darwinbox, joined with Mongo manual columns.
+const EXIT_STATES = new Set(["EXITED", "EXIT_IN_PROGRESS"]);
+const rmid2 = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
+const strip2 = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
+// Abbreviated-surname index ("Akhilendar Reddy Karri" → "akhilendar reddy k"); "" = ambiguous → unused.
+const abbrevKey = (name: any): string => { const t = norm(strip2(name)).split(" ").filter(Boolean); if (t.length < 2 || !t[t.length - 1]) return ""; return [...t.slice(0, -1), t[t.length - 1][0]].join(" "); };
+
+// Build every instructor row from MongoDB (kept fresh by the hourly Darwinbox sync).
 export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterResult> {
-  const data = await getDarwinboxData(refresh);
-  if (!data.ok) return { ok: false, error: data.error || "Darwinbox fetch failed.", fetchedAt: data.fetchedAt, rows: [], counts: { all: 0, active: 0, exited: 0 }, darwinboxKeys: [], departments: [] };
-
-  const cols = data.columns;
-  const empCol = pickCol(cols, EMPLOYEE_ID_KEYS);
-  const uidCol = pickCol(cols, UID_KEYS);
-  const statusCol = pickCol(cols, STATUS_KEYS);
-  const exitDateCol = pickCol(cols, EXIT_DATE_KEYS);
-  const deptCol = pickCol(cols, ["department", "department_name", "dept"]);
-  const nameCol2 = pickCol(cols, ["full_name", "employee_name", "name", "display_name"]);
-  const mgrIdCol = pickCol(cols, ["direct_manager_employee_id", "reporting_manager_employee_id", "manager_employee_id", "direct_manager_id", "reporting_manager_id", "manager_id"]);
-  const resolved = TARGETS.map((t) => ({ t, col: pickCol(cols, t.candidates) }));
-
-  // Reporting-Manager Employee ID must be CANONICAL so an Org-chart CM click (?rmid=NWxxxx) returns
-  // exactly that CM's instructors — even when the manager is written on some rows by a bare/abbreviated
-  // NAME (no "(NWxxxx)"). Build a name→id map from EVERY Darwinbox employee to resolve those.
-  const rmid2 = (s: any) => (String(s || "").match(/\((NW[^)]+)\)/i) || [])[1] || "";
-  // strip the "(NWxxxx)" suffix AND collapse internal whitespace so name lookups are match-stable.
-  const strip2 = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
-  const dirNameToId = new Map<string, string>();
-  // Abbreviated-surname index ("Akhilendar Reddy Karri" → "akhilendar reddy k"); "" = ambiguous → unused.
-  const abbrevKey = (name: any): string => { const t = norm(strip2(name)).split(" ").filter(Boolean); if (t.length < 2 || !t[t.length - 1]) return ""; return [...t.slice(0, -1), t[t.length - 1][0]].join(" "); };
-  const abbrevToId = new Map<string, string>();
-  if (nameCol2 && empCol) for (const r of data.rows) {
-    const n = norm(strip2(r[nameCol2])); const e = clean(r[empCol]);
-    if (n && e && !dirNameToId.has(n)) dirNameToId.set(n, e);
-    const k = abbrevKey(r[nameCol2]); if (k && e) { const ex = abbrevToId.get(k); if (ex === undefined) abbrevToId.set(k, e); else if (ex && norm(ex) !== norm(e)) abbrevToId.set(k, ""); }
+  // Manual "Refresh from Darwinbox": run a sync into Mongo first, then read the fresh Mongo data.
+  if (refresh) {
+    try {
+      const { syncDarwinboxIntoMongo } = await import("./darwinboxScheduler");
+      await syncDarwinboxIntoMongo(true);
+    } catch (e: any) {
+      console.warn("[masterLive] refresh sync failed (serving current Mongo data):", e?.message || e);
+    }
   }
-  const nameToIdResolve = (name: any): string => { const ex = dirNameToId.get(norm(strip2(name))); if (ex) return ex; const ab = abbrevToId.get(abbrevKey(name)); return ab && ab.length ? ab : ""; };
-  // Resolve a row's reporting-manager Employee ID: "(NWxxxx)" in the name → a manager-id column → name→id.
-  const resolveMgrId = (raw: any, rmName: string): string =>
-    rmid2(rmName) || (mgrIdCol ? clean(raw[mgrIdCol]) : "") || nameToIdResolve(rmName);
 
-  // In-scope Darwinbox rows (instructor departments only).
-  const inScope = deptCol ? data.rows.filter((r) => isOurDepartment(clean(r[deptCol]))) : data.rows;
-
-  // Mongo manual columns, indexed by Employee ID (only the non-Darwinbox value keys + _id).
   const activeCols = await getActiveMasterColumns();
   const manualValueKeys = activeCols.filter((c) => c.source === "value" && !DARWINBOX_VALUE_KEYS.has(c.key)).map((c) => c.key);
-  const mongoDocs = await Instructor.find({}).select("employeeId _id uid name email campus status exit values").lean();
-  const byEmp = new Map<string, any>();
-  for (const d of mongoDocs as any[]) { const k = norm(d.employeeId); if (k) byEmp.set(k, d); }
+  // Every mapped value key we surface (Darwinbox-owned + manual), so the row carries all grid columns.
+  const allValueKeys = new Set<string>([...DARWINBOX_VALUE_KEYS, ...manualValueKeys]);
+
+  const docs = await Instructor.find({}).select("employeeId _id uid name email campus status exit values").lean();
+
+  // Canonical name→id resolution for the reporting-manager column, built from EVERY instructor so a
+  // bare/abbreviated manager name still resolves (matches the Org-chart CM click-through by rmid).
+  const dirNameToId = new Map<string, string>();
+  const abbrevToId = new Map<string, string>();
+  for (const d of docs as any[]) {
+    const n = norm(strip2(d.name)); const e = clean(d.employeeId);
+    if (n && e && !dirNameToId.has(n)) dirNameToId.set(n, e);
+    const k = abbrevKey(d.name); if (k && e) { const ex = abbrevToId.get(k); if (ex === undefined) abbrevToId.set(k, e); else if (ex && norm(ex) !== norm(e)) abbrevToId.set(k, ""); }
+  }
+  const nameToIdResolve = (name: any): string => { const ex = dirNameToId.get(norm(strip2(name))); if (ex) return ex; const ab = abbrevToId.get(abbrevKey(name)); return ab && ab.length ? ab : ""; };
 
   // Capability-Manager exit-outcome overlay: once a CM finalises an exit alert, their decision
-  // overrides Darwinbox's live status on this grid — "Actually exited" hides the row from Active
+  // overrides the stored status on this grid — "Actually exited" hides the row from Active
   // (→ Instructor Exited), while "University Payroll" / "Consultant→FTE rehire" keep them Active.
   const resolvedAlerts = await ExitAlert.find({ status: "RESOLVED" }).select("employeeId resolution resolvedAt").sort({ resolvedAt: 1 }).lean();
   const outcomeByEmp = new Map<string, string>();
   for (const a of resolvedAlerts as any[]) { const k = norm(a.employeeId); if (k && a.resolution) outcomeByEmp.set(k, a.resolution); } // later resolution wins
 
+  // Hidden (removed) people are excluded from EVERY page that reads this loader — Master, Exited, Org
+  // (incl. CM reportee counts), Contribution rollups and role counts. This is a hide, not a delete.
+  const removedSet = await removedEmployeeIdSet();
+
   const rows: LiveMasterRow[] = [];
   const seen = new Set<string>();
-  for (const raw of inScope) {
-    const employeeId = clean(raw[empCol]);
+  for (const d of docs as any[]) {
+    const employeeId = clean(d.employeeId);
     if (!employeeId) continue;
     const empKey = norm(employeeId);
-    if (seen.has(empKey)) continue; // de-dupe
+    if (seen.has(empKey)) continue; // de-dupe on Employee ID (no duplicates)
     seen.add(empKey);
+    if (removedSet.has(empKey)) continue; // hidden by an admin → excluded everywhere
 
-    const mongo = byEmp.get(empKey);
-    const mongoVal = (key: string) => mongo ? (maybeDecrypt(mongo.values?.[key] ?? "") ?? "") : "";
-    let exited = statusCol ? isExited(raw[statusCol]) : false;
-    // Apply a CM's finalised exit outcome (overrides Darwinbox's live status on this grid).
-    const outcome = outcomeByEmp.get(empKey);
-    if (outcome === "EXITED") exited = true;
-    else if (outcome === "UNIVERSITY_PAYROLL" || outcome === "CONSULTANT_REHIRE") exited = false;
-    const exitDate = exitDateCol ? normDate(raw[exitDateCol]) : "";
-
-    const row: LiveMasterRow = { id: mongo ? String(mongo._id) : null, employeeId, exited };
-
-    // Darwinbox columns (read-only). For VALUE fields, fall back to the stored Mongo value when
-    // Darwinbox is blank — so imported/enriched data (e.g. Qualification) still shows, matching the
-    // CSV export. Core fields (name/email/campus) stay straight from Darwinbox.
-    for (const { t, col } of resolved) {
-      let v = col ? clean(raw[col]) : "";
-      if (t.date) v = normDate(v);
-      if (!v && t.kind === "value") { const fb = mongoVal(t.key); v = t.date ? normDate(fb) : fb; }
-      row[t.key] = v;
-    }
-    // UID: prefer the canonical Mongo uid (the value shown in the CSV export and used for BigQuery
-    // matching); fall back to the Darwinbox candidate_uid for rows that exist only in Darwinbox.
-    row.uid = clean(mongo?.uid) || (uidCol ? clean(raw[uidCol]) : "");
-    row.exit_date = exitDate;
-    // Reporting Manager Employee ID — canonical (id in the name → manager-id column → name→id lookup),
-    // so a bare/abbreviated manager name still resolves and the Org-chart CM click-through matches.
-    row.reporting_manager_employee_id = resolveMgrId(raw, String(row.reporting_manager || "")) || mongoVal("reporting_manager_employee_id");
-    // Core aliases the grid expects.
-    row.name = row.name || "";
-    row.email = row.email || "";
-    row.campus = row.campus || "";
-    row.status = exited ? "EXITED" : "ACTIVE";
-    row.lifecycle = lifecycleLabel(outcome, exited);
-    // Training % quick-view: the stored BigQuery-derived primary % for this employee (computed via UID on
-    // the Training Stats page and persisted to Mongo), joined here by Employee ID — same value the Master
-    // showed before the live-join. Blank only when we have no stored figure. No BigQuery call on the grid.
-    const pctRaw = mongoVal("primary_pct");
-    const pctNum = Number(pctRaw);
-    row.training = pctRaw !== "" && !isNaN(pctNum) ? pctNum : null;
-
-    // Manual columns from Mongo (blank if no record).
-    for (const key of manualValueKeys) row[key] = mongoVal(key);
-
-    rows.push(row);
-  }
-
-  // Mongo-only instructors: master data that exists in MongoDB but is NOT in the current Darwinbox feed
-  // (imported/older records, exited people, or anyone Darwinbox no longer returns). Show them too, with
-  // EVERY column sourced from Mongo (core fields from the doc, the rest from the values map, by key).
-  const EXIT_STATES = new Set(["EXITED", "EXIT_IN_PROGRESS"]);
-  for (const d of mongoDocs as any[]) {
-    const empKey = norm(d.employeeId);
-    if (!empKey || seen.has(empKey)) continue; // already shown via the Darwinbox feed
-    seen.add(empKey);
     const mv = (key: string) => (maybeDecrypt(d.values?.[key] ?? "") ?? "");
     let exited = EXIT_STATES.has(String(d.status || ""));
     const outcome = outcomeByEmp.get(empKey);
     if (outcome === "EXITED") exited = true;
     else if (outcome === "UNIVERSITY_PAYROLL" || outcome === "CONSULTANT_REHIRE") exited = false;
 
-    const row: LiveMasterRow = { id: String(d._id), employeeId: clean(d.employeeId), exited };
-    // Every mapped column from Mongo: core fields from the doc, value fields from the values map.
-    for (const { t } of resolved) {
-      if (t.key === "name") row.name = d.name || "";
-      else if (t.key === "email") row.email = d.email || "";
-      else if (t.key === "campus") row.campus = d.campus || "";
-      else { let v = mv(t.key); if (t.date) v = normDate(v); row[t.key] = v; }
-    }
+    const row: LiveMasterRow = { id: String(d._id), employeeId, exited };
+    // Core fields (Darwinbox-owned) straight from the doc.
+    row.name = d.name || "";
+    row.email = d.email || "";
+    row.campus = d.campus || "";
     row.uid = clean(d.uid) || "";
-    row.exit_date = mv("exit_date") || clean(d.exit?.lastWorkingDay);
+    // Every mapped value key from the values map (dates normalized).
+    for (const key of allValueKeys) {
+      let v = mv(key);
+      if (key === "doj" || key === "exit_date") v = normDate(v);
+      row[key] = v;
+    }
+    row.exit_date = row.exit_date || normDate(mv("exit_date")) || clean(d.exit?.lastWorkingDay);
     // Canonical Reporting Manager Employee ID (stored → "(NWxxxx)" in the name → name→id lookup).
     row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || nameToIdResolve(row.reporting_manager);
-    row.name = row.name || "";
-    row.email = row.email || "";
-    row.campus = row.campus || "";
     row.status = exited ? "EXITED" : "ACTIVE";
     row.lifecycle = lifecycleLabel(outcome, exited, String(d.status || ""));
+    // Training % quick-view: stored primary % (values.primary_pct), refreshed hourly by the
+    // BigQuery → Mongo training persist (lib/trainingSync.ts). No BigQuery call on the grid.
     const pctRaw = mv("primary_pct");
     const pctNum = Number(pctRaw);
     row.training = pctRaw !== "" && !isNaN(pctNum) ? pctNum : null;
-    for (const key of manualValueKeys) row[key] = mv(key);
+
     rows.push(row);
   }
 
@@ -201,7 +151,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   const departments = [...new Set(rows.map((r) => clean(r.department)).filter(Boolean))].sort();
   return {
     ok: true,
-    fetchedAt: data.fetchedAt,
+    fetchedAt: new Date().toISOString(),
     rows,
     counts: { all: rows.length, active: rows.length - exited, exited },
     darwinboxKeys: [...DARWINBOX_CORE_KEYS, ...DARWINBOX_VALUE_KEYS],

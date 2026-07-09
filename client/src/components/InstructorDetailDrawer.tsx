@@ -7,12 +7,12 @@ import { useConfirm, usePrompt } from "../confirm";
 import { useBatchEdit } from "../batchEdit";
 import { FormSkeleton } from "./skeletons";
 import ScrollSelect from "./ScrollSelect";
+import { isHealthKey, healthChipClass, stripHealthEmoji } from "../trainingScore";
 import {
   fmt, EditFieldModal, StatusModal, SkillsTab, ExitTab, NotesTab,
   DocumentsTab, AuditTab, MailsTab, HistoryTab,
 } from "../pages/InstructorProfilePage";
 
-const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "chip-necessary", SENSITIVE: "chip-sensitive" };
 const CELL_BASE = "w-full rounded-lg border px-3 py-1.5 text-sm leading-5";
 const CELL_EDIT = `${CELL_BASE} border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
 const CELL_VIEW = `${CELL_BASE} block cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
@@ -236,7 +236,7 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
                 // In batch mode the displayed value reflects the buffered edit (if any).
                 const shown = buf ? buf.newValue : f.value;
                 return (
-                <div key={f.key} className="group grid grid-cols-[140px_1fr_auto] items-center gap-3 py-2">
+                <div key={f.key} className="group grid grid-cols-[140px_1fr] items-center gap-3 py-2">
                   <dt className="text-sm font-medium text-slate-600">{f.label}{buf && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">edited</span>}</dt>
                   <dd className="flex min-w-0 items-center gap-2">
                     <div className="min-w-0 flex-1">
@@ -261,14 +261,13 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
                       ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
                         <button onClick={() => startEdit(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={`${CELL_VIEW} ${buf ? "bg-amber-50 ring-1 ring-amber-200" : ""}`}>{fmt(shown) || EMPTY}</button>
                       ) : (
-                        <div className={CELL_STATIC}>{fmt(shown) || EMPTY}</div>
+                        <div className={CELL_STATIC}>{isHealthKey(f.key) && shown ? <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${healthChipClass(shown)}`}>{stripHealthEmoji(shown)}</span> : (fmt(shown) || EMPTY)}</div>
                       )}
                     </div>
                     {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
                       <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                     )}
                   </dd>
-                  <span className={`chip ${VIS_CHIP[f.visibility] || "chip-gray"} justify-self-end text-[10px]`}>{(f.visibility || "").toLowerCase()}</span>
                 </div>
                 );
               })}

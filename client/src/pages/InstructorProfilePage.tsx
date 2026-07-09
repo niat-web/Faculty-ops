@@ -6,8 +6,43 @@ import { useAuth, LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
-import { FormSkeleton } from "../components/skeletons";
+import { Skeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
+import RowActionsMenu from "../components/RowActionsMenu";
+import { isHealthKey, healthChipClass, stripHealthEmoji } from "../trainingScore";
+
+// Health-status fields show no emoji — the colour conveys the state (green/amber/red/grey).
+function HealthChip({ value }: { value: any }) {
+  return <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${healthChipClass(value)}`}>{stripHealthEmoji(value)}</span>;
+}
+
+// Scaffold-first shell: the real back-link + profile-card / side-nav / content-card frame render
+// instantly; the person's name, tabs and field values shimmer until /instructors/:id resolves.
+function ProfileSkeleton() {
+  return (
+    <div className="space-y-5">
+      <Link to="/app/instructors" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> All instructors</Link>
+      <div className="card flex flex-wrap items-center gap-4 p-6">
+        <Skeleton width="64px" height="64px" borderRadius="16px" />
+        <div className="flex-1 space-y-2"><Skeleton width="200px" height="24px" /><Skeleton width="280px" height="12px" /></div>
+        <Skeleton width="200px" height="34px" borderRadius="10px" />
+      </div>
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <nav className="shrink-0 space-y-2 lg:w-56">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} width="100%" height="36px" borderRadius="10px" />)}
+        </nav>
+        <div className="min-w-0 flex-1">
+          <div className="card space-y-4 p-6">
+            <Skeleton width="35%" height="16px" />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="grid grid-cols-[200px_1fr] items-center gap-3 py-1"><Skeleton width="60%" height="14px" /><Skeleton width="80%" height="30px" borderRadius="8px" /></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Module labels/order now come dynamically from the profile payload (p.modules).
 const LIFECYCLE_ORDER = ["ONBOARDING", "IN_TRAINING", "CONFIRMED", "TRANSFER", "EXIT_IN_PROGRESS", "EXITED", "REHIRED"];
@@ -84,7 +119,7 @@ export default function InstructorProfilePage() {
   }
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!p) return <FormSkeleton sections={3} />;
+  if (!p) return <ProfileSkeleton />;
 
   // Field-table tabs come from the (dynamic) module list — incl. admin-created modules — excluding the
   // ones rendered with special UI (Lifecycle timeline / Exit form).
@@ -153,7 +188,7 @@ export default function InstructorProfilePage() {
                       ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
                         <button onClick={() => startEdit(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
                       ) : (
-                        <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
+                        <div className={CELL_STATIC}>{isHealthKey(f.key) && f.value ? <HealthChip value={f.value} /> : (fmt(f.value) || EMPTY)}</div>
                       )}
                       </div>
                       {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
@@ -337,6 +372,7 @@ export function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
   const [busy, setBusy] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null); // keep an open kebab's row visible
   async function add() { if (!body.trim()) return; setBusy(true); try { await api.post(`/instructors/${instructorId}/notes`, { body }); setBody(""); onChange(); } catch (e: any) { toast.error(e.message); } finally { setBusy(false); } }
   async function saveEdit(id: string) { try { await api.patch(`/instructors/${instructorId}/notes/${id}`, { body: editText }); setEditId(null); onChange(); } catch (e: any) { toast.error(e.message); } }
   async function del(id: string) { if (!(await confirm({ title: "Delete note?", message: "Delete this note?" }))) return; try { await api.del(`/instructors/${instructorId}/notes/${id}`); onChange(); } catch (e: any) { toast.error(e.message); } }
@@ -355,9 +391,14 @@ export function NotesTab({ notes, instructorId, canEdit, onChange }: any) {
               )}
             </div>
             {canEdit && editId !== n.id && (
-              <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
-                <button onClick={() => { setEditId(n.id); setEditText(n.body); }} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-3.5 w-3.5" /></button>
-                <button onClick={() => del(n.id)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+              <div className={`shrink-0 transition group-hover:opacity-100 ${menuOpenId === n.id ? "opacity-100" : "opacity-0"}`}>
+                <RowActionsMenu
+                  onOpenChange={(o) => setMenuOpenId(o ? n.id : null)}
+                  actions={[
+                    { label: "Edit", icon: Pencil, onClick: () => { setEditId(n.id); setEditText(n.body); } },
+                    { label: "Delete", icon: Trash2, danger: true, onClick: () => del(n.id) },
+                  ]}
+                />
               </div>
             )}
           </li>
@@ -379,11 +420,8 @@ export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onC
     if (!employeeId || employeeId === "NA") { setCerts([]); return; }
     api.get(`/certifications/for-employee/${encodeURIComponent(employeeId)}`).then((r) => setCerts(r.items || [])).catch(() => setCerts([]));
   }, [employeeId]);
-  const certLinks = certs.flatMap((c: any) => [
-    c.odLink && { name: "Original Degree (OD)", url: c.odLink, when: c.createdAt },
-    c.cmmLink && { name: "Consolidated Marksheet (CMM)", url: c.cmmLink, when: c.createdAt },
-    c.pcLink && { name: "Provisional Certificate (PC)", url: c.pcLink, when: c.createdAt },
-  ].filter(Boolean));
+  // Certificate file links come from the schema's FILE fields (labels + Drive urls) per submission.
+  const certLinks = certs.flatMap((c: any) => (c.files || []).map((fl: any) => ({ name: fl.label, url: fl.url, when: c.createdAt })));
   async function upload() {
     if (!file) return;
     const form = new FormData(); form.append("file", file); form.append("name", docName.trim() || file.name);
@@ -406,8 +444,14 @@ export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onC
           <li key={d.id} className="flex items-center gap-3 py-2.5 text-sm">
             <FileText className="h-4 w-4 text-slate-400" />
             <div className="min-w-0 flex-1"><div className="truncate font-medium text-slate-700">{d.name}</div><div className="text-[11px] text-slate-400">{d.uploadedByName} · {new Date(d.createdAt).toLocaleString()}</div></div>
-            <a href={`${API_BASE}/api/instructors/${instructorId}/documents/${d.id}`} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Download className="h-4 w-4" /></a>
-            {canEdit && <button onClick={() => del(d.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>}
+            {canEdit ? (
+              <RowActionsMenu actions={[
+                { label: "Download / open", icon: Download, href: `${API_BASE}/api/instructors/${instructorId}/documents/${d.id}`, newTab: true },
+                { label: "Delete", icon: Trash2, danger: true, onClick: () => del(d.id) },
+              ]} />
+            ) : (
+              <a href={`${API_BASE}/api/instructors/${instructorId}/documents/${d.id}`} target="_blank" rel="noreferrer" title="Download / open" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Download className="h-4 w-4" /></a>
+            )}
           </li>
         )) : <li className="py-4 text-sm text-slate-400">No documents uploaded.</li>}
       </ul>

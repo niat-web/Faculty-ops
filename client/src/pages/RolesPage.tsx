@@ -4,6 +4,7 @@ import { Search, Download, ChevronRight, UserCog, Users2, Network, GraduationCap
 import { api } from "../api";
 import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
+import { Skeleton } from "../components/Skeleton";
 
 // Display order + icon/tint per role.
 const ROLE_META: { key: string; icon: any; tint: string }[] = [
@@ -21,11 +22,12 @@ export default function RolesPage() {
   const [total, setTotal] = useState(0);
   const [matches, setMatches] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false); // false until the first counts arrive → shimmer the numbers
 
   useEffect(() => {
     const ac = new AbortController();
     api.get(`/instructors/roles${dq ? `?q=${encodeURIComponent(dq)}` : ""}`, { signal: ac.signal })
-      .then((r) => { setCounts(r.counts || {}); setTotal(r.total || 0); setMatches(r.matches || []); setErr(null); })
+      .then((r) => { setCounts(r.counts || {}); setTotal(r.total || 0); setMatches(r.matches || []); setErr(null); setLoaded(true); })
       .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load roles"); });
     return () => ac.abort();
   }, [dq]);
@@ -93,7 +95,7 @@ export default function RolesPage() {
       {/* Role breakdown — clickable */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">
-          <span>Role breakdown</span><span>{total} total</span>
+          <span>Role breakdown</span><span>{loaded ? `${total} total` : "…"}</span>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
@@ -108,7 +110,7 @@ export default function RolesPage() {
                     {ROLE_LABEL[r.key]}
                   </span>
                 </td>
-                <td className="px-5 py-3 text-lg font-semibold text-slate-700">{counts[r.key] ?? 0}</td>
+                <td className="px-5 py-3 text-lg font-semibold text-slate-700">{loaded ? (counts[r.key] ?? 0) : <Skeleton width="28px" height="20px" />}</td>
                 <td className="px-5 py-3 text-right">
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-600">View in Master <ChevronRight className="h-4 w-4" /></span>
                 </td>

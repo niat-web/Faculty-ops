@@ -9,6 +9,8 @@ import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
+import RowActionsMenu from "../components/RowActionsMenu";
+import { SkeletonRows } from "../components/scaffold";
 
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
 type Filters = { role: string; managerId: string; status: string; live: string };
@@ -53,6 +55,11 @@ export default function UsersPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const sort = useSort();
+  // Roles quick-filter (checkbox dropdown next to the heading, like the Master's "Departments" filter).
+  const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set(ROLES));
+  const [roleOpen, setRoleOpen] = useState(false);
+  const toggleRole = (r: string) => { setPage(1); setRoleFilter((s) => { const n = new Set(s); n.has(r) ? n.delete(r) : n.add(r); return n; }); };
+  const setAllRoles = (on: boolean) => { setPage(1); setRoleFilter(on ? new Set(ROLES) : new Set()); };
   // Page-scroll sticky header: the page (<main>) scrolls vertically while the table keeps its own
   // horizontal scroll. We translate the <thead> down by the page's scrollTop to keep it pinned.
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
@@ -62,14 +69,16 @@ export default function UsersPage() {
     const ac = new AbortController();
     const p = new URLSearchParams({ page: String(page), per: String(per) });
     if (dq) p.set("q", dq);
-    if (applied.role) p.set("role", applied.role);
+    // Only send `roles` when it actually narrows (some unchecked); all-checked = show every role.
+    if (roleFilter.size < ROLES.length) p.set("roles", [...roleFilter].join(","));
+    else if (applied.role) p.set("role", applied.role);
     if (applied.managerId) p.set("managerId", applied.managerId);
     if (applied.status) p.set("status", applied.status);
     if (applied.live) p.set("live", applied.live);
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     api.get(`/users?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
-  }, [dq, applied, page, per, reloadKey, sort.sort, sort.dir]);
+  }, [dq, applied, roleFilter, page, per, reloadKey, sort.sort, sort.dir]);
 
   // Pin the header to the PAGE during vertical scroll (table keeps its own horizontal scroll).
   useEffect(() => {
@@ -112,7 +121,35 @@ export default function UsersPage() {
   return (
     <div className="flex flex-col space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Users <span className="text-base font-medium text-slate-400">· {data?.total ?? "…"}</span></h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Users <span className="text-base font-medium text-slate-400">· {data?.total ?? "…"}</span></h1>
+          {/* Roles quick-filter — same checkbox-dropdown pattern as the Instructor Master "Departments". */}
+          <span className="relative">
+            <button onClick={() => setRoleOpen((o) => !o)} className="text-sm font-medium text-brand-600 hover:text-brand-700 hover:underline">
+              Roles ({roleFilter.size}/{ROLES.length})
+            </button>
+            {roleOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setRoleOpen(false)} />
+                <div className="absolute left-0 top-7 z-40 w-[260px] rounded-xl border border-slate-200 bg-white p-2 shadow-soft">
+                  <div className="flex items-center justify-between px-2 py-1.5 text-xs">
+                    <span className="font-semibold text-slate-600">Show roles</span>
+                    <span className="flex gap-3">
+                      <button onClick={() => setAllRoles(true)} className="font-medium text-brand-600 hover:underline">All</button>
+                      <button onClick={() => setAllRoles(false)} className="font-medium text-slate-500 hover:underline">None</button>
+                    </span>
+                  </div>
+                  {ROLES.map((r) => (
+                    <label key={r} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" checked={roleFilter.has(r)} onChange={() => toggleRole(r)} className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300" />
+                      <span>{ROLE_LABEL[r] || r}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </span>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-56 sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -148,6 +185,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {!data && <SkeletonRows rows={12} cols={9} />}
               {data?.users.map((u: any) => (
                 <tr key={u.id} className="group hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium cell-trunc" title={u.name}>{u.name}</td>
@@ -163,14 +201,17 @@ export default function UsersPage() {
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-slate-500">{fmtRelative(u.lastSeenAt)}</td>
                   <td className="sticky right-0 z-10 border-l border-slate-100 bg-white px-5 py-3 group-hover:bg-slate-50">
-                    <div className="flex justify-end gap-1">
-                      <button title="Send invite" onClick={() => sendInvite(u)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Mail className="h-4 w-4" /></button>
-                      <button title="Edit" onClick={() => setEditing(u)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                      <button title="Delete" onClick={() => remove(u)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                    <div className="flex justify-end">
+                      <RowActionsMenu actions={[
+                        { label: "Send invite", icon: Mail, onClick: () => sendInvite(u) },
+                        { label: "Edit", icon: Pencil, onClick: () => setEditing(u) },
+                        { label: "Delete", icon: Trash2, danger: true, onClick: () => remove(u) },
+                      ]} />
                     </div>
                   </td>
                 </tr>
               ))}
+              {data && !data.users.length && <tr><td colSpan={9} className="px-5 py-10 text-center text-slate-400">No users match.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SlidersHorizontal, Download, X } from "lucide-react";
 import { api, API_BASE } from "../api";
@@ -11,6 +11,7 @@ import OverlayCellEditor from "../components/OverlayCellEditor";
 import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
+import { SkeletonRows } from "../components/scaffold";
 
 // Exited instructors only — a dedicated, inline-editable grid with the full EXIT-sheet columns.
 type Save = { kind: "core" | "value" | "manager" | "exit"; key?: string };
@@ -68,7 +69,12 @@ export default function InstructorExitedPage() {
   const [per, setPer] = useState(50);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
+  const [loaded, setLoaded] = useState(false); // false until the first fetch resolves → shimmer rows
   const [err, setErr] = useState<string | null>(null);
+  // Page-flow scroll (identical to the Instructor Master grid): the page scrolls vertically while the
+  // table scrolls horizontally; the <thead> is kept pinned by translating it down by the page scrollTop.
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const [facets, setFacets] = useState<Facets>(EMPTY_FACETS);
   const [cms, setCms] = useState<any[]>([]);
   const [edit, setEdit] = useState<{ id: string; field: string } | null>(null);
@@ -98,10 +104,30 @@ export default function InstructorExitedPage() {
     const ac = new AbortController();
     const p = new URLSearchParams(query); p.set("page", String(page)); p.set("per", String(per));
     api.get(`/instructors/exited?${p}`, { signal: ac.signal })
-      .then((r) => { setRows(r.instructors); setTotal(r.total); if (r.facets) setFacets(r.facets); setErr(null); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
-      .catch((e) => { if (!isAbort(e)) setErr(e.message || "Failed to load exited instructors"); });
+      .then((r) => { setRows(r.instructors); setTotal(r.total); if (r.facets) setFacets(r.facets); setErr(null); setLoaded(true); if (page > r.pages && r.pages >= 1) setPage(r.pages); })
+      .catch((e) => { if (!isAbort(e)) { setErr(e.message || "Failed to load exited instructors"); setLoaded(true); } });
     return () => ac.abort();
   }, [query, page, per]);
+
+  // Sticky header during PAGE scroll (same technique as the Instructor Master grid): CSS `position:
+  // sticky` can't pin the header to the page through the overflow-x wrapper, so translate the <thead>
+  // down by the page's scrollTop.
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+    const onScroll = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const y = scroller.scrollTop - wrap.offsetTop;
+      const maxShift = wrap.clientHeight - thead.offsetHeight;
+      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    onScroll();
+    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
+  }, [rows.length]);
 
   // CSV export mirrors the DB-level filters (exit-date range isn't applied to the CSV).
   const exportHref = () => {
@@ -136,7 +162,9 @@ export default function InstructorExitedPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    // Page-flow (identical to Instructor Master): the PAGE scrolls vertically, the card scrolls only
+    // horizontally, and the pagination sits below the full table at the bottom of the page.
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Instructor Exited <span className="text-base font-medium text-slate-400">· {total}</span></h1>
@@ -155,16 +183,17 @@ export default function InstructorExitedPage() {
 
       {err && <div className="card p-4 text-sm text-rose-600">{err}</div>}
 
-      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-auto">
+      <div className={`card flex flex-col overflow-hidden rounded-xl ${!loaded && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
+        <div ref={wrapRef} className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
-                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="sticky left-0 top-0 z-30 bg-slate-50 px-3 py-3 font-semibold" />
-                {COLS.map((c) => <SortHeader key={c.field} label={c.label} k={c.manager ? undefined : c.field} state={sort} onToggle={sort.toggle} className="sticky top-0 z-20 bg-slate-50 px-3 py-3 font-semibold" />)}
+                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="sticky left-0 z-30 bg-slate-50 px-3 py-3 font-semibold" />
+                {COLS.map((c) => <SortHeader key={c.field} label={c.label} k={c.manager ? undefined : c.field} state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {!loaded && !rows.length && <SkeletonRows rows={12} cols={COLS.length + 1} cellClass="px-3 py-2.5" />}
               {rows.map((row) => (
                 <tr key={row.id} className="group hover:bg-slate-50">
                   <td className="sticky left-0 z-10 bg-white px-3 py-2 font-mono text-xs text-slate-500 group-hover:bg-slate-50" style={{ minWidth: 120 }}>
@@ -200,7 +229,7 @@ export default function InstructorExitedPage() {
                   })}
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={COLS.length + 1} className="px-5 py-10 text-center text-slate-400">No exited instructors match these filters.</td></tr>}
+              {loaded && !rows.length && <tr><td colSpan={COLS.length + 1} className="px-5 py-10 text-center text-slate-400">No exited instructors match these filters.</td></tr>}
             </tbody>
           </table>
         </div>

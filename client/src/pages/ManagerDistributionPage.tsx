@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Users2, ArrowRight } from "lucide-react";
 import { useCachedGet } from "../hooks";
-import { ListPageSkeleton } from "../components/Skeleton";
+import { SkeletonRows } from "../components/scaffold";
 
 const enc = encodeURIComponent;
 
@@ -18,11 +18,10 @@ export default function ManagerDistributionPage() {
     return !n ? items : items.filter((i) => (i.manager || "").toLowerCase().includes(n) || (i.managerId || "").toLowerCase().includes(n));
   }, [items, q]);
   const grandTotal = useMemo(() => filtered.reduce((s, i) => s + (i.count || 0), 0), [filtered]);
+  const busy = loading && !data; // first load — data region shimmers, structure stays
 
   // Drill-down link into the Master, filtered by this Darwinbox reporting manager.
   const reporteesLink = (i: any) => i.managerId ? `/app/instructors/master?rmid=${enc(i.managerId)}&rmname=${enc(i.manager)}` : null;
-
-  if (loading && !data) return <ListPageSkeleton title="Capability Manager Distribution" subtitle="Every Darwinbox reporting manager and their reportee count." cols={3} />;
 
   return (
     <div className="space-y-5">
@@ -52,6 +51,7 @@ export default function ManagerDistributionPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {busy ? <SkeletonRows rows={8} cols={4} /> : <>
               {filtered.map((i, idx) => {
                 const link = reporteesLink(i);
                 return (
@@ -69,8 +69,9 @@ export default function ManagerDistributionPage() {
                 );
               })}
               {!filtered.length && <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-400">No reporting managers.</td></tr>}
+              </>}
             </tbody>
-            {!!filtered.length && (
+            {!busy && !!filtered.length && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
                 <tr><td className="px-5 py-3" colSpan={2}>Grand total</td><td className="px-5 py-3 text-right">{grandTotal}</td><td /></tr>
               </tfoot>

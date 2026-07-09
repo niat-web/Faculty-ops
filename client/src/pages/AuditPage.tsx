@@ -5,7 +5,7 @@ import { ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort } from "../hooks";
 import Pagination from "../components/Pagination";
 import MultiSelect from "../components/MultiSelect";
-import { GridSkeleton } from "../components/skeletons";
+import { SkeletonRows } from "../components/scaffold";
 
 const ACTIONS = ["FIELD_EDIT", "FIELD_ADD", "FIELD_ARCHIVE", "MAPPING_CHANGE", "LIFECYCLE_CHANGE", "NOTE_ADD", "REQUEST_DECISION", "REQUEST_DELETE", "INSTRUCTOR_CREATE", "INSTRUCTOR_DELETE", "USER_CREATE", "USER_UPDATE", "USER_DELETE"];
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
@@ -55,8 +55,6 @@ export default function AuditPage() {
   function applyFilters() { setApplied(draft); setPage(1); setDrawer(false); }
   function clearAll() { setApplied(EMPTY); setDraft(EMPTY); setPage(1); }
 
-  if (!data) return <GridSkeleton />;
-
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -83,6 +81,7 @@ export default function AuditPage() {
               <tr><th className="px-5 py-3">When</th><th className="px-5 py-3">Who</th><th className="px-5 py-3">Action</th><th className="px-5 py-3">Instructor</th><th className="px-5 py-3">Field</th><th className="px-5 py-3">Change</th><th className="px-5 py-3">Reason</th><th className="px-5 py-3">Proof</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {!data && <SkeletonRows rows={12} cols={8} />}
               {data?.entries.map((a: any) => (
                 <tr key={a.id} className="hover:bg-slate-50 align-top">
                   <td className="px-5 py-3 whitespace-nowrap text-xs text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>

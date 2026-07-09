@@ -2,19 +2,18 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Building2 } from "lucide-react";
 import { useCachedGet } from "../hooks";
-import { ListPageSkeleton } from "../components/Skeleton";
+import { SkeletonRows } from "../components/scaffold";
 
 export default function CampuswisePage() {
   const { data, loading } = useCachedGet<any>("/contribution/campuswise"); // cached for instant revisits
   const [q, setQ] = useState("");
 
   const items: any[] = data?.items || [];
+  const busy = loading && !data; // first load — data region shimmers, structure stays
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
     return !n ? items : items.filter((i) => i.campus.toLowerCase().includes(n));
   }, [items, q]);
-
-  if (loading) return <ListPageSkeleton title="Campuswise Instructors" subtitle="Instructors per campus, split by who runs their payroll." cols={4} />;
 
   return (
     <div className="space-y-5">
@@ -39,6 +38,7 @@ export default function CampuswisePage() {
               <tr><th className="px-5 py-3">University / Campus</th><th className="px-5 py-3 text-right">No. of Instructors</th><th className="px-5 py-3 text-right">University Payroll</th><th className="px-5 py-3 text-right">Nxtwave Payroll</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {busy ? <SkeletonRows rows={8} cols={4} /> : <>
               {filtered.map((i) => (
                 <tr key={i.campus || "(blank)"} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800 cell-trunc">
@@ -52,8 +52,9 @@ export default function CampuswisePage() {
                 </tr>
               ))}
               {!filtered.length && <tr><td colSpan={4} className="px-5 py-8 text-center text-slate-400">No campuses found.</td></tr>}
+              </>}
             </tbody>
-            {!!filtered.length && (
+            {!busy && !!filtered.length && (
               <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
                 <tr><td className="px-5 py-3">Grand total</td>
                   <td className="px-5 py-3 text-right">{filtered.reduce((s, i) => s + i.total, 0)}</td>

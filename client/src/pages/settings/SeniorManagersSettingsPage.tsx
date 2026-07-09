@@ -4,7 +4,7 @@ import { api } from "../../api";
 import { useToast } from "../../toast";
 import { useConfirm } from "../../confirm";
 import { useDebouncedValue, isAbort } from "../../hooks";
-import { FormSkeleton } from "../../components/skeletons";
+import { SkeletonRows } from "../../components/scaffold";
 
 type SM = { employeeId: string; name: string; email: string; department: string; designation: string };
 
@@ -64,7 +64,7 @@ export default function SeniorManagersSettingsPage() {
     catch (e: any) { toast.error(e.message); }
   }
 
-  if (items === null) return <FormSkeleton />;
+  const firstLoad = items === null; // first load — table body shimmers, page structure stays
 
   return (
     <div className="space-y-5">
@@ -105,14 +105,15 @@ export default function SeniorManagersSettingsPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{items.length} Senior Manager(s)</div>
+        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{firstLoad ? "Loading…" : `${items!.length} Senior Manager(s)`}</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr><th className="px-5 py-3">Employee ID</th><th className="px-5 py-3">Name</th><th className="px-5 py-3">Email</th><th className="px-5 py-3">Department</th><th className="px-5 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {items.map((s) => (
+              {firstLoad ? <SkeletonRows rows={6} cols={5} /> : <>
+              {items!.map((s) => (
                 <tr key={s.employeeId} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{s.employeeId}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{s.name || "—"}</td>
@@ -123,7 +124,8 @@ export default function SeniorManagersSettingsPage() {
                   </td>
                 </tr>
               ))}
-              {!items.length && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400">No Senior Managers yet — add one from Darwinbox above.</td></tr>}
+              {!items!.length && <tr><td colSpan={5} className="px-5 py-10 text-center text-slate-400">No Senior Managers yet — add one from Darwinbox above.</td></tr>}
+              </>}
             </tbody>
           </table>
         </div>

@@ -5,8 +5,9 @@ import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import { useCachedGet } from "../hooks";
-import { ListPageSkeleton } from "../components/Skeleton";
+import { SkeletonRows } from "../components/scaffold";
 import Modal from "../components/Modal";
+import RowActionsMenu from "../components/RowActionsMenu";
 
 export default function ContributionPage() {
   const toast = useToast();
@@ -16,6 +17,7 @@ export default function ContributionPage() {
   const [editing, setEditing] = useState<any>(null);
 
   const items: any[] = data?.items || [];
+  const busy = loading && !data; // first load — data region shimmers, structure stays
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
     return !n ? items : items.filter((i) => i.value.toLowerCase().includes(n));
@@ -26,8 +28,8 @@ export default function ContributionPage() {
     try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); reload(); } catch (e: any) { toast.error(e.message); }
   }
 
-  if (loading) return <ListPageSkeleton title="Contribution" subtitle="Each unique contribution and how many instructors have it." cols={3} />;
-  if (!data?.field) return <div className="card p-6 text-sm text-slate-500">No <b>Contribution</b> field is defined in Dynamic Fields yet. Add a field labelled "Contribution" to use this page.</div>;
+  // The "no Contribution field" notice only applies once data has actually loaded (not during the fetch).
+  if (data && !data.field) return <div className="card p-6 text-sm text-slate-500">No <b>Contribution</b> field is defined in Dynamic Fields yet. Add a field labelled "Contribution" to use this page.</div>;
 
   return (
     <div className="space-y-5">
@@ -43,7 +45,7 @@ export default function ContributionPage() {
           <Search className="pointer-events-none absolute left-3 top-[34px] h-4 w-4 text-slate-400" />
           <input className="input pl-9" placeholder="Filter contribution…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="text-sm text-slate-500"><div className="label">Totals</div>{items.length} unique · {data.total} instructor(s)</div>
+        <div className="text-sm text-slate-500"><div className="label">Totals</div>{items.length} unique · {data?.total ?? 0} instructor(s)</div>
       </div>
 
       {/* Table */}
@@ -55,6 +57,7 @@ export default function ContributionPage() {
               <tr><th className="px-5 py-3">Contribution</th><th className="px-5 py-3">Instructors</th><th className="px-5 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {busy ? <SkeletonRows rows={8} cols={3} /> : <>
               {filtered.map((it) => (
                 <tr key={it.value || "(blank)"} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800 cell-trunc">
@@ -65,15 +68,18 @@ export default function ContributionPage() {
                   <td className="px-5 py-3"><span className="chip chip-status">{it.count}</span></td>
                   <td className="px-5 py-3">
                     {!it.blank && (
-                      <div className="flex justify-end gap-1">
-                        <button onClick={() => setEditing(it)} title="Edit / rename" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                        <button onClick={() => del(it)} title="Clear from instructors" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                      <div className="flex justify-end">
+                        <RowActionsMenu actions={[
+                          { label: "Edit / rename", icon: Pencil, onClick: () => setEditing(it) },
+                          { label: "Clear from instructors", icon: Trash2, danger: true, onClick: () => del(it) },
+                        ]} />
                       </div>
                     )}
                   </td>
                 </tr>
               ))}
               {!filtered.length && <tr><td colSpan={3} className="px-5 py-8 text-center text-slate-400">No contributions found.</td></tr>}
+              </>}
             </tbody>
           </table>
         </div>

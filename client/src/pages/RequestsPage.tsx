@@ -8,6 +8,8 @@ import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
+import { Skeleton } from "../components/Skeleton";
+import { SkeletonRows } from "../components/scaffold";
 
 type HFilters = { status: string[]; field: string[]; requester: string[] };
 const H_EMPTY: HFilters = { status: [], field: [], requester: [] };
@@ -130,7 +132,10 @@ export default function RequestsPage() {
 
       {/* Pending */}
       <section className="space-y-3">
-        <h2 className="font-semibold">Pending ({pending.length})</h2>
+        <h2 className="font-semibold">Pending {data ? `(${pending.length})` : ""}</h2>
+        {!data && Array.from({ length: 2 }).map((_, i) => (
+          <div key={`skp-${i}`} className="card p-4"><div className="space-y-2"><Skeleton width="220px" height="16px" /><Skeleton width="60%" height="12px" /><Skeleton width="40%" height="10px" /></div></div>
+        ))}
         {pending.map((r) => (
           <div key={r.id} className="card p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -189,6 +194,7 @@ export default function RequestsPage() {
                 <tr><th className="px-5 py-3">Instructor</th><th className="px-5 py-3">Field</th><th className="px-5 py-3">Change</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Decision note</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {!data && <SkeletonRows rows={8} cols={5} />}
                 {history.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50 align-top">
                     <td className="px-5 py-3 cell-trunc"><Link to={`/app/instructors/${r.instructorId}`} className="font-medium text-brand-700 hover:underline" title={r.instructorName}>{r.instructorName}</Link></td>
@@ -198,7 +204,7 @@ export default function RequestsPage() {
                     <td className="px-5 py-3 text-xs text-slate-500 cell-trunc" title={r.decisionComment || "—"}>{r.decisionComment || "—"}</td>
                   </tr>
                 ))}
-                {!history.length && <tr><td colSpan={5} className="px-5 py-6 text-center text-slate-400">No matching history.</td></tr>}
+                {data && !history.length && <tr><td colSpan={5} className="px-5 py-6 text-center text-slate-400">No matching history.</td></tr>}
               </tbody>
             </table>
           </div>

@@ -7,6 +7,8 @@ import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
 import ScrollSelect from "../components/ScrollSelect";
+import RowActionsMenu from "../components/RowActionsMenu";
+import { SkeletonRows } from "../components/scaffold";
 
 const TYPES = ["TEXT", "NUMBER", "DATE", "DROPDOWN", "FILE", "BOOLEAN"];
 const VIS = ["PUBLIC", "NECESSARY", "SENSITIVE"];
@@ -18,7 +20,11 @@ export default function FieldsPage() {
   const confirm = useConfirm();
   const navigate = useNavigate();
   const isOps = user!.role === "OPS_ADMIN";
-  const [data, setData] = useState<any>(null);
+  // Seed from a localStorage cache so the module/section NAMES (Personal Details, Hiring Details, …)
+  // render INSTANTLY on open; the fresh counts update silently when /fields resolves.
+  const [data, setData] = useState<any>(() => {
+    try { return JSON.parse(localStorage.getItem("fields-data-v1") || "null"); } catch { return null; }
+  });
   const [editing, setEditing] = useState<any>(null);
   const [archiving, setArchiving] = useState<any>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -27,7 +33,7 @@ export default function FieldsPage() {
   const [tracks, setTracks] = useState<any[]>([]);
   const [selected, setSelected] = useState<string>("__training__"); // left-nav selection (default: Training Stats columns)
 
-  function load() { api.get("/fields").then(setData).catch((e) => toast.error(e.message || "Failed to load fields")); }
+  function load() { api.get("/fields").then((d) => { setData(d); try { localStorage.setItem("fields-data-v1", JSON.stringify(d)); } catch { /* quota */ } }).catch((e) => toast.error(e.message || "Failed to load fields")); }
   useEffect(() => { load(); }, []);
   useEffect(() => { api.get("/training/tracks").then((r) => setTracks(r.tracks)).catch(() => {}); }, []);
 
@@ -104,6 +110,7 @@ export default function FieldsPage() {
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-wide text-slate-400"><tr><th className="px-5 py-2">Label</th><th className="px-5 py-2">Type</th><th className="px-5 py-2">Visibility</th><th className="px-5 py-2">Scope</th><th className="px-5 py-2">In use</th><th className="px-5 py-2"></th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
+                    {!data && <SkeletonRows rows={8} cols={6} cellClass="px-5 py-2.5" />}
                     {moduleFields.map((f) => (
                       <tr key={f.id} className="hover:bg-slate-50">
                         <td className="px-5 py-2.5 font-medium cell-trunc" title={f.label}>{f.label}<span className="ml-2 font-mono text-[11px] text-slate-400">{f.key}</span></td>
@@ -112,15 +119,17 @@ export default function FieldsPage() {
                         <td className="px-5 py-2.5 text-slate-500 cell-trunc" title={f.scope === "INSTANCE" ? `Instance · ${f.instructorName || "?"}` : "Global"}>{f.scope === "INSTANCE" ? `Instance · ${f.instructorName || "?"}` : "Global"}</td>
                         <td className="px-5 py-2.5 text-slate-500">{f.valueCount}</td>
                         <td className="px-5 py-2.5">
-                          <div className="flex justify-end gap-1">
-                            {isOps && <button title="Edit" onClick={() => setEditing(f)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>}
-                            <button title="Archive" onClick={() => setArchiving(f)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-amber-600"><Archive className="h-4 w-4" /></button>
-                            {isOps && <button title="Delete" onClick={() => del(f)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>}
+                          <div className="flex justify-end">
+                            <RowActionsMenu actions={[
+                              ...(isOps ? [{ label: "Edit", icon: Pencil, onClick: () => setEditing(f) }] : []),
+                              { label: "Archive", icon: Archive, onClick: () => setArchiving(f) },
+                              ...(isOps ? [{ label: "Delete", icon: Trash2, danger: true, onClick: () => del(f) }] : []),
+                            ]} />
                           </div>
                         </td>
                       </tr>
                     ))}
-                    {!moduleFields.length && <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400">No fields in this module{sx || visF ? " match your filters" : " yet"}.</td></tr>}
+                    {data && !moduleFields.length && <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400">No fields in this module{sx || visF ? " match your filters" : " yet"}.</td></tr>}
                   </tbody>
                 </table>
               </div>

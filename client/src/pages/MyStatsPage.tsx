@@ -4,8 +4,36 @@ import { api } from "../api";
 import { LIFECYCLE_LABEL } from "../auth";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
-import { GridSkeleton } from "../components/skeletons";
+import { Skeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
+
+// Scaffold-first shell: the real "My Stats" heading + the profile-card / side-nav / content-card frame
+// render instantly; the person's details, tabs and field values shimmer until /instructors/me resolves.
+function MyStatsSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div><h1 className="text-2xl font-bold">My Stats</h1><p className="text-sm text-slate-500">Review and keep your own details up to date.</p></div>
+      <div className="card flex flex-wrap items-center gap-4 p-6">
+        <Skeleton width="64px" height="64px" borderRadius="16px" />
+        <div className="flex-1 space-y-2"><Skeleton width="180px" height="20px" /><Skeleton width="260px" height="12px" /></div>
+        <Skeleton width="90px" height="24px" borderRadius="9999px" />
+      </div>
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <nav className="shrink-0 space-y-2 lg:w-56">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height="36px" borderRadius="10px" />)}
+        </nav>
+        <div className="min-w-0 flex-1">
+          <div className="card space-y-4 p-6">
+            <Skeleton width="40%" height="16px" />
+            <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              {Array.from({ length: 8 }).map((_, i) => <div key={i} className="space-y-1.5"><Skeleton width="30%" height="10px" /><Skeleton width="70%" height="14px" /></div>)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Module labels/order come dynamically from the profile payload (p.modules).
 export default function MyStatsPage() {
@@ -19,7 +47,7 @@ export default function MyStatsPage() {
   useEffect(() => { let on = true; api.get("/instructors/me").then((r) => on && setP(r)).catch((e) => on && setErr(e.message)); return () => { on = false; }; }, []);
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!p) return <GridSkeleton />;
+  if (!p) return <MyStatsSkeleton />;
 
   const inst = p.instructor || {};
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));

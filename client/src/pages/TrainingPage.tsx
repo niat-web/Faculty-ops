@@ -350,8 +350,20 @@ export default function TrainingPage() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const data: any[] = resp?.rows || [];
-  const columns: Record<string, any[]> = resp?.columns || {};
-  const tracks: any[] = resp?.tracks || [];
+  // Cache the column/track "shell" (localStorage) so the FULL table structure — every column header +
+  // grouping + the track picker — renders INSTANTLY on load (even the first render of a session), while
+  // the fresh rows stream in underneath. Columns are dynamic (admin-configured), so without this the
+  // grid could only show the static Employee ID + Name until the API returned the column list.
+  const [shell] = useState<{ columns?: Record<string, any[]>; tracks?: any[] }>(() => {
+    try { return JSON.parse(localStorage.getItem("training-shell-v1") || "{}"); } catch { return {}; }
+  });
+  useEffect(() => {
+    if (resp?.columns && Object.keys(resp.columns).length) {
+      try { localStorage.setItem("training-shell-v1", JSON.stringify({ columns: resp.columns, tracks: resp.tracks || [] })); } catch { /* quota — ignore */ }
+    }
+  }, [resp?.columns, resp?.tracks]);
+  const columns: Record<string, any[]> = (resp?.columns && Object.keys(resp.columns).length ? resp.columns : shell.columns) || {};
+  const tracks: any[] = (resp?.tracks?.length ? resp.tracks : shell.tracks) || [];
   const progressSync = resp?.progressSync;
 
   // Reset view state when the track (route) changes.
@@ -373,14 +385,14 @@ export default function TrainingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabKey]);
 
-  // On load / sync, surface the BigQuery status as a long-lived toast (30s) instead of a header banner.
+  // BigQuery sync status is applied silently — data just overlays in place. We intentionally show no
+  // toast/banner on this page (per request): only a failure is surfaced, and only once per error.
   useEffect(() => {
-    if (!progressSync) return;
-    const key = progressSync.lastSyncedAt || progressSync.error || "";
+    if (!progressSync || progressSync.ok) return;
+    const key = progressSync.error || "";
     if (!key || syncToastRef.current === key) return;
     syncToastRef.current = key;
-    if (progressSync.ok) toast.success(`Live from BigQuery · ${progressSync.instructorsMatched || 0}/${progressSync.totalInstructors || 0} matched · ${progressSync.mappedCourses || 0} courses · ${progressSync.matched || 0} cells synced`);
-    else toast.error(progressSync.error || "BigQuery sync unavailable");
+    toast.error(progressSync.error || "BigQuery sync unavailable");
   }, [progressSync, toast]);
 
   // When a cell enters edit mode, open its native dropdown/picker immediately (single click).
@@ -501,15 +513,26 @@ export default function TrainingPage() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
   }
 
-  // First-ever visit (nothing cached): render the page shell + shimmer grid immediately —
-  // never a blank page. Data streams in underneath.
-  if (!resp && loading) return (
+  // Only fall back to the generic skeleton on the TRULY first-ever visit (no cached column shell yet).
+  // Once we've seen this track's columns before, we render the REAL table structure (all headers) with
+  // shimmer rows instead — see the main return — so the full grid UI shows immediately.
+  if (!resp && loading && !cols.length) return (
+    // Instant shell: the real title + search + export render immediately; only the data-driven track
+    // picker + manager filter (and the grid) shimmer until the first payload arrives.
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Training Stats</h1>
-        <div className="flex items-center gap-2">
-          <Skeleton width="224px" height="38px" borderRadius="10px" />
-          <Skeleton width="120px" height="38px" borderRadius="10px" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><GraduationCap className="h-6 w-6 text-brand-600" /> Training Stats</h1>
+          <span className="text-2xl font-light text-slate-300">·</span>
+          <Skeleton width="150px" height="32px" borderRadius="8px" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="Search name or ID…" className="input w-56 pl-9" />
+          </div>
+          <Skeleton width="192px" height="38px" borderRadius="10px" />
+          <button onClick={exportCsv} disabled className="btn btn-ghost btn-sm opacity-50" title="Export the current table as CSV"><Download className="h-4 w-4" /> Export CSV</button>
         </div>
       </div>
       <TableSkeleton rows={12} cols={8} />

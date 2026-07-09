@@ -72,12 +72,17 @@ router.get("/managers", staffGuard, async (req, res) => {
   if (!src.ok) return res.status(502).json({ items: [], grandTotal: 0, error: src.error });
   const m = new Map<string, number>();
   for (const r of src.rows) { const raw = clean(r.reporting_manager); m.set(raw, (m.get(raw) || 0) + 1); }
+  // A removed CM must not appear even if they still manage (non-removed) reportees.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const { norm } = await import("../lib/darwinboxSync");
+  const removedSet = await removedEmployeeIdSet();
   const items = [...m.entries()]
     .map(([raw, count]) => {
       const id = (raw.match(/\((NW[^)]+)\)/i) || [])[1] || "";     // employee-id code inside the parens
       const name = raw.replace(/\s*\(NW[^)]*\)\s*$/i, "").trim();   // display name without the code
       return { managerId: id || null, manager: name || (raw || "NA (no reporting manager)"), count };
     })
+    .filter((it) => !(it.managerId && removedSet.has(norm(it.managerId)))) // drop removed managers
     .sort((a, b) => b.count - a.count || a.manager.localeCompare(b.manager));
   res.json({ items, grandTotal: src.rows.length });
 });

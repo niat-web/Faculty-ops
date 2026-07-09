@@ -10,9 +10,9 @@ import { requireUser } from "../middleware";
 const router = Router();
 router.use(requireUser());
 
-// Dashboard (role-aware).
-// ?live=1 → BigQuery-blocking dashboard with a FRESH read (no cached/stale result). The Dashboard page
-// always calls with live=1 and waits, so it renders the latest BigQuery numbers exactly once.
+// Dashboard (role-aware). Serves purely from MongoDB — the stored training % is refreshed hourly by
+// the BigQuery → Mongo persist. (?live=1 still forces a blocking fresh BigQuery overlay, but the
+// client doesn't use it — kept for manual/API use.)
 router.get("/dashboard", async (req, res) => {
   const live = String(req.query.live || "") === "1";
   res.json(await dashboardData(req.user!, live, live ? { fresh: true } : undefined));
@@ -199,19 +199,37 @@ router.get("/org", async (req, res) => {
   }
   const byReportees = (a: any, b: any) => b.reportees - a.reportees || String(a.name).localeCompare(String(b.name));
   // Curated Senior Managers first, then the Darwinbox-derived ones; each by reportee weight.
-  const seniors = [...smByEmp.values()].sort((a, b) =>
+  let seniors = [...smByEmp.values()].sort((a, b) =>
     (Number(b.curated) - Number(a.curated))
     || (b.capabilityManagers.reduce((n: number, c: any) => n + c.reportees, 0) - a.capabilityManagers.reduce((n: number, c: any) => n + c.reportees, 0))
     || String(a.name).localeCompare(String(b.name)));
   for (const s of seniors) s.capabilityManagers.sort(byReportees);
   unassignedCMs.sort(byReportees);
 
+  // Hide admin-removed staff from the chart too (instructors were already excluded via loadLiveMasterRows,
+  // which drops their CM reportee counts). Ops Admins matched by email→Employee ID; CMs by rmid; SMs by
+  // their own Employee ID. A removed SM's Capability Managers move to Unassigned rather than vanishing.
+  const { removedEmployeeIdSet } = await import("../lib/removed");
+  const removedSet = await removedEmployeeIdSet();
+  const empByEmail = new Map<string, string>((dir as any[]).map((p) => [norm2(p.email), norm2(p.employeeId)]));
+  const opsRemoved = (o: any) => removedSet.has(empByEmail.get(norm2(o.email)) || "");
+  const opsAdminsVisible = opsAdmins.filter((o) => !opsRemoved(o));
+  const cmRemoved = (c: any) => removedSet.has(norm2(c.rmid));
+  const freedCMs: any[] = [];
+  seniors = seniors.filter((s: any) => {
+    if (removedSet.has(norm2(s.employeeId))) { freedCMs.push(...s.capabilityManagers.filter((c: any) => !cmRemoved(c))); return false; }
+    s.capabilityManagers = s.capabilityManagers.filter((c: any) => !cmRemoved(c));
+    return true;
+  });
+  const unassignedVisible = [...unassignedCMs.filter((c) => !cmRemoved(c)), ...freedCMs].sort(byReportees);
+  const visibleCmCount = seniors.reduce((n: number, s: any) => n + s.capabilityManagers.length, 0) + unassignedVisible.length;
+
   res.json({
     totalInstructors,
-    totalManagers: seniors.length + cmCount,
-    opsAdmins,
-    seniors: seniors.map(({ employeeId, curated, ...s }) => s), // drop internal fields from the payload
-    unassignedCMs,
+    totalManagers: seniors.length + visibleCmCount,
+    opsAdmins: opsAdminsVisible,
+    seniors: seniors.map(({ employeeId, curated, ...s }: any) => s), // drop internal fields from the payload
+    unassignedCMs: unassignedVisible,
   });
 });
 
@@ -470,6 +488,31 @@ router.patch("/settings/exit-alerts", async (req, res) => {
   const { writeAudit } = await import("../lib/services");
   await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Exit alert settings", newValue: `lead ${exitAlerts.leadDays}d · ${universities.length} universities`, reason: "Exit alert settings" });
   res.json({ exitAlerts, universities });
+});
+
+// ── Master department quick-filter (Ops only): which departments (from Darwinbox) are UNCHECKED by
+// default in the Instructor-Master Departments menu. Departments come from the live Master set (Mongo
+// mirror of Darwinbox). `hidden` = the exact names the admin has chosen to hide by default.
+router.get("/settings/master-departments", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getMasterDepartments } = await import("../lib/settings");
+  const { loadLiveMasterRows, isDefaultUnchecked } = await import("../lib/masterLive");
+  const [cfg, live] = await Promise.all([getMasterDepartments(), loadLiveMasterRows(false)]);
+  const departments = (live.ok ? live.departments : []) as string[];
+  const norm = (s: any) => String(s || "").trim().toLowerCase();
+  const hiddenSet = new Set(cfg.hidden.map(norm));
+  // Effective default-hidden state per department (admin list wins; else the built-in support-dept default).
+  const items = departments.map((name) => ({ name, hidden: cfg.configured ? hiddenSet.has(norm(name)) : isDefaultUnchecked(name) }));
+  res.json({ departments: items, configured: cfg.configured });
+});
+router.patch("/settings/master-departments", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const hidden = Array.isArray(req.body?.hidden) ? req.body.hidden : [];
+  const { setMasterHiddenDepartments } = await import("../lib/settings");
+  const cfg = await setMasterHiddenDepartments(hidden);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Master departments", newValue: `${cfg.hidden.length} hidden by default`, reason: "Master department filter" });
+  res.json({ ok: true, hidden: cfg.hidden });
 });
 
 // ── Senior Managers (Ops only): admin-curated list, picked from Darwinbox ──

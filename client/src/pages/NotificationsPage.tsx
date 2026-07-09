@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, Check, Mail, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
-import { PageSkeleton } from "../components/skeletons";
+import { SkeletonList } from "../components/scaffold";
 
 export default function NotificationsPage() {
   const toast = useToast();
@@ -32,8 +32,6 @@ export default function NotificationsPage() {
   }
   function openItem(n: any) { if (!n.read) setRead(n, true); if (n.link) nav(n.link); }
 
-  if (!data) return <PageSkeleton />;
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -43,6 +41,7 @@ export default function NotificationsPage() {
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
       <div className="card divide-y divide-slate-100">
+        {!data && <div className="p-5"><SkeletonList rows={6} /></div>}
         {items.map((n) => (
           <div key={n.id} className={`group relative flex items-start gap-3 px-5 py-3 transition hover:bg-slate-50 ${n.read ? "" : "bg-brand-50/40"}`}>
             <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${n.read ? "bg-slate-100 text-slate-400" : "bg-brand-100 text-brand-600"}`}><Bell className="h-4 w-4" /></span>

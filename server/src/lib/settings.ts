@@ -229,6 +229,52 @@ export async function regenerateCertToken(): Promise<CertFormSettings> {
   return getCertForm();
 }
 
+// The admin-configurable Certificates form SCHEMA (sections + fields). Defaults to the original form.
+export async function getCertSchema() {
+  const { DEFAULT_CERT_SCHEMA, normalizeSchema } = await import("./certSchema");
+  const c = (await getSettings()).certForm || {};
+  return c.schema ? normalizeSchema(c.schema) : DEFAULT_CERT_SCHEMA;
+}
+export async function setCertSchema(raw: any) {
+  const { normalizeSchema } = await import("./certSchema");
+  const schema = normalizeSchema(raw);
+  await writeGroup("certForm", { schema });
+  return schema;
+}
+
+// ── Instructor-Master department quick-filter (admin-controlled) ──────
+// `hidden` = the exact department names an Ops Admin has chosen to be UNCHECKED by default in the
+// Master's Departments menu. Departments come from Darwinbox (via the Mongo mirror). `configured` tells
+// the caller whether the admin has ever saved a list (so an empty saved list means "show everything by
+// default", distinct from "never configured → fall back to the built-in support-dept default").
+export type MasterDeptSettings = { hidden: string[]; configured: boolean };
+export async function getMasterDepartments(): Promise<MasterDeptSettings> {
+  const m = (await getSettings()).masterDepartments || {};
+  const hidden: string[] = Array.isArray(m.hidden) ? m.hidden.map((s: any) => String(s || "").trim()).filter(Boolean) : [];
+  return { hidden: [...new Set(hidden)], configured: Array.isArray(m.hidden) };
+}
+export async function setMasterHiddenDepartments(list: string[]) {
+  const clean = [...new Set((Array.isArray(list) ? list : []).map((s) => String(s || "").trim()).filter(Boolean))];
+  const doc = await AppSetting.findOneAndUpdate({ key: KEY }, { $set: { "masterDepartments.hidden": clean } }, { new: true, upsert: true });
+  cache = doc.toObject(); cacheAt = Date.now();
+  return getMasterDepartments();
+}
+
+// Which payroll entities are SHOWN in the Instructor Master grid (Ops-controlled, global default).
+// Both default to true (show everyone). Rows with a blank/other payroll are always shown.
+export type MasterPayrollVisibility = { nxtwave: boolean; university: boolean };
+export async function getMasterPayrollVisibility(): Promise<MasterPayrollVisibility> {
+  const m = (await getSettings()).masterPayroll || {};
+  return { nxtwave: m.nxtwave !== false, university: m.university !== false };
+}
+export async function setMasterPayrollVisibility(patch: Partial<MasterPayrollVisibility>) {
+  const clean: Record<string, any> = {};
+  if (patch.nxtwave != null) clean.nxtwave = !!patch.nxtwave;
+  if (patch.university != null) clean.university = !!patch.university;
+  await writeGroup("masterPayroll", clean);
+  return getMasterPayrollVisibility();
+}
+
 // ── Universities (for the CM exit "University Payroll" outcome) ────────
 export async function getUniversities(): Promise<string[]> {
   const u = (await getSettings()).universities;

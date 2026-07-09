@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { UserMinus, Building2, Plus, X } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
-import { FormSkeleton } from "../../components/skeletons";
+import { Skeleton } from "../../components/Skeleton";
+import { SkeletonField } from "../../components/scaffold";
 
 // Ops-only: how many days before an instructor's Darwinbox last-working-day to raise an exit alert.
 const PRESETS = [2, 5, 10];
@@ -44,8 +45,6 @@ export default function ExitAlertsSettingsPage() {
     saveUnis([...universities, v]); setNewUni("");
   }
 
-  if (!loaded) return <FormSkeleton />;
-
   return (
     <div className="space-y-5">
       <div className="card p-6">
@@ -65,14 +64,14 @@ export default function ExitAlertsSettingsPage() {
           <label className="label">Alert lead time (days before last working day)</label>
           <div className="mb-2 flex flex-wrap gap-2">
             {PRESETS.map((p) => (
-              <button key={p} type="button" onClick={() => setDays(p)} className={`btn btn-sm ${Number(days) === p ? "btn-primary" : "btn-ghost border border-slate-200"}`}>{p} days</button>
+              <button key={p} type="button" disabled={!loaded} onClick={() => setDays(p)} className={`btn btn-sm disabled:opacity-50 ${Number(days) === p ? "btn-primary" : "btn-ghost border border-slate-200"}`}>{p} days</button>
             ))}
           </div>
-          <input className="input" type="number" min={0} max={365} value={days} onChange={(e) => { const n = parseInt(e.target.value, 10); setDays(isNaN(n) ? "" : Math.min(365, Math.max(0, n))); }} />
+          {loaded ? <input className="input" type="number" min={0} max={365} value={days} onChange={(e) => { const n = parseInt(e.target.value, 10); setDays(isNaN(n) ? "" : Math.min(365, Math.max(0, n))); }} /> : <SkeletonField />}
           <p className="mt-1 text-xs text-slate-400">{!days || Number(days) === 0 ? "0 = alert only on/after the last working day." : `Alerts are raised ${days} day(s) before the last working day.`}</p>
         </div>
         <div className="mt-4 flex justify-end">
-          <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
+          <button disabled={busy || !loaded} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
 
@@ -81,10 +80,12 @@ export default function ExitAlertsSettingsPage() {
         <div className="mb-1 flex items-center gap-2"><Building2 className="h-5 w-5 text-brand-600" /><h2 className="font-semibold">University names</h2></div>
         <p className="mb-4 text-sm text-slate-500">When a Capability Manager marks an exit as "Moved to University Payroll," they pick one of these universities. Changes save automatically.</p>
         <div className="mb-4 flex max-w-md gap-2">
-          <input className="input" placeholder="Add a university name…" value={newUni} onChange={(e) => setNewUni(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUni(); } }} />
-          <button onClick={addUni} className="btn btn-primary btn-sm shrink-0"><Plus className="h-4 w-4" /> Add</button>
+          <input className="input" placeholder="Add a university name…" disabled={!loaded} value={newUni} onChange={(e) => setNewUni(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUni(); } }} />
+          <button onClick={addUni} disabled={!loaded} className="btn btn-primary btn-sm shrink-0 disabled:opacity-50"><Plus className="h-4 w-4" /> Add</button>
         </div>
-        {universities.length ? (
+        {!loaded ? (
+          <div className="flex flex-wrap gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="120px" height="30px" borderRadius="9999px" />)}</div>
+        ) : universities.length ? (
           <div className="flex flex-wrap gap-2">
             {universities.map((u) => (
               <span key={u} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">

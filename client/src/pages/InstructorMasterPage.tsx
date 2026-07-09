@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, X, CheckSquare, Inbox, RefreshCw, MoreHorizontal, ChevronDown } from "lucide-react";
+import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, EyeOff, X, CheckSquare, Inbox, RefreshCw, MoreHorizontal, ChevronDown } from "lucide-react";
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
@@ -9,6 +9,7 @@ import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
+import RowActionsMenu from "../components/RowActionsMenu";
 import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
@@ -41,7 +42,16 @@ export default function InstructorMasterPage() {
   const actionsRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<any>(null);
   const [importing, setImporting] = useState<any[] | null>(null);
-  const [meta, setMeta] = useState<Meta | null>(null);
+  // "Payroll → University" capture: when a Payroll cell is set to University, ask for the university/campus
+  // name (from the admin-managed list + custom) before saving. `moveRow` holds the row being moved.
+  const [moveRow, setMoveRow] = useState<any>(null);
+  const [universities, setUniversities] = useState<string[]>([]);
+  // Seed the columns/meta from a localStorage cache so the FULL table structure (all column headers)
+  // renders INSTANTLY on load — the columns are admin-configured (dynamic), so without this the grid
+  // could only show Employee ID + Name until /master/meta returned. Refreshed on every fetch below.
+  const [meta, setMeta] = useState<Meta | null>(() => {
+    try { return JSON.parse(localStorage.getItem("master-meta-v1") || "null"); } catch { return null; }
+  });
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState<string | null>(null);
@@ -86,6 +96,28 @@ export default function InstructorMasterPage() {
     toast[fail ? "error" : "success"](`${ok} deleted${fail ? `, ${fail} failed` : ""}.`);
     exitSelect(); reload();
   }
+  // Remove (HIDE, not delete) a single row — same effect as the bulk Remove.
+  async function hideInstructor(row: any) {
+    if (!row.id) { toast.error("This row has no saved record yet."); return; }
+    if (!(await confirm({ title: `Remove ${row.name}?`, message: `${row.name} (${row.employeeId}) will be hidden from the Master, Exited, Org chart, Training and all counts everywhere. Nothing is deleted — restore from Settings → Removed.`, confirmText: "Remove", danger: true }))) return;
+    try {
+      await api.post("/removed", { instructorIds: [row.id] });
+      toast.success(`${row.name} removed.`);
+      reload();
+    } catch (e: any) { toast.error(e.message || "Failed to remove."); }
+  }
+  // Remove (HIDE, not delete): excludes the selected people from the Master, Exited, Org chart, Training
+  // and all counts app-wide, WITHOUT deleting anything. Restore them anytime from Settings → Removed.
+  async function bulkRemove() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!(await confirm({ title: `Remove ${ids.length} person(s)?`, message: `They'll be hidden from the Master, Exited, Org chart, Training and all counts everywhere. Nothing is deleted — you can restore them from Settings → Removed.`, confirmText: "Remove", danger: true }))) return;
+    try {
+      const r = await api.post("/removed", { instructorIds: ids });
+      toast.success(`${r.removed} removed${r.removed !== r.requested ? ` (${r.requested - r.removed} already hidden)` : ""}.`);
+      exitSelect(); reload();
+    } catch (e: any) { toast.error(e.message || "Failed to remove."); }
+  }
 
   // Role filter (deep-linked from the Roles page): /app/instructors/master?role=OPS_ADMIN
   // Contribution filter (deep-linked from the Contribution page): ?contribution=<value>
@@ -105,7 +137,9 @@ export default function InstructorMasterPage() {
     setApplied((f) => ({ ...f, reportingManager: [] })); setDraft((f) => ({ ...f, reportingManager: [] })); setPage(1);
   }
 
-  useEffect(() => { api.get("/master/meta").then(setMeta).catch((e) => setErr(e.message)); }, []);
+  useEffect(() => {
+    api.get("/master/meta").then((m) => { setMeta(m); try { localStorage.setItem("master-meta-v1", JSON.stringify(m)); } catch { /* quota — ignore */ } }).catch((e) => setErr(e.message));
+  }, []);
   // Close the Actions menu on outside click.
   useEffect(() => {
     if (!actionsOpen) return;
@@ -184,6 +218,9 @@ export default function InstructorMasterPage() {
     return () => ac.abort();
   }, [query, page, per, reloadKey]);
 
+  // University names for the "Payroll → University" picker (admin-managed list).
+  useEffect(() => { api.get("/master/universities").then((r) => setUniversities(r.universities || [])).catch(() => {}); }, []);
+
   const pages = Math.max(1, Math.ceil(total / per));
 
   const managerName = useMemo(() => Object.fromEntries((meta?.managers || []).map((m) => [m.id, m.name])), [meta]);
@@ -235,6 +272,8 @@ export default function InstructorMasterPage() {
     setEdit(null);
     const cur = row[col.key] ?? "";
     if (String(cur) === String(raw)) return;
+    // Moving to University payroll → ask for the university/campus name first (saved as `workspace`).
+    if (col.key === "payroll_entity" && String(raw).toLowerCase() === "university") { setMoveRow(row); return; }
     const prevRow = { ...row };
     // Rows are keyed by employeeId (Darwinbox-only rows have no Mongo id yet).
     setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? { ...r, [col.key]: raw } : r)));
@@ -250,22 +289,87 @@ export default function InstructorMasterPage() {
     }
   }
 
+  // Confirm a "Payroll → University" move: set payroll_entity=University AND workspace=<university>, then
+  // reflect it in the grid. The person now appears on the Instructor Moved page.
+  async function saveMove(university: string) {
+    const row = moveRow;
+    const uni = String(university || "").trim();
+    if (!row || !uni) return;
+    setMoveRow(null);
+    const prevRow = { ...row };
+    setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? { ...r, payroll_entity: "University", workspace: uni } : r)));
+    try {
+      const r = await api.post("/master/cell", { instructorId: row.id || null, employeeId: row.employeeId, name: row.name, key: "payroll_entity", value: "University" });
+      const iid = r?.instructorId || row.id || null;
+      if (iid && !row.id) setRows((rs) => rs.map((x) => (x.employeeId === row.employeeId ? { ...x, id: iid } : x)));
+      await api.post("/master/cell", { instructorId: iid, employeeId: row.employeeId, name: row.name, key: "workspace", value: uni });
+      toast.success(`${row.name} moved to University payroll: ${uni}`);
+    } catch (e: any) {
+      setRows((rs) => rs.map((r) => (r.employeeId === row.employeeId ? prevRow : r)));
+      toast.error(e.message || "Failed to save");
+    }
+  }
+
   if (err && !meta) return <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => location.reload()} className="btn btn-ghost btn-sm">Reload</button></div>;
-  // Instant shell while columns/meta load — real header renders immediately, grid shimmers underneath.
-  if (!meta) return (
-    <div className="flex h-full flex-col gap-4">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Instructor Master</h1>
-          <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Skeleton width="224px" height="36px" borderRadius="10px" />
-          <Skeleton width="96px" height="36px" borderRadius="10px" />
-          <Skeleton width="120px" height="36px" borderRadius="10px" />
-        </div>
+
+  // The full toolbar (title + search + filters + multi-select + actions) is STATIC — render it identically
+  // whether or not the dynamic columns (meta) have loaded, so the real page chrome appears instantly.
+  const headerBar = (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold">Instructor Master</h1>
+        <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
       </div>
-      <TableSkeleton rows={12} cols={7} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-56 sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input className="input h-9 pl-9 text-sm" placeholder="Search name, ID, email…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
+        </div>
+        {role && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+            Role: {ROLE_LABEL[role] || role}
+            <button onClick={clearRole} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear role filter"><X className="h-3 w-3" /></button>
+          </span>
+        )}
+        {contribution && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+            Contribution: {contribution}
+            <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
+          </span>
+        )}
+        {rmFilterActive && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+            Reporting Manager: {rmName || rmNameFilter || applied.reportingManager.join(", ")}
+            <button onClick={clearReportingManager} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
+          </span>
+        )}
+        <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
+          <SlidersHorizontal className="h-4 w-4" /> Filters
+          {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
+        </button>
+        {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
+        <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
+        {/* Actions menu — Add instructor / Import / Export collapsed into one button. */}
+        <div ref={actionsRef} className="relative">
+          <button onClick={() => setActionsOpen((o) => !o)} className="btn btn-primary btn-sm"><MoreHorizontal className="h-4 w-4" /> Actions <ChevronDown className={`h-3.5 w-3.5 transition ${actionsOpen ? "rotate-180" : ""}`} /></button>
+          {actionsOpen && (
+            <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              {isOps && <button onClick={() => { setAdding(true); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Plus className="h-4 w-4 text-slate-400" /> Add instructor</button>}
+              {isOps && <button onClick={() => { fileRef.current?.click(); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Upload className="h-4 w-4 text-slate-400" /> Import CSV</button>}
+              <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} onClick={() => setActionsOpen(false)} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4 text-slate-400" /> Export CSV</a>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
+      </div>
+    </div>
+  );
+
+  // Instant shell while the dynamic columns (meta) load — the REAL toolbar shows; only the grid shimmers.
+  if (!meta) return (
+    <div className="flex flex-col gap-4">
+      {headerBar}
+      <TableSkeleton rows={14} cols={8} />
     </div>
   );
 
@@ -273,54 +377,7 @@ export default function InstructorMasterPage() {
     // Normal page flow (like the Training Stats page): the PAGE (<main>) scrolls vertically, the card only
     // scrolls horizontally, and the pagination sits below the full table at the bottom of the page.
     <div className="flex flex-col gap-4">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Instructor Master</h1>
-          <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-56 sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input className="input h-9 pl-9 text-sm" placeholder="Search name, ID, email…" value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} />
-          </div>
-          {role && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
-              Role: {ROLE_LABEL[role] || role}
-              <button onClick={clearRole} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear role filter"><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          {contribution && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
-              Contribution: {contribution}
-              <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          {rmFilterActive && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
-              Reporting Manager: {rmName || rmNameFilter || applied.reportingManager.join(", ")}
-              <button onClick={clearReportingManager} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
-            <SlidersHorizontal className="h-4 w-4" /> Filters
-            {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
-          </button>
-          {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
-          <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
-          {/* Actions menu — Add instructor / Import / Export collapsed into one button. */}
-          <div ref={actionsRef} className="relative">
-            <button onClick={() => setActionsOpen((o) => !o)} className="btn btn-primary btn-sm"><MoreHorizontal className="h-4 w-4" /> Actions <ChevronDown className={`h-3.5 w-3.5 transition ${actionsOpen ? "rotate-180" : ""}`} /></button>
-            {actionsOpen && (
-              <div className="absolute right-0 z-40 mt-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                {isOps && <button onClick={() => { setAdding(true); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Plus className="h-4 w-4 text-slate-400" /> Add instructor</button>}
-                {isOps && <button onClick={() => { fileRef.current?.click(); setActionsOpen(false); }} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Upload className="h-4 w-4 text-slate-400" /> Import CSV</button>}
-                <a href={`${API_BASE}/api/master/export.csv${query.toString() ? `?${query}` : ""}`} onClick={() => setActionsOpen(false)} className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><Download className="h-4 w-4 text-slate-400" /> Export CSV</a>
-              </div>
-            )}
-          </div>
-          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
-        </div>
-      </div>
+      {headerBar}
 
       {err &&<div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => setReloadKey((k) => k + 1)} className="btn btn-ghost btn-sm">Retry</button></div>}
 
@@ -330,6 +387,7 @@ export default function InstructorMasterPage() {
           <span className="text-sm font-medium text-brand-800">{selected.size} selected</span>
           <div className="flex items-center gap-2">
             <button onClick={() => setBulkOpen(true)} className="btn btn-primary btn-sm"><Pencil className="h-4 w-4" /> Edit</button>
+            {isOps && <button onClick={bulkRemove} title="Hide from the app (restorable from Settings → Removed)" className="btn btn-ghost btn-sm border border-amber-300 text-amber-700 hover:bg-amber-50"><EyeOff className="h-4 w-4" /> Remove</button>}
             {isOps && <button onClick={bulkDelete} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /> Delete</button>}
             <button onClick={() => setSelected(new Set())} className="btn btn-ghost btn-sm">Clear</button>
           </div>
@@ -465,9 +523,12 @@ export default function InstructorMasterPage() {
                   })}
                   {isOps && (
                     <td className="sticky right-0 z-10 border-l border-slate-100 bg-inherit px-3 py-2 text-right">
-                      <div className="flex justify-end gap-1">
-                        <button onClick={() => setEditing(row)} title="Edit" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600"><Pencil className="h-4 w-4" /></button>
-                        <button onClick={() => removeInstructor(row)} title="Delete" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-rose-600"><Trash2 className="h-4 w-4" /></button>
+                      <div className="flex justify-end">
+                        <RowActionsMenu actions={[
+                          { label: "Edit", icon: Pencil, onClick: () => setEditing(row) },
+                          { label: "Remove (hide)", icon: EyeOff, onClick: () => hideInstructor(row), title: "Hide from the app — restorable from Settings → Removed" },
+                          { label: "Delete", icon: Trash2, danger: true, onClick: () => removeInstructor(row) },
+                        ]} />
                       </div>
                     </td>
                   )}
@@ -507,6 +568,8 @@ export default function InstructorMasterPage() {
       <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
 
       {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
+
+      {moveRow && <MoveToUniversityModal row={moveRow} universities={universities} onClose={() => setMoveRow(null)} onSubmit={saveMove} />}
 
       {adding && <AddInstructorDrawer managers={meta.managers} columns={meta.columns} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
       {editing && <EditInstructorModal inst={editing} managers={meta.managers} onClose={() => setEditing(null)} onDone={() => { setEditing(null); reload(); }} />}
@@ -562,6 +625,55 @@ export default function InstructorMasterPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// "Payroll → University" capture modal. Asks for the university/campus name via a scrollable dropdown of
+// the admin-managed list (Settings → Operations → University names) plus a custom "Other…" entry. On submit
+// the row is moved to University payroll and shows up on Instructor Moved.
+function MoveToUniversityModal({ row, universities, onClose, onSubmit }: { row: any; universities: string[]; onClose: () => void; onSubmit: (u: string) => void }) {
+  const preset = row?.workspace && universities.includes(row.workspace) ? row.workspace : "";
+  const [choice, setChoice] = useState<string>(preset || (universities.length ? "" : "__custom__"));
+  const [custom, setCustom] = useState<string>(preset ? "" : (row?.workspace || ""));
+  const isCustom = choice === "__custom__";
+  const value = (isCustom ? custom : choice).trim();
+  const options = [
+    { value: "", label: "— Select university —" },
+    ...universities.map((u) => ({ value: u, label: u })),
+    { value: "__custom__", label: "＋ Other (type a name)…" },
+  ];
+  return (
+    <Modal onClose={onClose} title="Move to University payroll">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Moving <b className="text-slate-700">{row?.name}</b> ({row?.employeeId}) to <b>University</b> payroll.
+          Choose the university / campus name — it's saved on the record and appears on <b>Instructor Moved</b>.
+        </p>
+        <div>
+          <label className="label">University / campus name</label>
+          <ScrollSelect
+            value={choice}
+            options={options}
+            onChange={(v) => { setChoice(v); }}
+            className="input flex items-center justify-between gap-2"
+          />
+          {isCustom && (
+            <input
+              autoFocus
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              placeholder="Type the university / campus name"
+              className="input mt-2"
+              onKeyDown={(e) => { if (e.key === "Enter" && value) onSubmit(value); }}
+            />
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button onClick={() => value && onSubmit(value)} disabled={!value} className="btn btn-primary btn-sm disabled:opacity-50">Submit</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

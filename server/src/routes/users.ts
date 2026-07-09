@@ -29,7 +29,18 @@ router.get("/", opsOnly, async (req, res) => {
   const status = String(req.query.status || "").trim();        // active | pending | inactive
   const live = String(req.query.live || "").trim();            // live | offline (presence)
   const query: any = {};
-  if (role) query.role = role;
+  // Hide admin-removed people from the Users table too — a removed person is excluded EVERYWHERE
+  // (login account included), visible only on Settings → Removed. Matched by email (Users have no
+  // Employee ID). Restore them there to manage their account again.
+  const { removedEmailList } = await import("../lib/removed");
+  const removedEmails = await removedEmailList();
+  if (removedEmails.length) query.email = { $nin: removedEmails };
+  // Roles quick-filter (checkbox dropdown, comma-separated) — takes precedence over the single `role`.
+  // Present-but-empty (all unchecked) → $in [] → no rows. Absent → fall back to the single `role`.
+  if (req.query.roles !== undefined) {
+    const roles = String(req.query.roles).split(",").map((s) => s.trim()).filter(Boolean);
+    query.role = { $in: roles };
+  } else if (role) query.role = role;
   // Cast to ObjectId — the aggregation's $match does NOT auto-cast like countDocuments/find does,
   // so a raw string would count rows but return none (mismatch). (Bug)
   if (managerId) query.managerId = mongoose.isValidObjectId(managerId) ? new mongoose.Types.ObjectId(managerId) : managerId;

@@ -10,33 +10,35 @@ import NotificationBell from "../components/NotificationBell";
 import ExitAlertBanner from "../components/ExitAlertBanner";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
 import { Skeleton } from "../components/Skeleton";
+import { ShimmerLine, SkeletonChart, SkeletonList } from "../components/scaffold";
 
-// Instant shell while /dashboard loads: greeting + metric tiles + panel placeholders shimmer
-// in the real layout, so the page never blanks. Data fills in silently when it arrives.
+// Scaffold-first shell while /dashboard loads: the REAL section chrome (greeting, KPI tiles with their
+// icons + labels, panels with their titles) renders instantly; only the values/charts shimmer. Uses the
+// real Panel/MetricTile so the structure is identical to the loaded page — no swap, no layout shift.
+const SK_KPI = [
+  { label: "Total instructors", icon: Users, tone: "brand" },
+  { label: "Active", icon: UserCheck, tone: "emerald" },
+  { label: "Avg. training", icon: GraduationCap, tone: "cyan" },
+  { label: "Pending approvals", icon: Clock, tone: "amber" },
+];
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-slate-900">Dashboard overview</h1>
-        <Skeleton width="160px" height="36px" borderRadius="10px" />
+        <Skeleton width="200px" height="36px" borderRadius="10px" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="card space-y-3 p-5">
-            <Skeleton width="40%" height="12px" />
-            <Skeleton width="60%" height="28px" />
-            <Skeleton width="80%" height="10px" />
-          </div>
-        ))}
+        {SK_KPI.map((s) => <MetricTile key={s.label} label={s.label} icon={s.icon} tone={s.tone} value={<ShimmerLine w="56px" h="26px" />} footer={<ShimmerLine w="70%" h="10px" />} />)}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="card space-y-4 p-5">
-            <Skeleton width="50%" height="14px" />
-            <Skeleton width="100%" height="140px" borderRadius="12px" />
-            <Skeleton width="70%" height="10px" />
-          </div>
-        ))}
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Panel title="Lifecycle status" sub="Distribution across stages" className="lg:col-span-2"><SkeletonChart height={168} round /></Panel>
+        <Panel title="Training health" sub="Mean completion"><SkeletonChart height={132} round /></Panel>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Panel title="Top campuses" sub="By headcount" icon={Building2}><SkeletonList rows={5} /></Panel>
+        <Panel title="Manager workload" sub="Reportees per manager" icon={Users}><SkeletonList rows={5} /></Panel>
+        <Panel title="Completion spread" sub="Instructors per band" icon={GraduationCap}><SkeletonChart height={180} /></Panel>
       </div>
     </div>
   );

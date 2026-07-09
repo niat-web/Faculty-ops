@@ -3,7 +3,7 @@ import { Mail } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
 import { ROLE_LABEL } from "../../auth";
-import { TableSkeleton } from "../../components/Skeleton";
+import { Skeleton } from "../../components/Skeleton";
 
 const ROLE_ORDER = ["SENIOR_MANAGER", "CAPABILITY_MANAGER", "OPS_ADMIN", "INSTRUCTOR"];
 
@@ -26,8 +26,6 @@ export default function EmailsSettingsPage() {
     finally { setBusy(null); }
   }
 
-  if (loading) return <TableSkeleton rows={6} cols={2} />;
-
   const groups = ROLE_ORDER
     .map((role) => ({ role, items: events.filter((e) => e.role === role) }))
     .filter((g) => g.items.length);
@@ -38,6 +36,20 @@ export default function EmailsSettingsPage() {
         <div className="mb-1 flex items-center gap-2"><Mail className="h-5 w-5 text-brand-600" /><h2 className="font-semibold text-slate-800">Email Notifications</h2></div>
         <p className="text-sm text-slate-500">Turn each email on or off, grouped by who receives it. Turning one off stops that email everywhere (in-app notifications still show). Changes apply within ~30 seconds.</p>
       </div>
+
+      {loading && Array.from({ length: 2 }).map((_, gi) => (
+        <div key={gi} className="card overflow-hidden">
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5"><Skeleton width="140px" height="12px" /></div>
+          <div className="divide-y divide-slate-100">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                <div className="min-w-0 space-y-1.5"><Skeleton width="180px" height="14px" /><Skeleton width="260px" height="10px" /></div>
+                <Skeleton width="44px" height="24px" borderRadius="9999px" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {groups.map((g) => (
         <div key={g.role} className="card overflow-hidden">

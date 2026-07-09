@@ -3,7 +3,8 @@ import { Database, Trash2, Download } from "lucide-react";
 import { api, API_BASE } from "../../api";
 import { useToast } from "../../toast";
 import { useConfirm } from "../../confirm";
-import { FormSkeleton } from "../../components/skeletons";
+import { Skeleton } from "../../components/Skeleton";
+import { SkeletonField } from "../../components/scaffold";
 
 type Counts = { audit: number; notifications: number; logins: number };
 
@@ -41,7 +42,6 @@ export default function DataSettingsPage() {
     finally { setPruning(false); }
   }
 
-  if (counts === null) return <FormSkeleton />;
   const keepForever = !days || Number(days) <= 0;
 
   return (
@@ -51,18 +51,18 @@ export default function DataSettingsPage() {
         <p className="mb-5 text-sm text-slate-500">Control how long history is kept. Retention applies to the audit log and login history (instructor and user records are never auto-deleted).</p>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Audit log entries" value={counts.audit} />
-          <Stat label="Notifications" value={counts.notifications} />
-          <Stat label="Login events" value={counts.logins} />
+          <Stat label="Audit log entries" value={counts?.audit} />
+          <Stat label="Notifications" value={counts?.notifications} />
+          <Stat label="Login events" value={counts?.logins} />
         </div>
 
         <div className="mt-6 max-w-sm">
           <label className="label">Retention period (days)</label>
-          <input className="input" type="number" min={0} max={3650} value={days} onChange={(e) => { const n = parseInt(e.target.value, 10); setDays(isNaN(n) ? "" : Math.min(3650, Math.max(0, n))); }} />
+          {counts ? <input className="input" type="number" min={0} max={3650} value={days} onChange={(e) => { const n = parseInt(e.target.value, 10); setDays(isNaN(n) ? "" : Math.min(3650, Math.max(0, n))); }} /> : <SkeletonField />}
           <p className="mt-1 text-xs text-slate-400">{keepForever ? "0 = keep forever (no automatic pruning)." : `Entries older than ${days} days are eligible for pruning.`}</p>
         </div>
         <div className="mt-4 flex justify-end">
-          <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
+          <button disabled={busy || !counts} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
 
@@ -86,11 +86,11 @@ export default function DataSettingsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value?: number }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="text-2xl font-semibold text-slate-800">{value.toLocaleString()}</div>
-      <div className="text-xs text-slate-500">{label}</div>
+      {value == null ? <Skeleton width="60px" height="28px" /> : <div className="text-2xl font-semibold text-slate-800">{value.toLocaleString()}</div>}
+      <div className="mt-1 text-xs text-slate-500">{label}</div>
     </div>
   );
 }

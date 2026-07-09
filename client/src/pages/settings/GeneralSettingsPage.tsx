@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Building2, CheckCircle2, XCircle } from "lucide-react";
 import { api } from "../../api";
 import { useToast } from "../../toast";
-import { FormSkeleton } from "../../components/skeletons";
+import { SkeletonField } from "../../components/scaffold";
+import { Skeleton } from "../../components/Skeleton";
 
 type General = { appName: string; organisation: string; appUrl: string; supportEmail: string };
 type Integrations = { email: boolean; google: boolean; encryption: boolean; cron: boolean };
@@ -32,8 +33,7 @@ export default function GeneralSettingsPage() {
     finally { setBusy(false); }
   }
 
-  if (!g) return <FormSkeleton />;
-  const set = (k: keyof General) => (e: React.ChangeEvent<HTMLInputElement>) => setG({ ...g, [k]: e.target.value });
+  const set = (k: keyof General) => (e: React.ChangeEvent<HTMLInputElement>) => g && setG({ ...g, [k]: e.target.value });
 
   return (
     <div className="space-y-5">
@@ -44,27 +44,27 @@ export default function GeneralSettingsPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">App name</label>
-            <input className="input" value={g.appName} onChange={set("appName")} placeholder="FacultyOps" />
+            {g ? <input className="input" value={g.appName} onChange={set("appName")} placeholder="FacultyOps" /> : <SkeletonField />}
             <p className="mt-1 text-xs text-slate-400">Shown in the title bar and email sign-off.</p>
           </div>
           <div>
             <label className="label">Organisation</label>
-            <input className="input" value={g.organisation} onChange={set("organisation")} placeholder="NIAT Campus Suite" />
+            {g ? <input className="input" value={g.organisation} onChange={set("organisation")} placeholder="NIAT Campus Suite" /> : <SkeletonField />}
           </div>
           <div>
             <label className="label">Public app URL</label>
-            <input className="input" value={g.appUrl} onChange={set("appUrl")} placeholder="https://crm.example.com" />
+            {g ? <input className="input" value={g.appUrl} onChange={set("appUrl")} placeholder="https://crm.example.com" /> : <SkeletonField />}
             <p className="mt-1 text-xs text-slate-400">Base URL used for links in notification emails.</p>
           </div>
           <div>
             <label className="label">Support email</label>
-            <input className="input" type="email" value={g.supportEmail} onChange={set("supportEmail")} placeholder="support@example.com" />
+            {g ? <input className="input" type="email" value={g.supportEmail} onChange={set("supportEmail")} placeholder="support@example.com" /> : <SkeletonField />}
             <p className="mt-1 text-xs text-slate-400">Where users are told to reach out for help.</p>
           </div>
         </div>
 
         <div className="mt-5 flex justify-end">
-          <button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
+          <button disabled={busy || !g} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
 
@@ -72,6 +72,12 @@ export default function GeneralSettingsPage() {
         <h3 className="mb-1 font-semibold text-slate-800">Integration status</h3>
         <p className="mb-4 text-sm text-slate-500">Configured on the server via environment variables (read-only here).</p>
         <div className="divide-y divide-slate-100">
+          {!integrations && Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center justify-between gap-4 py-3">
+              <div className="min-w-0 space-y-1.5"><Skeleton width="160px" height="14px" /><Skeleton width="240px" height="10px" /></div>
+              <Skeleton width="90px" height="16px" />
+            </div>
+          ))}
           {integrations && INTEGRATION_ROWS.map(({ key, label, desc }) => {
             const on = integrations[key];
             return (
