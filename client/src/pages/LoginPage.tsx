@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../auth";
-import { Wordmark } from "../components/Logo";
 import { api, API_BASE } from "../api";
 
 const GOOGLE_ERR: Record<string, string> = {
@@ -48,11 +47,6 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen bg-slate-50">
-      {/* Brand — pinned to the top-left of the page (same wordmark as the sidebar) */}
-      <div className="absolute left-6 top-6 z-10">
-        <Wordmark logoSize={40} />
-      </div>
-
       {/* Sign-in form — centered in the page */}
       <div className="flex min-h-screen items-center justify-center px-6 py-24">
         <div className="w-full max-w-sm">
