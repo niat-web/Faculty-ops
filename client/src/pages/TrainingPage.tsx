@@ -260,8 +260,9 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
         const isPredicted = PRED_KEYS.has(col.key);
         const effType = isPredicted ? "DATE" : col.type;
         // Manually-editable cells get an amber tint (same cue as the Instructor Master) so
-        // they're distinguishable from the read-only BigQuery-synced / computed columns.
-        const editable = !isSynced;
+        // they're distinguishable from the read-only BigQuery-synced / computed / Darwinbox columns.
+        // Department (and any Darwinbox-owned field) is read-only here — it's controlled on the Master.
+        const editable = !isSynced && !col.darwinbox;
         const wideText = WIDE_TEXT_KEYS.has(col.key); // remarks / other learnings → fixed-width in-cell textarea
         return (
           <td key={col.id} className={`border-b border-slate-100 px-1.5 text-center ${editable ? "bg-amber-50/60 group-even:bg-amber-50/80 group-hover:!bg-brand-50" : ""}`} style={wideText ? { width: WIDE_TEXT_W, minWidth: WIDE_TEXT_W, maxWidth: WIDE_TEXT_W } : undefined}>
@@ -269,6 +270,11 @@ const TrainingRow = memo(function TrainingRow({ r, cols, editingColKey, onEdit, 
               // Live BigQuery value → compact read-only chip. Transparent cell so the row bg flows through.
               <div className="flex min-h-[36px] w-full items-center justify-center whitespace-nowrap">
                 <StatusChip text={syncedStatusText(val, tone)} tone={tone} />
+              </div>
+            ) : !editable ? (
+              // Darwinbox-owned (e.g. Department) → read-only plain text (managed on the Instructor Master).
+              <div className="flex min-h-[36px] w-full items-center justify-center px-1.5" title="Synced from Darwinbox — edit on the Instructor Master">
+                <span className={`truncate text-[11px] text-slate-600 ${col.key === "department" ? "max-w-[150px]" : ""} ${val ? "" : "text-slate-300"}`}>{val || "—"}</span>
               </div>
             ) : isEditing ? (
               selectLike ? (

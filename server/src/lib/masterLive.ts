@@ -29,6 +29,10 @@ const DARWINBOX_VALUE_KEYS = new Set<string>([
 // Core Darwinbox-owned keys (shown as read-only, sourced from Darwinbox via the sync).
 const DARWINBOX_CORE_KEYS = new Set<string>(["employeeId", "name", "email", "campus", "uid"]);
 
+// Single source of truth for "this field comes from Darwinbox → read-only" — used by the Master grid AND
+// the Training Stats grid (Department is a Darwinbox field, so it must be read-only in both).
+export const isDarwinboxOwnedKey = (key: string) => DARWINBOX_CORE_KEYS.has(key) || DARWINBOX_VALUE_KEYS.has(key);
+
 // The instructor's current lifecycle stage, shown in the Master's Lifecycle column. Reflects a CM's
 // finalised exit outcome when present, otherwise the plain active/exited (or in-progress) state.
 function lifecycleLabel(outcome: string | undefined, exited: boolean, rawStatus?: string): string {

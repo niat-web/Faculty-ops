@@ -8,6 +8,7 @@ import { maybeDecrypt, encrypt } from "../lib/crypto";
 import { writeAudit } from "../lib/services";
 import { requireUser } from "../middleware";
 import { fetchTrainingProgress } from "../lib/bigqueryTraining";
+import { isDarwinboxOwnedKey } from "../lib/masterLive";
 
 const router = Router();
 router.use(requireUser());
@@ -18,7 +19,9 @@ const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
 const MULTI_KEYS = new Set(["sem1", "sem2"]); // accept several options (newline/comma-joined)
 // Predicted-Completion cells are computed BUT accept a manual override date (see POST handler + GET merge).
 const PRED_OVERRIDE_KEYS = new Set(["predicted_completion", "secondary_predicted_completion"]);
-const colOut = (c: any) => ({ id: String(c._id), track: c.track, group: c.group || "", label: c.label, key: c.key, courseId: c.courseId || "", storage: c.storage, type: c.type, options: c.options || [], order: c.order });
+// `darwinbox: true` marks a value column sourced from Darwinbox (e.g. Department) → read-only in the grid
+// (controlled on the Instructor Master; the hourly sync owns it). The client uses this to disable editing.
+const colOut = (c: any) => ({ id: String(c._id), track: c.track, group: c.group || "", label: c.label, key: c.key, courseId: c.courseId || "", storage: c.storage, type: c.type, options: c.options || [], order: c.order, darwinbox: c.storage === "value" && isDarwinboxOwnedKey(c.key) });
 
 async function loadColumns() {
   await seedTrainingColumns();
@@ -252,6 +255,10 @@ router.post("/", staffGuard, async (req, res) => {
   // Exception: the Predicted Completion dates accept a MANUAL OVERRIDE (a hand-picked date);
   // when set it wins over the projection, when cleared it falls back to the computed date.
   if (target === "value" && (COMPUTED_KEYS as readonly string[]).includes(key) && !PRED_OVERRIDE_KEYS.has(key)) return res.status(400).json({ error: "This column is calculated automatically and can't be edited." });
+
+  // Darwinbox-owned fields (e.g. Department) are read-only everywhere — they're managed by the hourly sync
+  // and controlled on the Instructor Master. Block editing them here too (mirrors the Master's /cell guard).
+  if (target === "value" && isDarwinboxOwnedKey(String(key))) return res.status(400).json({ error: "This column is synced from Darwinbox and can't be edited here." });
 
   // The key MUST be a real training column (prevents writing arbitrary/sensitive keys here).
   const col: any = await TrainingColumn.findOne({ key, storage: target, archivedAt: null, ...(track ? { track } : {}) }).lean();
