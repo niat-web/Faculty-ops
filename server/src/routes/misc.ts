@@ -109,41 +109,76 @@ router.get("/org", async (req, res) => {
     if (mgr) empToManager.set(e, mgr);
   }
 
-  // Capability Managers = the unique reporting managers, keyed by Employee ID (NO duplicates), with a
-  // live reportee count. Name variants of the same person collapse to one node via their Employee ID.
-  const cmMap = new Map<string, { rmid: string; name: string; reportees: number }>();
+  // Darwinbox directory lookups (by Employee ID and by name) so any reporting-manager reference — an id,
+  // an "(NWxxxx)" in the name, or a bare name — resolves to that person's REAL Darwinbox record, which
+  // carries their OWN manager. This is what lets us build the true structure straight from Darwinbox.
+  const dirById = new Map<string, any>();
+  const dirByName = new Map<string, any>();
+  for (const p of dir as any[]) {
+    const e = norm2(p.employeeId); if (e) dirById.set(e, p);
+    const n = norm2(stripName(p.name)); if (n && !dirByName.has(n)) dirByName.set(n, p);
+  }
+  const resolvePerson = (idField: any, nameField: any): any => {
+    const id = String(idField || rmidFromName(nameField) || "").trim();
+    if (id && dirById.has(norm2(id))) return dirById.get(norm2(id));
+    const byName = dirByName.get(norm2(stripName(nameField)));
+    if (byName) return byName;
+    return { employeeId: id || "", name: stripName(nameField) || id, managerName: "", managerEmployeeId: "" };
+  };
+  // The manager Employee ID of a Capability Manager: from their Darwinbox record (id or manager-name→id),
+  // then the master/Mongo-derived empToManager as a fallback. This is their Senior Manager.
+  const managerIdOfCm = (rmid: string, person: any): string => {
+    const fromDir = norm2(person?.managerEmployeeId)
+      || norm2(dirByName.get(norm2(stripName(person?.managerName)))?.employeeId || "")
+      || norm2(nameToId.get(norm2(stripName(person?.managerName))) || "");
+    if (fromDir) return fromDir;
+    return norm2(rmid) ? (empToManager.get(norm2(rmid)) || "") : "";
+  };
+
+  // Capability Managers = the unique reporting managers of active instructors, keyed by Employee ID (NO
+  // duplicates), each carrying their own manager (their Senior Manager) resolved from Darwinbox.
+  const cmMap = new Map<string, { rmid: string; name: string; reportees: number; mgrId: string }>();
   for (const r of activeInstr) {
-    const rmid = resolveRmid(r.reporting_manager_employee_id, r.reporting_manager);
-    const name = stripName(r.reporting_manager) || rmid;
+    const person = resolvePerson(r.reporting_manager_employee_id, r.reporting_manager);
+    const rmid = String(person.employeeId || "").trim();
+    const name = stripName(person.name) || rmid;
     if (!rmid && !name) continue;
-    const key = norm2(rmid) || `name:${norm2(name)}`; // one identity per Employee ID; name-key only when no id
+    const key = norm2(rmid) || `name:${norm2(name)}`;
     const ex = cmMap.get(key);
-    if (ex) { ex.reportees++; if (!ex.rmid && rmid) ex.rmid = rmid; if (!ex.name && name) ex.name = name; }
-    else cmMap.set(key, { rmid: rmid || "", name, reportees: 1 });
+    if (ex) ex.reportees++;
+    else cmMap.set(key, { rmid, name, reportees: 1, mgrId: managerIdOfCm(rmid, person) });
   }
 
-  // Senior Managers (curated) — nodes keyed by their Employee ID, ready to receive their CMs.
+  // Senior Managers = the admin-curated list UNIONED with every "manager of a CM" derived from Darwinbox,
+  // so a CM whose manager isn't curated still nests under their real manager. One node per Employee ID.
   const smByEmp = new Map<string, any>();
-  const seniors = (smDocs as any[]).map((s) => {
-    const node = { id: `sm:${s.employeeId || s.name}`, name: s.name || s.employeeId, employeeId: norm2(s.employeeId), capabilityManagers: [] as any[] };
-    if (node.employeeId) smByEmp.set(node.employeeId, node);
+  const ensureSm = (empId: any, name?: any): any => {
+    const e = norm2(empId); if (!e) return null;
+    let node = smByEmp.get(e);
+    if (!node) { node = { id: `sm:${empId}`, name: stripName(name) || dirById.get(e)?.name || empId, employeeId: e, capabilityManagers: [] as any[], curated: false }; smByEmp.set(e, node); }
     return node;
-  });
+  };
+  for (const s of smDocs as any[]) { const node = ensureSm(s.employeeId, s.name); if (node) node.curated = true; }
+  for (const cm of cmMap.values()) { if (cm.mgrId && cm.mgrId !== norm2(cm.rmid)) ensureSm(cm.mgrId, dirById.get(cm.mgrId)?.name); }
 
-  // Nest each Capability Manager under the Senior Manager they report to. A person who is themselves a
-  // curated Senior Manager is shown ONLY as the SM node (never also as a CM leaf → no duplicate).
+  // Nest each Capability Manager under their Senior Manager. Anyone who is themselves an SM node is shown
+  // ONLY as the SM node (never also as a CM leaf → no duplicate). Truly unresolvable → Unassigned.
   const unassignedCMs: any[] = [];
   let cmCount = 0;
   for (const cm of cmMap.values()) {
     const cmEmp = norm2(cm.rmid);
-    if (cmEmp && smByEmp.has(cmEmp)) continue; // already rendered as a Senior Manager node
+    if (cmEmp && smByEmp.has(cmEmp)) continue; // this person is a Senior Manager node
     cmCount++;
     const node = { id: `cm:${cm.rmid || cm.name}`, name: cm.name, rmid: cm.rmid, reportees: cm.reportees };
-    const mgrEmp = cmEmp ? (empToManager.get(cmEmp) || "") : "";
-    const sm = mgrEmp ? smByEmp.get(mgrEmp) : null;
+    const sm = cm.mgrId && cm.mgrId !== cmEmp ? smByEmp.get(cm.mgrId) : null;
     if (sm) sm.capabilityManagers.push(node); else unassignedCMs.push(node);
   }
   const byReportees = (a: any, b: any) => b.reportees - a.reportees || String(a.name).localeCompare(String(b.name));
+  // Curated Senior Managers first, then the Darwinbox-derived ones; each by reportee weight.
+  const seniors = [...smByEmp.values()].sort((a, b) =>
+    (Number(b.curated) - Number(a.curated))
+    || (b.capabilityManagers.reduce((n: number, c: any) => n + c.reportees, 0) - a.capabilityManagers.reduce((n: number, c: any) => n + c.reportees, 0))
+    || String(a.name).localeCompare(String(b.name)));
   for (const s of seniors) s.capabilityManagers.sort(byReportees);
   unassignedCMs.sort(byReportees);
 
@@ -151,7 +186,7 @@ router.get("/org", async (req, res) => {
     totalInstructors,
     totalManagers: seniors.length + cmCount,
     opsAdmins,
-    seniors: seniors.map(({ employeeId, ...s }) => s), // drop the internal employeeId from the payload
+    seniors: seniors.map(({ employeeId, curated, ...s }) => s), // drop internal fields from the payload
     unassignedCMs,
   });
 });
