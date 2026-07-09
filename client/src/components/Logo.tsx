@@ -24,3 +24,17 @@ export default function Logo({ size = 36, className = "" }: { size?: number; cla
     </svg>
   );
 }
+
+// FacultyOps wordmark lockup — the EXACT treatment used in the sidebar: the "F" monogram followed by
+// a gradient-filled "acultyOps" so the whole thing reads as one continuous "FacultyOps". Use this
+// anywhere the brand appears (sidebar, login, reset…) so every logo spot is identical.
+export function Wordmark({ logoSize = 38, textClassName = "text-2xl", className = "" }: { logoSize?: number; textClassName?: string; className?: string }) {
+  return (
+    <span className={`flex items-center ${className}`}>
+      <Logo size={logoSize} className="shrink-0 drop-shadow-sm" />
+      {/* Negative margin pulls the text over the logo SVG's internal right padding so the "F" and
+          "acultyOps" sit flush; the text uses the SAME blue gradient as the logo. */}
+      <span className={`-ml-2 bg-gradient-to-br from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] bg-clip-text font-bold leading-none tracking-tight text-transparent ${textClassName}`}>acultyOps</span>
+    </span>
+  );
+}

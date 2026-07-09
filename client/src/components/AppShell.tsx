@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText, BarChart3, BookOpen, Award, LogOut, ChevronRight, ChevronDown, UserCircle, Settings as SettingsIcon, PanelLeftClose, PanelLeftOpen, Database } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
-import Logo from "./Logo";
+import Logo, { Wordmark } from "./Logo";
 
 const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 
@@ -158,13 +158,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         ) : (
           <div className="mb-6 flex items-center justify-between gap-2 px-2">
-            {/* Wordmark: the logo's "F" monogram + "acultyOps" read together as "FacultyOps".
-                The text is filled with the SAME blue gradient as the logo so the whole mark is one colour. */}
-            <Link to="/app" className="flex items-center overflow-hidden" title="FacultyOps">
-              <Logo size={38} className="shrink-0 drop-shadow-sm" />
-              {/* Negative margin pulls the text over the logo SVG's internal right padding so
-                  the "F" and "acultyOps" sit flush — reading as one continuous "FacultyOps". */}
-              <span className="-ml-2 bg-gradient-to-br from-[#1D4ED8] via-[#2563EB] to-[#3B82F6] bg-clip-text text-2xl font-bold leading-none tracking-tight text-transparent">acultyOps</span>
+            {/* Shared FacultyOps wordmark lockup (F monogram + gradient "acultyOps"). */}
+            <Link to="/app" className="overflow-hidden" title="FacultyOps">
+              <Wordmark logoSize={38} />
             </Link>
             <button onClick={() => setCollapsed(true)} title="Collapse sidebar" className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
               <PanelLeftClose className="h-5 w-5" />
