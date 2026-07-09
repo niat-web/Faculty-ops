@@ -118,13 +118,6 @@ router.get("/org", async (req, res) => {
     const e = norm2(p.employeeId); if (e) dirById.set(e, p);
     const n = norm2(stripName(p.name)); if (n && !dirByName.has(n)) dirByName.set(n, p);
   }
-  const resolvePerson = (idField: any, nameField: any): any => {
-    const id = String(idField || rmidFromName(nameField) || "").trim();
-    if (id && dirById.has(norm2(id))) return dirById.get(norm2(id));
-    const byName = dirByName.get(norm2(stripName(nameField)));
-    if (byName) return byName;
-    return { employeeId: id || "", name: stripName(nameField) || id, managerName: "", managerEmployeeId: "" };
-  };
   // The manager Employee ID of a Capability Manager: from their Darwinbox record (id or manager-name→id),
   // then the master/Mongo-derived empToManager as a fallback. This is their Senior Manager.
   const managerIdOfCm = (rmid: string, person: any): string => {
@@ -135,18 +128,34 @@ router.get("/org", async (req, res) => {
     return norm2(rmid) ? (empToManager.get(norm2(rmid)) || "") : "";
   };
 
-  // Capability Managers = the unique reporting managers of active instructors, keyed by Employee ID (NO
-  // duplicates), each carrying their own manager (their Senior Manager) resolved from Darwinbox.
+  // Identify each active instructor's Capability Manager by the instructor's OWN Darwinbox record →
+  // their manager's Employee ID. This is the canonical id and is immune to how the manager's NAME is
+  // spelled on the master row (e.g. "Akhilendar Reddy K" vs "Akhilendar Reddy Karri" → same NW0001087),
+  // which is what previously split one person into a nested CM AND an "Unassigned" duplicate.
+  // Fallbacks (in order): instructor's Darwinbox managerEmployeeId → master reporting_manager_employee_id
+  // → "(NWxxxx)" in the manager name → name→id lookup.
+  const cmIdForInstructor = (r: any): { rmid: string; name: string } => {
+    const self = dirById.get(norm2(r.employeeId)); // the instructor's own Darwinbox record
+    const rmid = String(
+      (self && self.managerEmployeeId) || r.reporting_manager_employee_id || rmidFromName(r.reporting_manager) || ""
+    ).trim() || (nameToId.get(norm2(stripName((self && self.managerName) || r.reporting_manager))) || "");
+    // Prefer the manager's canonical directory name; fall back to the (stripped) name on the row.
+    const canon = rmid ? dirById.get(norm2(rmid)) : null;
+    const name = stripName((canon && canon.name) || (self && self.managerName) || r.reporting_manager) || rmid;
+    return { rmid: String(rmid || "").trim(), name };
+  };
+
+  // Capability Managers = the unique managers of active instructors, keyed by Employee ID (NO duplicates),
+  // each carrying their own manager (their Senior Manager), also resolved from Darwinbox.
   const cmMap = new Map<string, { rmid: string; name: string; reportees: number; mgrId: string }>();
   for (const r of activeInstr) {
-    const person = resolvePerson(r.reporting_manager_employee_id, r.reporting_manager);
-    const rmid = String(person.employeeId || "").trim();
-    const name = stripName(person.name) || rmid;
+    const { rmid, name } = cmIdForInstructor(r);
     if (!rmid && !name) continue;
     const key = norm2(rmid) || `name:${norm2(name)}`;
     const ex = cmMap.get(key);
-    if (ex) ex.reportees++;
-    else cmMap.set(key, { rmid, name, reportees: 1, mgrId: managerIdOfCm(rmid, person) });
+    if (ex) { ex.reportees++; continue; }
+    const cmPerson = rmid ? (dirById.get(norm2(rmid)) || { employeeId: rmid, managerName: "", managerEmployeeId: "" }) : { employeeId: "", managerName: "", managerEmployeeId: "" };
+    cmMap.set(key, { rmid, name, reportees: 1, mgrId: managerIdOfCm(rmid, cmPerson) });
   }
 
   // Senior Managers = the admin-curated list UNIONED with every "manager of a CM" derived from Darwinbox,
