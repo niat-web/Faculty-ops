@@ -70,7 +70,23 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   const { removedEmployeeIdSet } = await import("./removed");
   const { norm: normEmp } = await import("./darwinboxSync");
   const removedSet = await removedEmployeeIdSet();
-  const docs = removedSet.size ? allDocs.filter((d) => !removedSet.has(normEmp(d.employeeId))) : allDocs;
+  // Department gate — count only ACTUAL instructor departments, exactly like the Instructor Master's default
+  // view (an Ops Admin's Settings → Operations list wins; else the built-in non-teaching-support default:
+  // Delivery Support / Instructor Platform / Product Team). So the dashboard's "Active instructors" and the
+  // status/campus charts match the Master (no Ops/support depts inflating the count). Blank dept = kept.
+  const { getMasterDepartments } = await import("./settings");
+  const { isDefaultUnchecked } = await import("./masterLive");
+  const deptCfg = await getMasterDepartments();
+  const hiddenDeptSet = new Set(deptCfg.hidden.map((s) => normEmp(s)));
+  const deptExcluded = (dept: any) => {
+    const d = String(dept || "").trim();
+    if (!d) return false;
+    return deptCfg.configured ? hiddenDeptSet.has(normEmp(d)) : isDefaultUnchecked(d);
+  };
+  const docs = allDocs.filter((d) =>
+    !(removedSet.size && removedSet.has(normEmp(d.employeeId))) &&
+    !deptExcluded(d.values?.department)
+  );
   const progress = live ? await attachLiveTrainingSummaries(docs, opts) : null;
 
   const total = docs.length;
