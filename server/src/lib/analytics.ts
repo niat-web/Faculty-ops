@@ -79,6 +79,9 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   const avgTraining = trainingVals.length ? Math.round(trainingVals.reduce((a, b) => a + b, 0) / trainingVals.length) : 0;
   const exited = docs.filter((d) => d.status === "EXITED").length;
   const exiting = docs.filter((d) => d.status === "EXITED" || d.status === "EXIT_IN_PROGRESS").length;
+  // NOTE: `total` is the FULL population (active + exited). The dashboard's status donut, attrition % and
+  // "Active" tile derive from it, so it must stay the full count. The client shows ACTIVE as the headline.
+  const active = total - exiting;
 
   // status breakdown
   const statusMap: Record<string, number> = {};
@@ -110,7 +113,7 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   else if (user.role === Role.OPS_ADMIN) pending = await EditRequest.countDocuments({ status: "PENDING" });
   else if (user.role === Role.CAPABILITY_MANAGER) pending = await EditRequest.countDocuments({ requesterId: user.id, status: "PENDING" });
 
-  const kpis: any = { total, campuses, avgTraining, exited, exiting, pending };
+  const kpis: any = { total, active, campuses, avgTraining, exited, exiting, pending };
   const charts: any = { byStatus, byCampus, trainingBuckets: buckets, joins };
   const payload: any = { role: user.role, kpis, charts };
 

@@ -16,8 +16,8 @@ import { ShimmerLine, SkeletonChart, SkeletonList } from "../components/scaffold
 // icons + labels, panels with their titles) renders instantly; only the values/charts shimmer. Uses the
 // real Panel/MetricTile so the structure is identical to the loaded page — no swap, no layout shift.
 const SK_KPI = [
-  { label: "Total instructors", icon: Users, tone: "brand" },
-  { label: "Active", icon: UserCheck, tone: "emerald" },
+  { label: "Active instructors", icon: Users, tone: "brand" },
+  { label: "Exited", icon: UserCheck, tone: "emerald" },
   { label: "Avg. training", icon: GraduationCap, tone: "cyan" },
   { label: "Pending approvals", icon: Clock, tone: "amber" },
 ];
@@ -130,7 +130,7 @@ function AdminDash({ d, first }: any) {
   const k = d.kpis, c = d.charts, nav = useNavigate();
   const items = statusItems(c.byStatus);
   const spark = (c.joins || []).map((j: any) => j.value);
-  const active = k.total - (k.exiting || 0);
+  const active = k.active ?? (k.total - (k.exiting || 0)); // active instructors (excludes exited/exit-in-progress)
   const attrition = k.total ? Math.round(((k.exited || 0) / k.total) * 100) : 0;
   const staff = (k.ops || 0) + (k.sm || 0) + (k.cm || 0) || 1;
   const wf = [{ name: "Ops Admins", value: k.ops || 0, color: "#6366f1" }, { name: "Senior Managers", value: k.sm || 0, color: "#06b6d4" }, { name: "Capability Managers", value: k.cm || 0, color: "#22c55e" }];
@@ -143,8 +143,9 @@ function AdminDash({ d, first }: any) {
       <ExitAlertBanner />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="Total instructors" value={k.total} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={spark} footer="vs last month" />
-        <MetricTile label="Active" value={active} icon={UserCheck} tone="emerald" footer={`${attrition}% exited overall`} />
+        {/* Headline count = ACTIVE instructors (excludes exited); the next tile shows exited separately. */}
+        <MetricTile label="Active instructors" value={active} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={spark} footer="vs last month" />
+        <MetricTile label="Exited" value={k.exited || 0} icon={UserCheck} tone="emerald" footer={`${attrition}% attrition overall`} />
         <MetricTile label="Avg. training" value={`${k.avgTraining}%`} icon={GraduationCap} tone="cyan" footer="mean completion" />
         <MetricTile label="Pending approvals" value={k.pending} icon={Clock} tone="amber" to="/app/requests" footer={k.pending ? "Needs review →" : "All clear"} />
       </div>
@@ -220,7 +221,7 @@ function SeniorDash({ d, first }: any) {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="Instructors" value={k.total} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={(c.joins || []).map((j: any) => j.value)} />
+        <MetricTile label="Active instructors" value={k.active ?? (k.total - (k.exiting || 0))} icon={Users} tone="brand" delta={monthlyDelta(c.joins)} spark={(c.joins || []).map((j: any) => j.value)} />
         <MetricTile label="Pending approvals" value={k.pending} icon={Clock} tone="amber" to="/app/requests" footer={k.pending ? "Needs review →" : "All clear"} />
         <MetricTile label="Avg. training" value={`${k.avgTraining}%`} icon={GraduationCap} tone="emerald" footer="mean completion" />
         <MetricTile label="Campuses" value={k.campuses} icon={Building2} tone="cyan" />
@@ -259,6 +260,7 @@ function CapabilityDash({ d, first }: any) {
   const prog = c.reporteeProgress || [];
   const onTrack = prog.filter((r: any) => r.value >= 80).length;
   const top = prog.slice(0, 5);
+  const active = k.active ?? (k.total - (k.exiting || 0)); // active reportees (excludes exited)
 
   return (
     <div className="space-y-5">
@@ -268,9 +270,9 @@ function CapabilityDash({ d, first }: any) {
       <ExitAlertBanner />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="My reportees" value={k.total} icon={Users} tone="brand" />
+        <MetricTile label="My reportees" value={active} icon={Users} tone="brand" footer="active" />
         <MetricTile label="Avg. training" value={`${k.avgTraining}%`} icon={GraduationCap} tone="emerald" footer="team mean" />
-        <MetricTile label="On track (≥80%)" value={`${onTrack}/${k.total}`} icon={TrendingUp} tone="cyan" />
+        <MetricTile label="On track (≥80%)" value={`${onTrack}/${active}`} icon={TrendingUp} tone="cyan" />
         <MetricTile label="Deadlines (30d)" value={d.deadlines?.length || 0} icon={CalendarClock} tone="pink" />
       </div>
 
