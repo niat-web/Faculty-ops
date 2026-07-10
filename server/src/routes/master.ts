@@ -1,6 +1,6 @@
 import { Router } from "express";
 import Papa from "papaparse";
-import { Instructor, User, FieldDefinition, MasterColumn } from "../models";
+import { Instructor, User, FieldDefinition, MasterColumn, MoveHistory } from "../models";
 import { Role } from "../enums";
 import { instructorScopeFilter, canAccessInstructor, canEditDetails } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
@@ -254,7 +254,7 @@ router.get("/moved", guard, async (req, res) => {
   // (Admin-removed people are already excluded by loadLiveMasterRows.)
   const q = String(req.query.q || "").trim().toLowerCase();
   const stripRmName = (s: any) => String(s || "").replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
-  const items = live.rows
+  const base = live.rows
     .filter((r: any) => norm(r.payroll_entity) === "university" && inScope(r))
     .filter((r: any) => !q || `${r.name} ${r.employeeId} ${r.workspace} ${r.email}`.toLowerCase().includes(q))
     .map((r: any) => ({
@@ -264,11 +264,104 @@ router.get("/moved", guard, async (req, res) => {
       university: r.workspace || "",       // the university/campus captured when moved
       campus: r.campus || "",
       department: r.department || "",
-      manager: stripRmName(r.reporting_manager) || "",
+      manager: stripRmName(r.reporting_manager) || "", // Darwinbox reporting manager (read-only)
       exited: !!r.exited,
     }))
     .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+
+  // Enrich (NEW feature): the app-assigned Capability Manager (currentManagerId) + the move-history log.
+  // The Moved list is small, so we batch-load both for exactly these instructors.
+  const objIds = base.map((b) => b.id).filter(Boolean) as string[];
+  const [instDocs, histDocs] = await Promise.all([
+    Instructor.find({ _id: { $in: objIds } }).select("currentManagerId").lean(),
+    MoveHistory.find({ instructorId: { $in: objIds } }).sort({ createdAt: -1 }).lean(),
+  ]);
+  const mgrIdByInst = new Map<string, string>();
+  for (const d of instDocs as any[]) if (d.currentManagerId) mgrIdByInst.set(String(d._id), String(d.currentManagerId));
+  const mgrNameById = new Map<string, string>();
+  const mgrIds = [...new Set([...mgrIdByInst.values()])];
+  if (mgrIds.length) { const us = await User.find({ _id: { $in: mgrIds } }).select("name").lean(); for (const u of us as any[]) mgrNameById.set(String(u._id), u.name || ""); }
+  const histByInst = new Map<string, any[]>();
+  for (const h of histDocs as any[]) { const k = String(h.instructorId); (histByInst.get(k) || histByInst.set(k, []).get(k)!).push(h); }
+
+  const items = base.map((b) => {
+    const mgrId = b.id ? mgrIdByInst.get(b.id) : undefined;
+    const hist = (b.id ? histByInst.get(b.id) : null) || [];
+    return {
+      ...b,
+      capabilityManagerId: mgrId || null,
+      capabilityManager: mgrId ? (mgrNameById.get(mgrId) || "") : "",
+      historyCount: hist.length,
+      history: hist.map((h: any) => ({
+        id: String(h._id), kind: h.kind, note: h.note || "",
+        universityFrom: h.universityFrom || "", universityTo: h.universityTo || "",
+        managerFrom: h.managerFrom || "", managerTo: h.managerTo || "",
+        actorName: h.actorName || "System", createdAt: h.createdAt,
+      })),
+    };
+  });
   res.json({ items, total: items.length });
+});
+
+// Active Capability Managers for the Instructor-Moved reassign dropdown.
+router.get("/capability-managers", guard, async (_req, res) => {
+  const cms = await User.find({ role: Role.CAPABILITY_MANAGER, active: true }).select("name").sort({ name: 1 }).lean();
+  res.json({ managers: (cms as any[]).map((c) => ({ id: String(c._id), name: c.name || "" })) });
+});
+
+// Reassign a moved instructor's University and/or Capability Manager (NEW feature). Records a MoveHistory
+// entry (from → to, who, when). Does NOT change any existing behavior — university is stored on `workspace`
+// (as the move already does) and CM on the app-assigned `currentManagerId` (survives the hourly sync).
+router.post("/moved/:id/reassign", guard, async (req, res) => {
+  const instructorId = String(req.params.id);
+  const university = req.body?.university === undefined ? undefined : String(req.body.university || "").trim();
+  const managerId = req.body?.managerId === undefined ? undefined : String(req.body.managerId || "").trim(); // "" = unassign
+  const note = String(req.body?.note || "").trim().slice(0, 500);
+  if (university === undefined && managerId === undefined) return res.status(400).json({ error: "Nothing to change." });
+  if (!(await canAccessInstructor(req.user!, instructorId))) return res.status(403).json({ error: "Out of scope" });
+
+  const inst: any = await Instructor.findById(instructorId);
+  if (!inst) return res.status(404).json({ error: "Instructor not found" });
+
+  let changedUni = false, changedMgr = false;
+  let universityFrom = "", universityTo = "", managerFrom = "", managerTo = "", managerToId: any = null;
+
+  if (university !== undefined) {
+    universityFrom = maybeDecrypt(inst.values.get("workspace")) || "";
+    if (university && university !== universityFrom) {
+      // Reuse the audited field-change path so the Master/exports stay consistent.
+      await applyFieldChange({ actor: req.user!, instructorId, fieldKey: "workspace", fieldLabel: "University / Campus", newValue: university, reason: "Instructor Moved — university reassigned" });
+      universityTo = university; changedUni = true;
+      inst.values.set("workspace", university); // reflect for any subsequent read below
+    }
+  }
+  if (managerId !== undefined) {
+    const oldId = inst.currentManagerId ? String(inst.currentManagerId) : "";
+    managerFrom = oldId ? ((await User.findById(oldId).select("name").lean()) as any)?.name || "" : "— unassigned —";
+    let newId: any = null; managerTo = "— unassigned —";
+    if (managerId) {
+      const cm: any = await User.findOne({ _id: managerId, role: Role.CAPABILITY_MANAGER, active: true }).select("name").lean();
+      if (!cm) return res.status(400).json({ error: "Pick an active Capability Manager." });
+      newId = cm._id; managerTo = cm.name || ""; managerToId = cm._id;
+    }
+    if (String(newId || "") !== oldId) {
+      inst.currentManagerId = newId;
+      await inst.save();
+      await writeAudit({ instructorId: inst._id, instructorName: inst.name, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "MAPPING_CHANGE", fieldName: "Capability Manager", oldValue: managerFrom, newValue: managerTo, reason: "Instructor Moved — CM reassigned" });
+      changedMgr = true;
+    }
+  }
+
+  if (!changedUni && !changedMgr) return res.json({ ok: true, changed: false });
+
+  await MoveHistory.create({
+    instructorId: inst._id, employeeId: inst.employeeId,
+    kind: changedUni && changedMgr ? "both" : changedUni ? "university" : "manager",
+    universityFrom: changedUni ? universityFrom : "", universityTo: changedUni ? universityTo : "",
+    managerFrom: changedMgr ? managerFrom : "", managerTo: changedMgr ? managerTo : "", managerToId: changedMgr ? managerToId : null,
+    note, actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role,
+  });
+  res.json({ ok: true, changed: true });
 });
 
 // CSV export — all master columns, mirrors the active list filters (capped to bound memory).

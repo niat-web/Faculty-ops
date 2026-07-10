@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, RefreshCw, SlidersHorizontal, Download, X } from "lucide-react";
+import { Building2, RefreshCw, SlidersHorizontal, Download, X, Pencil, History } from "lucide-react";
 import Papa from "papaparse";
 import { api } from "../api";
 import { useToast } from "../toast";
 import { isAbort, useStickyThead } from "../hooks";
 import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
+import ScrollSelect from "../components/ScrollSelect";
+import Modal from "../components/Modal";
 
 // Instructor Moved — everyone whose Payroll = University (moved to a University payroll entity). ALWAYS
 // lists all University-payroll people, regardless of the Master's payroll-visibility control. A Capability
 // Manager sees only their own reportees. Data is from the live Master set (Mongo mirror of Darwinbox).
-type MovedRow = { id: string | null; employeeId: string; name: string; university: string; campus: string; department: string; manager: string; exited: boolean };
+type HistItem = { id: string; kind: string; note: string; universityFrom: string; universityTo: string; managerFrom: string; managerTo: string; actorName: string; createdAt: string };
+type MovedRow = {
+  id: string | null; employeeId: string; name: string; university: string; campus: string; department: string;
+  manager: string; exited: boolean;
+  // NEW: app-assigned Capability Manager + reassignment history.
+  capabilityManager?: string; capabilityManagerId?: string | null; historyCount?: number; history?: HistItem[];
+};
 type Filters = { department: string[]; university: string[]; manager: string[] };
 const EMPTY: Filters = { department: [], university: [], manager: [] };
 const EMPTY_LABEL = "— Not set —"; // filter value used for rows with a blank university
@@ -30,15 +38,27 @@ export default function InstructorMovedPage() {
   const [statusOpen, setStatusOpen] = useState(false);
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // NEW: reassign (inline edit) + history state.
+  const [cms, setCms] = useState<{ id: string; name: string }[]>([]);
+  const [universities, setUniversities] = useState<string[]>([]);
+  const [edit, setEdit] = useState<{ id: string; field: "university" | "manager" } | null>(null); // which cell is open
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [histRow, setHistRow] = useState<MovedRow | null>(null); // open the history timeline modal
 
   // The full list is small (all University-payroll people); we fetch it once and filter/search in-memory
   // so the Filters drawer works off the REAL values in this table.
+  function load(signal?: AbortSignal) {
+    return api.get("/master/moved", signal ? { signal } : undefined)
+      .then((r) => { setRows(r.items || []); setLoaded(true); })
+      .catch((e) => { if (!isAbort(e)) { toast.error(e.message); setLoaded(true); } });
+  }
   useEffect(() => {
     const ac = new AbortController();
     setLoaded(false);
-    api.get("/master/moved", { signal: ac.signal })
-      .then((r) => { setRows(r.items || []); setLoaded(true); })
-      .catch((e) => { if (!isAbort(e)) { toast.error(e.message); setLoaded(true); } });
+    load(ac.signal);
+    // Reassignment pickers: active Capability Managers + the admin-managed university list.
+    api.get("/master/capability-managers").then((r) => setCms(r.managers || [])).catch(() => {});
+    api.get("/master/universities").then((r) => setUniversities(r.universities || [])).catch(() => {});
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -83,14 +103,28 @@ export default function InstructorMovedPage() {
   function exportCsv() {
     const data = filtered.map((r) => ({
       Name: r.name, "Employee ID": r.employeeId, "University / Campus": r.university || "",
-      Department: r.department || "", "Capability Manager": r.manager || "", Status: r.exited ? "Exited" : "Active",
+      Department: r.department || "", "CM (Darwinbox)": r.manager || "", "Capability Manager": r.capabilityManager || "",
+      Changes: String(r.historyCount || 0), Status: r.exited ? "Exited" : "Active",
     }));
-    const csv = Papa.unparse(data.length ? data : [{ Name: "", "Employee ID": "", "University / Campus": "", Department: "", "Capability Manager": "", Status: "" }]);
+    const cols = { Name: "", "Employee ID": "", "University / Campus": "", Department: "", "CM (Darwinbox)": "", "Capability Manager": "", Changes: "", Status: "" };
+    const csv = Papa.unparse(data.length ? data : [cols]);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     a.download = "instructor-moved.csv";
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  // NEW: reassign a row's university and/or capability manager. Records history on the server; then reloads
+  // so the row, the assigned-CM cell and the history count all refresh.
+  async function reassign(row: MovedRow, body: { university?: string; managerId?: string }) {
+    if (!row.id) return;
+    setEdit(null); setSavingId(row.id);
+    try {
+      const r = await api.post(`/master/moved/${row.id}/reassign`, body);
+      if (r?.changed) { toast.success(`${row.name} updated.`); await load(); }
+    } catch (e: any) { toast.error(e.message || "Failed to save"); }
+    finally { setSavingId(null); }
   }
 
   return (
@@ -142,14 +176,16 @@ export default function InstructorMovedPage() {
           )}
         </div>
         <div ref={wrapRef} className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse text-sm">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
             <thead ref={theadRef} className="relative z-20 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3 font-semibold">Name</th>
                 <th className="px-5 py-3 font-semibold">Employee ID</th>
                 <th className="px-5 py-3 font-semibold">University / Campus</th>
                 <th className="px-5 py-3 font-semibold">Department</th>
+                <th className="px-5 py-3 font-semibold">CM (Darwinbox)</th>
                 <th className="px-5 py-3 font-semibold">Capability Manager</th>
+                <th className="px-5 py-3 font-semibold">History</th>
                 <th className="px-5 py-3 font-semibold">Status</th>
               </tr>
             </thead>
@@ -158,13 +194,45 @@ export default function InstructorMovedPage() {
                 <tr key={r.employeeId} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-800">{r.name || <span className="text-slate-300">—</span>}</td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.employeeId}</td>
+                  {/* University / Campus — click to change (records history). */}
                   <td className="px-5 py-3">
-                    {r.university
-                      ? <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">{r.university}</span>
-                      : <span className="text-slate-300">—</span>}
+                    {edit?.id === r.id && edit.field === "university" ? (
+                      <ScrollSelect autoOpen value={r.university || ""} onClose={() => setEdit(null)}
+                        onChange={(v) => v && v !== r.university && reassign(r, { university: v })}
+                        className="min-w-[180px] rounded border border-brand-400 bg-white px-2 py-1 text-xs outline-none ring-2 ring-brand-100 flex items-center justify-between gap-2"
+                        options={[{ value: "", label: "— Select university —" }, ...universities.map((u) => ({ value: u, label: u }))]} />
+                    ) : (
+                      <button type="button" disabled={!r.id || savingId === r.id} onClick={() => setEdit({ id: r.id!, field: "university" })}
+                        className="group inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-60">
+                        {r.university || <span className="text-slate-400">Set university</span>}
+                        <Pencil className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
+                      </button>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-slate-600">{r.department || <span className="text-slate-300">—</span>}</td>
-                  <td className="px-5 py-3 text-slate-600">{r.manager || <span className="text-slate-300">—</span>}</td>
+                  {/* Existing Darwinbox reporting manager — READ-ONLY (unchanged). */}
+                  <td className="px-5 py-3 text-slate-500">{r.manager || <span className="text-slate-300">—</span>}</td>
+                  {/* NEW: app-assigned Capability Manager — click to change (records history, survives sync). */}
+                  <td className="px-5 py-3">
+                    {edit?.id === r.id && edit.field === "manager" ? (
+                      <ScrollSelect autoOpen value={r.capabilityManagerId || ""} onClose={() => setEdit(null)}
+                        onChange={(v) => { if ((v || "") !== (r.capabilityManagerId || "")) reassign(r, { managerId: v }); else setEdit(null); }}
+                        className="min-w-[180px] rounded border border-brand-400 bg-white px-2 py-1 text-xs outline-none ring-2 ring-brand-100 flex items-center justify-between gap-2"
+                        options={[{ value: "", label: "— Unassigned —" }, ...cms.map((c) => ({ value: c.id, label: c.name }))]} />
+                    ) : (
+                      <button type="button" disabled={!r.id || savingId === r.id} onClick={() => setEdit({ id: r.id!, field: "manager" })}
+                        className="group inline-flex items-center gap-1.5 rounded px-1 text-slate-600 hover:text-brand-700 disabled:opacity-60">
+                        {r.capabilityManager || <span className="text-slate-400">Assign CM</span>}
+                        <Pencil className="h-3 w-3 opacity-0 transition group-hover:opacity-60" />
+                      </button>
+                    )}
+                  </td>
+                  {/* NEW: history column — a "View" text button that opens the change timeline modal. */}
+                  <td className="px-5 py-3">
+                    <button onClick={() => setHistRow(r)} className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">
+                      <History className="h-3.5 w-3.5" /> View
+                    </button>
+                  </td>
                   <td className="px-5 py-3">
                     {r.exited
                       ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600">Exited</span>
@@ -173,10 +241,10 @@ export default function InstructorMovedPage() {
                 </tr>
               ))}
               {!loaded && Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i}>{Array.from({ length: 6 }).map((_, c) => <td key={c} className="px-5 py-3"><div className="skeleton h-4 w-full rounded" /></td>)}</tr>
+                <tr key={i}>{Array.from({ length: 8 }).map((_, c) => <td key={c} className="px-5 py-3"><div className="skeleton h-4 w-full rounded" /></td>)}</tr>
               ))}
               {loaded && !filtered.length && (
-                <tr><td colSpan={6} className="px-5 py-16 text-center text-sm text-slate-400">
+                <tr><td colSpan={8} className="px-5 py-16 text-center text-sm text-slate-400">
                   {rows.length ? "No instructors match your search / filters." : "No instructors are on University payroll yet."}
                 </td></tr>
               )}
@@ -208,6 +276,41 @@ export default function InstructorMovedPage() {
           </div>
         </div>
       )}
+
+      {/* NEW: reassignment history timeline for one instructor. */}
+      {histRow && (
+        <Modal title={`Reassignment history — ${histRow.name}`} onClose={() => setHistRow(null)} wide>
+          {!histRow.history?.length ? (
+            <p className="py-6 text-center text-sm text-slate-400">No changes recorded yet.</p>
+          ) : (
+            <ol className="space-y-3">
+              {histRow.history!.map((h) => (
+                <li key={h.id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                    <span className="font-medium text-slate-600">{h.actorName}</span>
+                    <span>{fmtWhen(h.createdAt)}</span>
+                  </div>
+                  {(h.kind === "university" || h.kind === "both") && (
+                    <div className="text-sm text-slate-700"><span className="text-slate-400">University:</span> {h.universityFrom || "—"} <span className="text-slate-400">→</span> <b>{h.universityTo || "—"}</b></div>
+                  )}
+                  {(h.kind === "manager" || h.kind === "both") && (
+                    <div className="text-sm text-slate-700"><span className="text-slate-400">Capability Manager:</span> {h.managerFrom || "—"} <span className="text-slate-400">→</span> <b>{h.managerTo || "—"}</b></div>
+                  )}
+                  {h.note && <div className="mt-1 text-xs italic text-slate-500">“{h.note}”</div>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </Modal>
+      )}
     </div>
   );
+}
+
+// Friendly timestamp for the history timeline.
+function fmtWhen(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch { return iso; }
 }

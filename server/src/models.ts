@@ -397,6 +397,29 @@ const RemovedInstructorSchema = new Schema(
   { timestamps: true }
 );
 
+// MoveHistory — per-instructor log of University/Capability-Manager reassignments made on the
+// Instructor-Moved page. One row per change (university and/or CM), recording from → to, who and when.
+// This is a NEW, independent feature store — it does not affect the Master, sync, or existing audit.
+const MoveHistorySchema = new Schema(
+  {
+    instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", index: true, required: true },
+    employeeId: { type: String, index: true },
+    // What changed: "university", "manager", or "both".
+    kind: { type: String, default: "both" },
+    universityFrom: { type: String, default: "" },
+    universityTo: { type: String, default: "" },
+    managerFrom: { type: String, default: "" }, // display name (or "— unassigned —")
+    managerTo: { type: String, default: "" },
+    managerToId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    note: { type: String, default: "" },
+    actorId: { type: Schema.Types.ObjectId, ref: "User" },
+    actorName: String,
+    actorRole: String,
+  },
+  { timestamps: true }
+);
+MoveHistorySchema.index({ instructorId: 1, createdAt: -1 });
+
 // FieldModule — admin-definable sections that group dynamic fields (Personal Details, etc.).
 const FieldModuleSchema = new Schema(
   {
@@ -439,6 +462,7 @@ export const Notification = compile("Notification", NotificationSchema);
 export const ExitAlert = compile("ExitAlert", ExitAlertSchema);
 export const SeniorManager = compile("SeniorManager", SeniorManagerSchema);
 export const RemovedInstructor = compile("RemovedInstructor", RemovedInstructorSchema);
+export const MoveHistory = compile("MoveHistory", MoveHistorySchema);
 export const DarwinboxEmployee = compile("DarwinboxEmployee", DarwinboxEmployeeSchema);
 export const Certification = compile("Certification", CertificationSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
