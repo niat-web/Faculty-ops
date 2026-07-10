@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { SlidersHorizontal, Download, X } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
-import { isAbort } from "../hooks";
+import { isAbort, useStickyThead } from "../hooks";
 import { useToast } from "../toast";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
@@ -109,25 +109,8 @@ export default function InstructorExitedPage() {
     return () => ac.abort();
   }, [query, page, per]);
 
-  // Sticky header during PAGE scroll (same technique as the Instructor Master grid): CSS `position:
-  // sticky` can't pin the header to the page through the overflow-x wrapper, so translate the <thead>
-  // down by the page's scrollTop.
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const y = scroller.scrollTop - wrap.offsetTop;
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [rows.length]);
+  // Smooth sticky header (measure-once + rAF + translate3d) — no per-frame reflow on large pages.
+  useStickyThead(wrapRef, theadRef, [rows.length]);
 
   // CSV export mirrors the DB-level filters (exit-date range isn't applied to the CSV).
   const exportHref = () => {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
 import { ROLE_LABEL } from "../auth";
-import { useDebouncedValue, isAbort } from "../hooks";
+import { useDebouncedValue, isAbort, useStickyThead } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
@@ -80,23 +80,8 @@ export default function UsersPage() {
     return () => ac.abort();
   }, [dq, applied, roleFilter, page, per, reloadKey, sort.sort, sort.dir]);
 
-  // Pin the header to the PAGE during vertical scroll (table keeps its own horizontal scroll).
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const y = scroller.scrollTop - wrap.offsetTop;
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [data]);
+  // Smooth sticky header (measure-once + rAF + translate3d) — no per-frame reflow on large pages.
+  useStickyThead(wrapRef, theadRef, [data]);
 
   const activeCount = Object.values(applied).filter(Boolean).length;
   function openDrawer() { setDraft(applied); setDrawer(true); }

@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, EyeO
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
-import { useDebouncedValue, isAbort } from "../hooks";
+import { useDebouncedValue, isAbort, useStickyThead } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
@@ -182,25 +182,9 @@ export default function InstructorMasterPage() {
     return p;
   }, [dq, applied, rmNameFilter, scope, role, contribution, sort.sort, sort.dir, deptSel]);
 
-  // Sticky header during PAGE scroll (same technique as the Training Stats grid): the page (<main>)
-  // scrolls vertically while the card scrolls horizontally. CSS `position: sticky` can't pin the header
-  // to the page through the overflow-x wrapper, so we translate the <thead> down by the page's scrollTop.
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const y = scroller.scrollTop - wrap.offsetTop;
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [meta, rows.length]);
+  // Sticky header during PAGE scroll — pinned smoothly (measure-once + rAF + translate3d), so large
+  // pages (500–1000 rows) scroll without the per-frame reflow jank. See useStickyThead.
+  useStickyThead(wrapRef, theadRef, [meta, rows.length]);
 
   const [loadingRows, setLoadingRows] = useState(true);
   useEffect(() => {

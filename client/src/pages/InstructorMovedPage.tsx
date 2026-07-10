@@ -3,7 +3,7 @@ import { Building2, RefreshCw, SlidersHorizontal, Download, X } from "lucide-rea
 import Papa from "papaparse";
 import { api } from "../api";
 import { useToast } from "../toast";
-import { isAbort } from "../hooks";
+import { isAbort, useStickyThead } from "../hooks";
 import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
 
@@ -43,26 +43,8 @@ export default function InstructorMovedPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Page-flow sticky header (matches the Master / Exited grids): the page (<main>) scrolls vertically while
-  // the card scrolls horizontally, so CSS `position: sticky` can't pin the header through the overflow-x
-  // wrapper. Translate the <thead> down by the page's scrollTop, offset by the table's own position and
-  // clamped to the table height so it never floats past the grid.
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const y = scroller.scrollTop - wrap.offsetTop;
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      thead.style.transform = `translateY(${Math.max(0, Math.min(y, maxShift))}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [rows.length]);
+  // Smooth page-flow sticky header (matches the Master / Exited grids) — measure-once + rAF + translate3d.
+  useStickyThead(wrapRef, theadRef, [rows.length]);
 
   // Facet option lists, built from the actual rows (so filters only offer real values present in the table).
   const facets = useMemo(() => {

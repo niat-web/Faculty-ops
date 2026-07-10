@@ -5,7 +5,7 @@ import Papa from "papaparse";
 import { Search, GraduationCap, SlidersHorizontal, X, Download, Code2, Sigma, Languages, ChevronDown, ChevronLeft, ChevronRight, Check, Inbox, RefreshCw } from "lucide-react";
 import { api } from "../api";
 import { useToast } from "../toast";
-import { useCachedGet, isAbort } from "../hooks";
+import { useCachedGet, isAbort, useStickyThead } from "../hooks";
 import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import Pagination from "../components/Pagination";
 import ScrollSelect from "../components/ScrollSelect";
@@ -450,25 +450,8 @@ export default function TrainingPage() {
   const safePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
 
-  useEffect(() => {
-    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
-    const thead = theadRef.current;
-    if (!scroller || !thead) return;
-    const onScroll = () => {
-      const wrap = wrapRef.current;
-      if (!wrap) return;
-      const wrapTop = wrap.offsetTop; // table wrapper's offset within <main>'s scroll content
-      const y = scroller.scrollTop - wrapTop;
-      // Pin the header once the wrapper's top scrolls above the viewport; release at the bottom.
-      const maxShift = wrap.clientHeight - thead.offsetHeight;
-      const shift = Math.max(0, Math.min(y, maxShift));
-      thead.style.transform = `translateY(${shift}px)`;
-    };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    onScroll();
-    return () => { scroller.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
-  }, [resp, tabKey, shown.length]);
+  // Smooth sticky header (measure-once + rAF + translate3d) — no per-frame reflow on large pages.
+  useStickyThead(wrapRef, theadRef, [resp, tabKey, shown.length]);
 
   const onEdit = useCallback((id: string, colKey: string) => setEdit({ id, colKey }), []);
   const onCancel = useCallback(() => setEdit(null), []);

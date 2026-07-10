@@ -1,5 +1,55 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { api } from "./api";
+
+// Pin a table's <thead> to the top while the PAGE (<main>) scrolls vertically and the table scrolls
+// horizontally. CSS `position: sticky` can't pin through the overflow-x wrapper, so we translate the
+// <thead> down by the scroller's scrollTop. Built to stay SMOOTH on large pages (500–1000 rows):
+//   • measure geometry (offsetTop / heights) ONCE — and on resize / `deps` change — never per scroll frame,
+//     so we never trigger a synchronous reflow while scrolling;
+//   • on scroll, only read the cheap scrollTop and write the transform inside requestAnimationFrame,
+//     coalescing event bursts to one paint per frame;
+//   • use translate3d + will-change so the header rides its own GPU/compositor layer.
+// Pass `deps` that change when the row set / layout changes (e.g. [meta, rows.length]) to re-measure.
+export function useStickyThead(
+  wrapRef: RefObject<HTMLElement | null>,
+  theadRef: RefObject<HTMLTableSectionElement | null>,
+  deps: readonly unknown[] = [],
+) {
+  useEffect(() => {
+    const scroller = wrapRef.current?.closest("main") as HTMLElement | null;
+    const thead = theadRef.current;
+    if (!scroller || !thead) return;
+
+    let wrapTop = 0, maxShift = 0, ticking = false, lastY = -1;
+    const measure = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      wrapTop = wrap.offsetTop;
+      maxShift = wrap.clientHeight - thead.offsetHeight; // don't let the header slide past the table
+    };
+    const apply = () => {
+      ticking = false;
+      const y = Math.max(0, Math.min(scroller.scrollTop - wrapTop, maxShift));
+      if (y === lastY) return; // skip redundant style writes
+      lastY = y;
+      thead.style.transform = `translate3d(0, ${y}px, 0)`;
+    };
+    const onScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(apply); } };
+    const onResize = () => { measure(); apply(); };
+
+    measure();
+    thead.style.willChange = "transform";
+    apply();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      thead.style.willChange = "";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
 
 // Stale-while-revalidate GET cache: revisiting a page shows cached data INSTANTLY,
 // then refreshes in the background. Cleared on logout (see auth.tsx).
