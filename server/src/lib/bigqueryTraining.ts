@@ -1,8 +1,12 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import type { Response } from "express";
 import { BigQuery } from "@google-cloud/bigquery";
 import { config } from "../config";
+
+// CSV-escape one cell (quote if it contains a comma, quote, or newline).
+function csvCell(v: any): string { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
 
 type InstructorKey = { id: string; employeeId?: string; email?: string; uid?: string };
 type CourseColumn = { key: string; courseId?: string };
@@ -115,7 +119,27 @@ export type RawTablePage = {
   error?: string;
 };
 
-export async function fetchBigQueryRows(limit: number, offset: number, q?: string): Promise<RawTablePage> {
+// Per-column filter map: { columnName: [selectedValue, …] }. Rows must match ALL filtered columns
+// (AND across columns), any of the values within a column (IN). Column names are validated against the
+// real schema (injection-safe); values are always parameterized.
+export type ColumnFilters = Record<string, string[]>;
+
+function buildBqWhere(columns: string[], q?: string, filters?: ColumnFilters): { where: string; params: any } {
+  const colset = new Set(columns);
+  const clauses: string[] = [];
+  const params: any = {};
+  if (q) { clauses.push("LOWER(TO_JSON_STRING(t)) LIKE @q"); params.q = `%${q.toLowerCase()}%`; }
+  let i = 0;
+  for (const [col, vals] of Object.entries(filters || {})) {
+    if (!colset.has(col) || !Array.isArray(vals) || !vals.length) continue; // ignore unknown columns / empty
+    const p = `f${i++}`;
+    clauses.push(`CAST(t.\`${col}\` AS STRING) IN UNNEST(@${p})`);
+    params[p] = vals.map((v) => String(v));
+  }
+  return { where: clauses.length ? "WHERE " + clauses.join(" AND ") : "", params };
+}
+
+export async function fetchBigQueryRows(limit: number, offset: number, q?: string, filters?: ColumnFilters): Promise<RawTablePage> {
   const source = `${config.bigQuery.projectId}.${config.bigQuery.dataset}.${config.bigQuery.table}`;
   const fetchedAt = new Date().toISOString();
   if (!configured()) return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: "BigQuery is not configured." };
@@ -123,9 +147,7 @@ export async function fetchBigQueryRows(limit: number, offset: number, q?: strin
     const bq = client();
     const columns = await tableColumns(bq);
     const table = `\`${source}\``;
-    // Generic search: match the query anywhere in the row (serialized) — fine for a data-preview tool.
-    const where = q ? `WHERE LOWER(TO_JSON_STRING(t)) LIKE @q` : "";
-    const params: any = q ? { q: `%${q.toLowerCase()}%` } : {};
+    const { where, params } = buildBqWhere(columns, q, filters);
     const [countRows] = await bq.query({ query: `SELECT COUNT(*) AS n FROM ${table} t ${where}`, params });
     const total = Number(cellValue((countRows[0] as any)?.n)) || 0;
     const [rows] = await bq.query({ query: `SELECT * FROM ${table} t ${where} LIMIT @limit OFFSET @offset`, params: { ...params, limit, offset } });
@@ -133,6 +155,66 @@ export async function fetchBigQueryRows(limit: number, offset: number, q?: strin
     return { ok: true, columns, rows: flat, total, fetchedAt, source };
   } catch (e: any) {
     return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: e?.message || "BigQuery query failed." };
+  }
+}
+
+// Distinct values PER COLUMN across the ENTIRE table (for the filter dropdowns). One table scan via
+// ARRAY_AGG(DISTINCT … LIMIT N) per column, capped so a high-cardinality column can't blow up the payload.
+// Cached (15 min) — facets change rarely and each call is a full scan.
+const FACET_CAP = 1000;
+const FACET_TTL = 15 * 60 * 1000;
+let bqFacetCache: { at: number; facets: Record<string, string[]> } | null = null;
+export async function bigQueryFacets(refresh?: boolean): Promise<{ ok: boolean; facets: Record<string, string[]>; capped: number; error?: string }> {
+  if (!configured()) return { ok: false, facets: {}, capped: FACET_CAP, error: "BigQuery is not configured." };
+  if (!refresh && bqFacetCache && Date.now() - bqFacetCache.at < FACET_TTL) return { ok: true, facets: bqFacetCache.facets, capped: FACET_CAP };
+  try {
+    const bq = client();
+    const columns = await tableColumns(bq);
+    const table = `\`${config.bigQuery.projectId}.${config.bigQuery.dataset}.${config.bigQuery.table}\``;
+    // One row, one array per column (aliased a0,a1,… to avoid odd column names).
+    const selects = columns.map((c, i) => `ARRAY_AGG(DISTINCT CAST(t.\`${c}\` AS STRING) IGNORE NULLS LIMIT ${FACET_CAP}) AS a${i}`);
+    const [rows] = await bq.query({ query: `SELECT ${selects.join(", ")} FROM ${table} t` });
+    const row: any = rows[0] || {};
+    const facets: Record<string, string[]> = {};
+    columns.forEach((c, i) => { const arr = row[`a${i}`]; facets[c] = Array.isArray(arr) ? arr.map((v: any) => String(v)).filter(Boolean).sort((x, y) => x.localeCompare(y)) : []; });
+    bqFacetCache = { at: Date.now(), facets };
+    return { ok: true, facets, capped: FACET_CAP };
+  } catch (e: any) {
+    return { ok: false, facets: {}, capped: FACET_CAP, error: e?.message || "BigQuery facets query failed." };
+  }
+}
+
+// STREAM the ENTIRE BigQuery table (optionally filtered by `q`) as CSV directly to the HTTP response.
+// The table can be millions of rows, so we STREAM row-by-row via createQueryStream (never load it all
+// into memory). Backpressure is handled by pausing the query stream when the socket buffer is full.
+export async function streamBigQueryCsv(res: Response, q?: string, filters?: ColumnFilters): Promise<void> {
+  if (!configured()) { res.status(502).json({ error: "BigQuery is not configured." }); return; }
+  let columns: string[];
+  try {
+    const bq = client();
+    columns = await tableColumns(bq); // pre-flight: also validates the table is queryable before we send headers
+    const table = `\`${config.bigQuery.projectId}.${config.bigQuery.dataset}.${config.bigQuery.table}\``;
+    const { where, params } = buildBqWhere(columns, q, filters);
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="bigquery-export-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.write("﻿" + columns.map(csvCell).join(",") + "\r\n"); // UTF-8 BOM (Excel) + header row
+
+    const stream = bq.createQueryStream({ query: `SELECT * FROM ${table} t ${where}`, params });
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (row: any) => {
+        const line = columns.map((c) => csvCell(cellValue(row[c]))).join(",") + "\r\n";
+        if (!res.write(line)) { stream.pause(); res.once("drain", () => stream.resume()); } // backpressure
+      });
+      stream.on("end", () => resolve());
+      stream.on("error", (e) => reject(e));
+      res.on("close", () => { try { (stream as any).destroy?.(); } catch { /* client aborted */ } resolve(); });
+    });
+    res.end();
+  } catch (e: any) {
+    console.error("[data] bigquery export failed:", e?.message || e);
+    if (!res.headersSent) res.status(502).json({ error: e?.message || "BigQuery export failed." });
+    else res.end(); // headers already flushed → end the (partial) download
   }
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Database, Cloud, Building2, Search, RefreshCw, AlertTriangle, ArrowRightLeft, CheckCircle2, ChevronDown } from "lucide-react";
-import { api } from "../api";
+import { Database, Cloud, Building2, Search, RefreshCw, AlertTriangle, ArrowRightLeft, CheckCircle2, ChevronDown, Download, SlidersHorizontal, X } from "lucide-react";
+import { api, API_BASE } from "../api";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useConfirm } from "../confirm";
 import { useToast } from "../toast";
@@ -8,6 +8,7 @@ import Loading from "../components/Loading";
 import { TableSkeleton } from "../components/Skeleton";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
+import MultiSelect from "../components/MultiSelect";
 
 type SourceKey = "bigquery" | "darwinbox";
 
@@ -42,11 +43,32 @@ export default function DataPage() {
   const [refreshTick, setRefreshTick] = useState(0); // bump to re-fetch
   const forceRefresh = useRef(false); // set by the Refresh button, consumed by the next fetch only
   const [syncOpen, setSyncOpen] = useState(false); // Darwinbox → Instructor Master sync modal
+  // Column filters: unique values per column (facets, from the WHOLE dataset) + the current selection.
+  const [facets, setFacets] = useState<Record<string, string[]>>({});
+  const [facetsLoading, setFacetsLoading] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filtersKey = JSON.stringify(filters);
+  const activeFilterCols = Object.entries(filters).filter(([, v]) => v.length).length;
 
   useEffect(() => { api.get("/data/sources").then(setSources).catch(() => {}); }, []);
 
-  // Back to page 1 whenever the source or search changes.
-  useEffect(() => { setPage(1); }, [source, dq]);
+  // On source change: reset filters and load that source's facets (unique values per column).
+  useEffect(() => {
+    setFilters({});
+    setFacets({});
+    if (!source) return;
+    setFacetsLoading(true);
+    const ctrl = new AbortController();
+    api.get(`/data/${source}/facets`, { signal: ctrl.signal })
+      .then((r) => setFacets(r.facets || {}))
+      .catch(() => {})
+      .finally(() => setFacetsLoading(false));
+    return () => ctrl.abort();
+  }, [source]);
+
+  // Back to page 1 whenever the source, search or filters change.
+  useEffect(() => { setPage(1); }, [source, dq, filtersKey]);
 
   useEffect(() => {
     if (!source) return;
@@ -55,13 +77,15 @@ export default function DataPage() {
     setError("");
     const params = new URLSearchParams({ limit: String(per), offset: String((page - 1) * per) });
     if (dq.trim()) params.set("q", dq.trim());
+    if (activeFilterCols) params.set("filters", filtersKey);
     if (source === "darwinbox" && forceRefresh.current) { params.set("refresh", "1"); forceRefresh.current = false; }
     api.get<TablePage>(`/data/${source}?${params}`, { signal: ctrl.signal })
       .then((r) => setData(r))
       .catch((e) => { if (!isAbort(e)) { setData(null); setError(e.message || "Failed to load data."); } })
       .finally(() => setLoading(false));
     return () => ctrl.abort();
-  }, [source, dq, page, per, refreshTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, dq, page, per, refreshTick, filtersKey]);
 
   const pages = Math.max(1, Math.ceil((data?.total || 0) / per));
 
@@ -129,6 +153,20 @@ export default function DataPage() {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
+            {/* Column filters — dropdowns populated with unique values from the WHOLE dataset. */}
+            <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm" title="Filter by column values">
+              <SlidersHorizontal className="h-4 w-4" /> Filters
+              {activeFilterCols > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeFilterCols}</span>}
+            </button>
+            {activeFilterCols > 0 && <button onClick={() => setFilters({})} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
+            {/* Export the ENTIRE source (all rows, streamed) as CSV — honours the search AND the column filters. */}
+            <a
+              href={`${API_BASE}/api/data/${source}/export.csv?${new URLSearchParams({ ...(dq.trim() ? { q: dq.trim() } : {}), ...(activeFilterCols ? { filters: filtersKey } : {}) })}`}
+              className="btn btn-ghost btn-sm"
+              title={dq.trim() || activeFilterCols ? `Download all matching rows as CSV` : `Download the entire ${source === "bigquery" ? "BigQuery" : "Darwinbox"} dataset as CSV`}
+            >
+              <Download className="h-4 w-4" /> Export CSV
+            </a>
             {source === "darwinbox" && (
               <button onClick={() => setSyncOpen(true)} className="btn btn-primary btn-sm" title="Preview & apply Darwinbox → Instructor Master sync (instructor departments only)">
                 <ArrowRightLeft className="h-4 w-4" /> Sync to Instructor Master
@@ -185,6 +223,45 @@ export default function DataPage() {
       )}
 
       {syncOpen && <DarwinboxSyncModal onClose={() => setSyncOpen(false)} onApplied={() => setRefreshTick((t) => t + 1)} />}
+
+      {/* Column-filter drawer — one searchable multi-select per column, options = unique values from the
+          WHOLE dataset (facets). Selecting narrows the table (and the CSV export). */}
+      {filterOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onMouseDown={() => setFilterOpen(false)}>
+          <div className="flex h-full w-full max-w-md flex-col bg-white shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2 className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4 text-brand-600" /> Filters {activeFilterCols > 0 && <span className="chip bg-brand-50 text-brand-700">{activeFilterCols}</span>}</h2>
+              <button onClick={() => setFilterOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+              {facetsLoading && <div className="text-sm text-slate-400">Loading filter values from the full dataset…</div>}
+              {!facetsLoading && !Object.keys(facets).length && <div className="text-sm text-slate-400">No filterable columns found.</div>}
+              {!facetsLoading && (data?.columns || Object.keys(facets)).map((c) => {
+                const opts = facets[c] || [];
+                if (!opts.length) return null; // skip columns with no distinct values
+                return (
+                  <div key={c}>
+                    <label className="label flex items-center justify-between">
+                      <span>{colLabel(c)}</span>
+                      <span className="text-[11px] font-normal text-slate-400">{opts.length}{opts.length >= 1000 ? "+" : ""}</span>
+                    </label>
+                    <MultiSelect
+                      values={filters[c] || []}
+                      onChange={(v) => setFilters((f) => { const n = { ...f }; if (v.length) n[c] = v; else delete n[c]; return n; })}
+                      options={opts.map((o) => ({ value: o, label: o }))}
+                      placeholder="All"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
+              <button onClick={() => setFilters({})} className="btn btn-ghost btn-sm" disabled={!activeFilterCols}>Clear all</button>
+              <button onClick={() => setFilterOpen(false)} className="btn btn-primary btn-sm">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

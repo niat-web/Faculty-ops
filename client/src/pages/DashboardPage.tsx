@@ -8,6 +8,7 @@ import { useCachedGet } from "../hooks";
 import { GreetingHeader, TrendArea } from "../components/charts";
 import NotificationBell from "../components/NotificationBell";
 import ExitAlertBanner from "../components/ExitAlertBanner";
+import DashboardAssistant from "../components/DashboardAssistant";
 import { Panel, MetricTile, Ring, Donut, LegendList, Leaderboard, MiniBars, Avatar, Empty, STATUS_COLOR, PALETTE } from "../components/dashboard";
 import { Skeleton } from "../components/Skeleton";
 import { ShimmerLine, SkeletonChart, SkeletonList } from "../components/scaffold";
@@ -51,10 +52,17 @@ export default function DashboardPage() {
   if (!d) return <DashboardSkeleton />;
 
   const first = (user!.name || "").split(" ")[0];
-  if (d.role === "OPS_ADMIN") return <AdminDash d={d} first={first} />;
-  if (d.role === "SENIOR_MANAGER") return <SeniorDash d={d} first={first} />;
-  if (d.role === "CAPABILITY_MANAGER") return <CapabilityDash d={d} first={first} />;
-  return <InstructorDash d={d} first={first} user={user!} />;
+  // The AI assistant (bottom-right) is rendered ONLY on the Dashboard, and only for Ops/SM/CM
+  // (DashboardAssistant hides itself for instructors). Every answer is role-scoped server-side.
+  return (
+    <>
+      {d.role === "OPS_ADMIN" && <AdminDash d={d} first={first} />}
+      {d.role === "SENIOR_MANAGER" && <SeniorDash d={d} first={first} />}
+      {d.role === "CAPABILITY_MANAGER" && <CapabilityDash d={d} first={first} />}
+      {d.role === "INSTRUCTOR" && <InstructorDash d={d} first={first} user={user!} />}
+      <DashboardAssistant />
+    </>
+  );
 }
 
 /* ── shared helpers ── */

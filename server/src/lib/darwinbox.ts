@@ -1,5 +1,37 @@
+import type { Response } from "express";
 import { config } from "../config";
 import type { RawTablePage } from "./bigqueryTraining";
+
+function csvCell(v: any): string { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+type ColumnFilters = Record<string, string[]>;
+
+// Apply the free-text search + per-column filters to the in-memory Darwinbox rows.
+function applyFilters(rows: Record<string, any>[], q?: string, filters?: ColumnFilters): Record<string, any>[] {
+  const needle = String(q || "").trim().toLowerCase();
+  const active = Object.entries(filters || {}).filter(([, v]) => Array.isArray(v) && v.length);
+  if (!needle && !active.length) return rows;
+  const sets = active.map(([col, vals]) => [col, new Set(vals.map(String))] as [string, Set<string>]);
+  return rows.filter((r) => {
+    if (needle && !Object.values(r).some((v) => String(v).toLowerCase().includes(needle))) return false;
+    for (const [col, set] of sets) if (!set.has(String(r[col] ?? ""))) return false; // AND across columns, IN within
+    return true;
+  });
+}
+
+// Distinct values per column across the ENTIRE Darwinbox dataset (for the filter dropdowns). In-memory
+// (the full set is cached), capped per column.
+const DBX_FACET_CAP = 2000;
+export async function darwinboxFacets(refresh?: boolean): Promise<{ ok: boolean; facets: Record<string, string[]>; capped: number; error?: string }> {
+  const data = await getDarwinboxData(refresh);
+  if (!data.ok) return { ok: false, facets: {}, capped: DBX_FACET_CAP, error: data.error };
+  const facets: Record<string, string[]> = {};
+  for (const c of data.columns) {
+    const seen = new Set<string>();
+    for (const r of data.rows) { const v = String(r[c] ?? "").trim(); if (v) seen.add(v); if (seen.size >= DBX_FACET_CAP) break; }
+    facets[c] = [...seen].sort((a, b) => a.localeCompare(b));
+  }
+  return { ok: true, facets, capped: DBX_FACET_CAP };
+}
 
 // Darwinbox master employee API — TWO-STEP flow (per Darwinbox docs):
 //  1) POST the AUTHENTICATE endpoint with { username, password, api_key } → returns a { token }.
@@ -88,22 +120,41 @@ export async function getDarwinboxData(refresh?: boolean): Promise<{ ok: boolean
   }
 }
 
-export async function fetchDarwinboxRows(limit: number, offset: number, q?: string, refresh?: boolean): Promise<RawTablePage> {
+// STREAM the ENTIRE Darwinbox employee master (optionally filtered by `q`) as CSV to the response.
+// The full dataset is already fetched + cached in memory (a few thousand rows), so we write it row-by-row
+// with backpressure handling. `refresh` pulls a fresh copy from Darwinbox first.
+export async function streamDarwinboxCsv(res: Response, q?: string, refresh?: boolean, filters?: ColumnFilters): Promise<void> {
+  const data = await getDarwinboxData(refresh);
+  if (!data.ok) { res.status(502).json({ error: data.error || "Darwinbox fetch failed." }); return; }
+  const rows = applyFilters(data.rows, q, filters);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="darwinbox-export-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.write("﻿" + data.columns.map(csvCell).join(",") + "\r\n"); // UTF-8 BOM + header
+
+  let i = 0;
+  const writeChunk = () => {
+    while (i < rows.length) {
+      const line = data.columns.map((c) => csvCell(rows[i][c])).join(",") + "\r\n";
+      i++;
+      if (!res.write(line)) { res.once("drain", writeChunk); return; } // backpressure — resume on drain
+    }
+    res.end();
+  };
+  writeChunk();
+}
+
+export async function fetchDarwinboxRows(limit: number, offset: number, q?: string, refresh?: boolean, filters?: ColumnFilters): Promise<RawTablePage> {
   const source = config.darwinbox.endpoint;
   const data = await getDarwinboxData(refresh);
   if (!data.ok || !cache) return { ok: false, columns: [], rows: [], total: 0, fetchedAt: data.fetchedAt, source, error: data.error };
-  {
-    const needle = String(q || "").trim().toLowerCase();
-    const filtered = needle
-      ? cache.rows.filter((r) => Object.values(r).some((v) => String(v).toLowerCase().includes(needle)))
-      : cache.rows;
-    return {
-      ok: true,
-      columns: cache.columns,
-      rows: filtered.slice(offset, offset + limit),
-      total: filtered.length,
-      fetchedAt: data.fetchedAt,
-      source,
-    };
-  }
+  const filtered = applyFilters(cache.rows, q, filters);
+  return {
+    ok: true,
+    columns: cache.columns,
+    rows: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    fetchedAt: data.fetchedAt,
+    source,
+  };
 }

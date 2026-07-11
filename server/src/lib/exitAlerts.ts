@@ -64,13 +64,37 @@ export async function detectExitAlerts(): Promise<DetectReport> {
   }
   if (!candidates.length) return { ok: true, scanned: data.rows.length, created: 0 };
 
-  // Which (employeeId, exitDate) pairs already have an alert? (dedup — don't re-raise or re-notify)
-  const existing = await ExitAlert.find({
-    employeeId: { $in: candidates.map((c) => c.employeeId) },
-  }).select("employeeId exitDate").lean();
-  const seen = new Set(existing.map((e: any) => `${norm(e.employeeId)}|${e.exitDate}`));
+  // ONE pending alert PER PERSON (not per exit-date). Collapse candidate rows to one per employeeId,
+  // keeping the most imminent (earliest) exit date. This is the fix for duplicate alerts: when Darwinbox
+  // reports a CHANGED last-working-day for the same person, we UPDATE the existing pending alert instead
+  // of raising a second one.
+  const candByEmp = new Map<string, Cand>();
+  for (const c of candidates) {
+    const k = norm(c.employeeId);
+    const prev = candByEmp.get(k);
+    if (!prev || c.exitDate < prev.exitDate) candByEmp.set(k, c); // yyyy-mm-dd sorts lexically → earliest wins
+  }
+  const uniqueCands = [...candByEmp.values()];
 
-  const fresh = candidates.filter((c) => !seen.has(`${norm(c.employeeId)}|${c.exitDate}`));
+  // Existing PENDING alerts for these people, grouped by employeeId.
+  const existingPending = await ExitAlert.find({
+    status: "PENDING", employeeId: { $in: uniqueCands.map((c) => c.employeeId) },
+  }).select("_id employeeId exitDate").lean();
+  const pendingByEmp = new Map<string, any[]>();
+  for (const e of existingPending as any[]) { const k = norm(e.employeeId); (pendingByEmp.get(k) || pendingByEmp.set(k, []).get(k)!).push(e); }
+
+  // Split into genuinely NEW people (raise + notify) vs already-alerted people (keep one, refresh its
+  // date, delete any stray duplicates — no re-notify, so we don't spam).
+  const fresh: Cand[] = [];
+  for (const c of uniqueCands) {
+    const already = pendingByEmp.get(norm(c.employeeId)) || [];
+    if (!already.length) { fresh.push(c); continue; }
+    const [keep, ...extra] = already;
+    try {
+      if (extra.length) await ExitAlert.deleteMany({ _id: { $in: extra.map((e) => e._id) } }); // collapse duplicates
+      if (keep.exitDate !== c.exitDate) await ExitAlert.updateOne({ _id: keep._id }, { $set: { exitDate: c.exitDate } }); // refresh changed date
+    } catch (e: any) { console.error("[exit-alerts] dedup/update failed:", e?.message); }
+  }
   if (!fresh.length) return { ok: true, scanned: data.rows.length, created: 0 };
 
   // Resolve each fresh employee's Instructor record (for instructorId + capability manager).
