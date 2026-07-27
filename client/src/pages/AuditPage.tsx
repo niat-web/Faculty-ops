@@ -74,33 +74,32 @@ export default function AuditPage() {
       </div>
       {err && <div className="card p-4 text-sm text-rose-600">{err}</div>}
 
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr><th className="px-5 py-3">When</th><th className="px-5 py-3">Who</th><th className="px-5 py-3">Action</th><th className="px-5 py-3">Instructor</th><th className="px-5 py-3">Field</th><th className="px-5 py-3">Change</th><th className="px-5 py-3">Reason</th><th className="px-5 py-3">Proof</th></tr>
+      <div className="table-shell page-bleed overflow-hidden">
+        <div className="data-grid-scroll">
+          <table className="data-grid-table whitespace-nowrap">
+            <thead className="table-head-row bg-gray-50 text-left">
+              <tr><th className="table-head-cell">When</th><th className="table-head-cell">Who</th><th className="table-head-cell">Action</th><th className="table-head-cell">Instructor</th><th className="table-head-cell">Field</th><th className="table-head-cell">Change</th><th className="table-head-cell">Reason</th><th className="table-head-cell">Proof</th></tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {!data && <SkeletonRows rows={12} cols={8} />}
+            <tbody>
+              {!data && <SkeletonRows rows={12} cols={8} cellClass="table-body-cell" />}
               {data?.entries.map((a: any) => (
-                <tr key={a.id} className="hover:bg-slate-50 align-top">
-                  <td className="px-5 py-3 whitespace-nowrap text-xs text-slate-400">{new Date(a.createdAt).toLocaleString()}</td>
-                  <td className="max-w-[200px] px-5 py-3 text-slate-600" title={a.actorName}><span className="block truncate">{a.actorName}</span>{a.actorRole && <div className="truncate text-[11px] text-slate-400">{ROLE_LABEL[a.actorRole] || a.actorRole}</div>}</td>
-                  <td className="px-5 py-3"><span className="chip chip-gray">{a.action.replace(/_/g, " ").toLowerCase()}</span></td>
-                  <td className="px-5 py-3 text-slate-600 cell-trunc" title={a.instructorName || "—"}>{a.instructorName || "—"}</td>
-                  <td className="px-5 py-3 text-slate-600 cell-trunc" title={a.fieldName || "—"}>{a.fieldName || "—"}</td>
-                  <td className="px-5 py-3 text-xs cell-trunc" title={a.oldValue || a.newValue ? `${a.oldValue || "—"} → ${a.newValue || "—"}` : "—"}>{a.oldValue || a.newValue ? <span><span className="text-slate-400 line-through">{a.oldValue || "—"}</span> → <span className="text-slate-700">{a.newValue || "—"}</span></span> : "—"}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500 cell-trunc" title={a.reason || "—"}>{a.reason || "—"}</td>
-                  <td className="px-5 py-3 text-xs">{a.proofPath ? <a href={`${API_BASE}/api/audit/proof/${encodeURIComponent(a.proofPath)}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">view</a> : "—"}</td>
+                <tr key={a.id} className="table-body-row align-top">
+                  <td className="table-body-cell whitespace-nowrap text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</td>
+                  <td className="table-body-cell max-w-[200px] text-gray-600" title={a.actorName}><span className="block truncate">{a.actorName}</span>{a.actorRole && <div className="truncate text-[11px] text-gray-400">{ROLE_LABEL[a.actorRole] || a.actorRole}</div>}</td>
+                  <td className="table-body-cell"><span className="chip chip-gray">{a.action.replace(/_/g, " ").toLowerCase()}</span></td>
+                  <td className="table-body-cell text-gray-600 cell-trunc" title={a.instructorName || "—"}>{a.instructorName || "—"}</td>
+                  <td className="table-body-cell text-gray-600 cell-trunc" title={a.fieldName || "—"}>{a.fieldName || "—"}</td>
+                  <td className="table-body-cell text-xs cell-trunc" title={a.oldValue || a.newValue ? `${a.oldValue || "—"} → ${a.newValue || "—"}` : "—"}>{a.oldValue || a.newValue ? <span><span className="text-gray-400 line-through">{a.oldValue || "—"}</span> → <span className="text-gray-700">{a.newValue || "—"}</span></span> : "—"}</td>
+                  <td className="table-body-cell text-xs text-gray-500 cell-trunc" title={a.reason || "—"}>{a.reason || "—"}</td>
+                  <td className="table-body-cell text-xs">{a.proofPath ? <a href={`${API_BASE}/api/audit/proof/${encodeURIComponent(a.proofPath)}`} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">view</a> : "—"}</td>
                 </tr>
               ))}
-              {data && !data.entries.length && <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">No audit entries match.</td></tr>}
+              {data && !data.entries.length && <tr><td colSpan={8} className="table-body-cell py-16 text-center text-gray-400">No audit entries match.</td></tr>}
             </tbody>
           </table>
         </div>
+        {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
       </div>
-
-      {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">

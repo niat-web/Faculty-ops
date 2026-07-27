@@ -101,6 +101,12 @@ table { font-variant-numeric: tabular-nums; }
   .table-body-row-clickable { @apply cursor-pointer hover:bg-brand-50/40; }
   .table-body-cell { @apply px-4 py-3 text-sm; }
   .table-pagination { @apply flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-500; }
+  .table-pagination-bar { @apply shrink-0; }
+
+  /* Full-bleed data grids — extend table shell to main-content edges (eliminates right-side gap) */
+  .page-bleed { @apply -mx-4 sm:-mx-6 lg:-mx-8; }
+  .data-grid-scroll { @apply overflow-x-auto; }
+  .data-grid-table { @apply w-full min-w-max text-sm; }
 
   /* ── KPI grid ── */
   .kpi-grid { @apply grid gap-px bg-slate-200; }

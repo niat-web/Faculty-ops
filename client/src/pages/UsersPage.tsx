@@ -153,9 +153,9 @@ export default function UsersPage() {
       {msg && <div className={`card px-4 py-2 text-sm ${msg.ok ? "border-brand-200 bg-brand-50 text-brand-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
-      <div className="card overflow-hidden">
-        <div ref={wrapRef} className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-sm">
+      <div className="table-shell page-bleed overflow-hidden">
+        <div ref={wrapRef} className="data-grid-scroll">
+          <table className="data-grid-table whitespace-nowrap">
             <thead ref={theadRef} className="relative z-20 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:bg-slate-50">
               <tr>
                 <SortHeader label="Name" k="name" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
@@ -200,9 +200,8 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+        {data && <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
       </div>
-
-      {data && <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {editing && <UserModal user={editing} seniors={data?.seniors || []} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
       {invite && (

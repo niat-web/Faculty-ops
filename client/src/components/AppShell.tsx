@@ -245,7 +245,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         style={{ paddingLeft: undefined }}
       >
         <div className="md:pl-[240px]">
-          <div className="px-4 py-5 sm:pl-3 sm:pr-10 lg:pr-12">{children}</div>
+          <div className="px-4 py-5 sm:px-6 lg:px-8">{children}</div>
         </div>
       </main>
     </div>

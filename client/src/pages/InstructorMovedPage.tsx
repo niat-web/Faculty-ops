@@ -148,8 +148,8 @@ export default function InstructorMovedPage() {
         </div>
       </div>
 
-      <div className={`card flex flex-col overflow-hidden rounded-xl ${!loaded ? "min-h-[calc(100vh-14rem)]" : ""}`}>
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">
+      <div className={`table-shell page-bleed flex flex-col overflow-hidden ${!loaded ? "min-h-[calc(100vh-14rem)]" : ""}`}>
+        <div className="table-shell-header flex shrink-0 flex-wrap items-center gap-3 text-sm font-medium text-gray-500">
           {!loaded
             ? <span className="flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-500" /> Loading…</span>
             : <span>{filtered.length} instructor(s) moved to University payroll</span>}
@@ -175,8 +175,8 @@ export default function InstructorMovedPage() {
             </span>
           )}
         </div>
-        <div ref={wrapRef} className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] border-collapse text-sm">
+        <div ref={wrapRef} className="data-grid-scroll">
+          <table className="data-grid-table min-w-[1080px] border-collapse">
             <thead ref={theadRef} className="relative z-20 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3 font-semibold">Name</th>

@@ -187,24 +187,24 @@ export default function RequestsPage() {
             <button onClick={exportHistory} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</button>
           </div>
         </div>
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-                <tr><th className="px-5 py-3">Instructor</th><th className="px-5 py-3">Field</th><th className="px-5 py-3">Change</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Decision note</th></tr>
+        <div className="table-shell page-bleed overflow-hidden">
+          <div className="data-grid-scroll">
+            <table className="data-grid-table w-full text-sm">
+              <thead className="table-head-row bg-gray-50 text-left">
+                <tr><th className="table-head-cell">Instructor</th><th className="table-head-cell">Field</th><th className="table-head-cell">Change</th><th className="table-head-cell">Status</th><th className="table-head-cell">Decision note</th></tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {!data && <SkeletonRows rows={8} cols={5} />}
+              <tbody>
+                {!data && <SkeletonRows rows={8} cols={5} cellClass="table-body-cell" />}
                 {history.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 align-top">
-                    <td className="px-5 py-3 cell-trunc"><Link to={`/app/instructors/${r.instructorId}`} className="font-medium text-brand-700 hover:underline" title={r.instructorName}>{r.instructorName}</Link></td>
-                    <td className="px-5 py-3 text-slate-600 cell-trunc" title={r.fieldLabel}>{r.fieldLabel}</td>
-                    <td className="px-5 py-3 text-xs cell-trunc" title={`${r.oldValue || "—"} → ${r.newValue}`}><span className="text-slate-400 line-through">{r.oldValue || "—"}</span> → <span className="text-slate-700">{r.newValue}</span></td>
-                    <td className="px-5 py-3"><span className={`chip ${STATUS_CHIP[r.status]}`}>{r.status.toLowerCase()}</span></td>
-                    <td className="px-5 py-3 text-xs text-slate-500 cell-trunc" title={r.decisionComment || "—"}>{r.decisionComment || "—"}</td>
+                  <tr key={r.id} className="table-body-row align-top">
+                    <td className="table-body-cell cell-trunc"><Link to={`/app/instructors/${r.instructorId}`} className="font-medium text-brand-700 hover:underline" title={r.instructorName}>{r.instructorName}</Link></td>
+                    <td className="table-body-cell text-gray-600 cell-trunc" title={r.fieldLabel}>{r.fieldLabel}</td>
+                    <td className="table-body-cell text-xs cell-trunc" title={`${r.oldValue || "—"} → ${r.newValue}`}><span className="text-gray-400 line-through">{r.oldValue || "—"}</span> → <span className="text-gray-700">{r.newValue}</span></td>
+                    <td className="table-body-cell"><span className={`chip ${STATUS_CHIP[r.status]}`}>{r.status.toLowerCase()}</span></td>
+                    <td className="table-body-cell text-xs text-gray-500 cell-trunc" title={r.decisionComment || "—"}>{r.decisionComment || "—"}</td>
                   </tr>
                 ))}
-                {data && !history.length && <tr><td colSpan={5} className="px-5 py-6 text-center text-slate-400">No matching history.</td></tr>}
+                {data && !history.length && <tr><td colSpan={5} className="table-body-cell py-16 text-center text-gray-400">No matching history.</td></tr>}
               </tbody>
             </table>
           </div>

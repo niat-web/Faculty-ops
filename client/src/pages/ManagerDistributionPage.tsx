@@ -39,18 +39,18 @@ export default function ManagerDistributionPage() {
         <div className="text-sm text-slate-500"><div className="label">Totals</div>{items.length} reporting manager(s) · {data?.grandTotal ?? 0} instructor(s)</div>
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
+      <div className="table-shell page-bleed overflow-hidden">
+        <div className="data-grid-scroll">
+          <table className="data-grid-table w-full text-sm">
+            <thead className="table-head-row bg-gray-50 text-left">
               <tr>
-                <th className="px-5 py-3">Reporting Manager</th>
-                <th className="px-5 py-3">Employee ID</th>
-                <th className="px-5 py-3 text-right">Reportees</th>
-                <th className="px-5 py-3"></th>
+                <th className="table-head-cell">Reporting Manager</th>
+                <th className="table-head-cell">Employee ID</th>
+                <th className="table-head-cell text-right">Reportees</th>
+                <th className="table-head-cell"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {busy ? <SkeletonRows rows={8} cols={4} /> : <>
               {filtered.map((i, idx) => {
                 const link = reporteesLink(i);

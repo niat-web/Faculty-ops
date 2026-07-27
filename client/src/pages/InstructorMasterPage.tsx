@@ -379,7 +379,7 @@ export default function InstructorMasterPage() {
         </div>
       )}
 
-      <div className={`table-shell flex flex-col overflow-hidden ${loadingRows && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
+      <div className={`table-shell page-bleed flex flex-col overflow-hidden ${loadingRows && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
         <div className="table-shell-header flex shrink-0 flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-3 text-sm font-medium text-slate-500">
             {loadingRows && !rows.length ? <span className="flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-500" /> Loading instructors…</span> : `${total} instructor(s)`}
@@ -424,8 +424,8 @@ export default function InstructorMasterPage() {
             ))}
           </div>
         </div>
-        <div ref={wrapRef} className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-sm">
+        <div ref={wrapRef} className="data-grid-scroll">
+          <table className="data-grid-table whitespace-nowrap">
             <thead ref={theadRef} className="table-head-row relative z-20 text-left [&_th]:table-head-cell">
               <tr>
                 {selectMode && (
@@ -546,11 +546,8 @@ export default function InstructorMasterPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
       </div>
-
-      {/* Pagination sits below the full table at the bottom of the page (like Training Stats) — you
-          scroll the page down through all rows and reach the page controls here. */}
-      <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
 
       {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 

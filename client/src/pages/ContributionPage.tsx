@@ -49,14 +49,14 @@ export default function ContributionPage() {
       </div>
 
       {/* Table */}
-      <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{filtered.length} contribution(s)</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr><th className="px-5 py-3">Contribution</th><th className="px-5 py-3">Instructors</th><th className="px-5 py-3 text-right">Actions</th></tr>
+      <div className="table-shell page-bleed overflow-hidden">
+        <div className="table-shell-header text-sm font-medium text-gray-500">{filtered.length} contribution(s)</div>
+        <div className="data-grid-scroll">
+          <table className="data-grid-table w-full text-sm">
+            <thead className="table-head-row bg-gray-50 text-left">
+              <tr><th className="table-head-cell">Contribution</th><th className="table-head-cell">Instructors</th><th className="table-head-cell text-right">Actions</th></tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {busy ? <SkeletonRows rows={8} cols={3} /> : <>
               {filtered.map((it) => (
                 <tr key={it.value || "(blank)"} className="hover:bg-slate-50">

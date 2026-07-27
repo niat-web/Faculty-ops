@@ -582,8 +582,9 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      <div ref={wrapRef} className={`card overflow-x-auto p-0 ${(loading || syncing) && !shown.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
-        <table className="border-separate border-spacing-0 text-xs">
+      <div className={`table-shell page-bleed flex flex-col overflow-hidden ${(loading || syncing) && !shown.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
+        <div ref={wrapRef} className="data-grid-scroll">
+        <table className="data-grid-table border-separate border-spacing-0 text-xs">
           <thead ref={theadRef} className="relative z-30">
             <tr>
               <th rowSpan={2} className={`${frozenHead} px-3 py-2 text-left font-semibold`} style={{ left: 0, width: ID_W, minWidth: ID_W }}>Employee ID</th>
@@ -625,9 +626,9 @@ export default function TrainingPage() {
             )}
           </tbody>
         </table>
+        </div>
+        <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
       </div>
-
-      <Pagination page={safePage + 1} pages={pageCount} per={pageSize} total={filtered.length} onPage={(p) => setPage(p - 1)} onPer={(n) => { setPageSize(n); setPage(0); }} />
 
       {/* Right-side filter drawer — full height, scrollable, with Apply / Clear at the bottom. */}
       {filterOpen && (

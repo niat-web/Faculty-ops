@@ -210,10 +210,10 @@ export default function InstructorsPage() {
 
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={loadList} className="btn btn-ghost btn-sm">Retry</button></div>}
 
-      <div className="card overflow-hidden">
+      <div className="table-shell page-bleed overflow-hidden">
         {/* Quick lifecycle scope — defaults to Active (excludes Exited + Exit in Progress). */}
         {!applied.status && (
-          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-100 px-5 py-3">
+          <div className="table-shell-header flex flex-wrap items-center justify-end gap-3">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
               {([["active", "Active", data?.counts?.active], ["all", "All", data?.counts?.all], ["exited", "Exited", data?.counts?.exited]] as const).map(([key, label, count]) => (
                 <button key={key} onClick={() => { setScope(key); setPage(1); }}
@@ -224,8 +224,8 @@ export default function InstructorsPage() {
             </div>
           </div>
         )}
-        <div className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-sm">
+        <div className="data-grid-scroll">
+          <table className="data-grid-table whitespace-nowrap">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 {canManage && <th className="w-10 px-5 py-3"><input type="checkbox" checked={allOnPage} onChange={(e) => { const v = e.target.checked; const next = { ...selected }; rows.forEach((i) => (next[i.id] = v)); setSelected(next); }} /></th>}
@@ -271,9 +271,8 @@ export default function InstructorsPage() {
             </tbody>
           </table>
         </div>
+        {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
       </div>
-
-      {data && <Pagination page={page} pages={data.pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
 
       {adding && <AddInstructorModal cms={cms} onClose={() => setAdding(false)} onDone={() => { setAdding(false); loadList(); }} />}
       {editing && <EditInstructorModal inst={editing} cms={cms} onClose={() => setEditing(null)} onDone={() => { setEditing(null); loadList(); }} />}

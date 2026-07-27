@@ -186,37 +186,37 @@ export default function DataPage() {
 
           {data && !error && (
             <>
-              <div className={`card overflow-hidden ${loading ? "opacity-60" : ""}`}>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
+              <div className={`table-shell page-bleed overflow-hidden ${loading ? "opacity-60" : ""}`}>
+                <div className="data-grid-scroll">
+                  <table className="data-grid-table whitespace-nowrap text-sm">
+                    <thead className="table-head-row bg-gray-50 text-left">
                       <tr>
-                        <th className="px-4 py-3">#</th>
-                        {data.columns.map((c) => <th key={c} className="whitespace-nowrap px-4 py-3">{colLabel(c)}</th>)}
+                        <th className="table-head-cell">#</th>
+                        {data.columns.map((c) => <th key={c} className="table-head-cell whitespace-nowrap">{colLabel(c)}</th>)}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody>
                       {data.rows.map((r, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-4 py-2.5 text-xs text-slate-400">{(page - 1) * per + i + 1}</td>
+                        <tr key={i} className="table-body-row">
+                          <td className="table-body-cell text-xs text-gray-400">{(page - 1) * per + i + 1}</td>
                           {data.columns.map((c) => {
                             const v = String(r[c] ?? "");
                             return (
-                              <td key={c} className="max-w-[280px] truncate whitespace-nowrap px-4 py-2.5 text-slate-700" title={v}>
-                                {v || <span className="text-slate-300">—</span>}
+                              <td key={c} className="table-body-cell max-w-[280px] truncate text-gray-700" title={v}>
+                                {v || <span className="text-gray-300">—</span>}
                               </td>
                             );
                           })}
                         </tr>
                       ))}
                       {!data.rows.length && (
-                        <tr><td colSpan={data.columns.length + 1} className="px-4 py-10 text-center text-slate-400">No records found.</td></tr>
+                        <tr><td colSpan={data.columns.length + 1} className="table-body-cell py-16 text-center text-gray-400">No records found.</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
+                <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
               </div>
-              <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
             </>
           )}
         </>

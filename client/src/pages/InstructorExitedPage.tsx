@@ -148,10 +148,11 @@ export default function InstructorExitedPage() {
     // Page-flow (identical to Instructor Master): the PAGE scrolls vertically, the card scrolls only
     // horizontally, and the pagination sits below the full table at the bottom of the page.
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="page-header flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Instructor Exited <span className="text-base font-medium text-slate-400">· {total}</span></h1>
-          <p className="text-sm text-slate-500">Instructors who have exited NIAT{canEdit ? " — click any cell to edit." : "."}</p>
+          <div className="label-muted mb-1">Operations</div>
+          <h1 className="page-title">Instructor Exited <span className="text-base font-medium text-slate-400">· {total.toLocaleString()}</span></h1>
+          <p className="page-subtitle mt-1">Instructors who have exited NIAT{canEdit ? " — click any cell to edit." : "."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput onSearch={(v) => { setPage(1); setDq(v); }} placeholder="Name, ID, email…" />
@@ -166,20 +167,20 @@ export default function InstructorExitedPage() {
 
       {err && <div className="card p-4 text-sm text-rose-600">{err}</div>}
 
-      <div className={`card flex flex-col overflow-hidden rounded-xl ${!loaded && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
-        <div ref={wrapRef} className="overflow-x-auto">
-          <table className="w-full whitespace-nowrap text-sm">
-            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400">
+      <div className={`table-shell page-bleed flex flex-col overflow-hidden ${!loaded && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
+        <div ref={wrapRef} className="data-grid-scroll">
+          <table className="data-grid-table whitespace-nowrap">
+            <thead ref={theadRef} className="table-head-row relative z-20 text-left">
               <tr>
-                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="sticky left-0 z-30 bg-slate-50 px-3 py-3 font-semibold" />
-                {COLS.map((c) => <SortHeader key={c.field} label={c.label} k={c.manager ? undefined : c.field} state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />)}
+                <SortHeader label="Employee ID" k="employeeId" state={sort} onToggle={sort.toggle} className="table-head-cell sticky left-0 z-30 bg-gray-50" />
+                {COLS.map((c) => <SortHeader key={c.field} label={c.label} k={c.manager ? undefined : c.field} state={sort} onToggle={sort.toggle} className="table-head-cell z-20 bg-gray-50" />)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {!loaded && !rows.length && <SkeletonRows rows={12} cols={COLS.length + 1} cellClass="px-3 py-2.5" />}
+            <tbody>
+              {!loaded && !rows.length && <SkeletonRows rows={12} cols={COLS.length + 1} cellClass="table-body-cell" />}
               {rows.map((row) => (
-                <tr key={row.id} className="group hover:bg-slate-50">
-                  <td className="sticky left-0 z-10 bg-white px-3 py-2 font-mono text-xs text-slate-500 group-hover:bg-slate-50" style={{ minWidth: 120 }}>
+                <tr key={row.id} className="table-body-row group">
+                  <td className="table-body-cell sticky left-0 z-10 bg-white font-mono text-xs text-gray-500 group-hover:bg-gray-50" style={{ minWidth: 120 }}>
                     {isOps && edit?.id === row.id && edit?.field === "employeeId" ? (
                       <CellEditor col={EMP_COL} cms={cms} value={String(row.employeeId || "")} onCommit={(v) => save(row, EMP_COL, v)} onCancel={() => setEdit(null)} />
                     ) : isOps ? (
@@ -193,7 +194,7 @@ export default function InstructorExitedPage() {
                     const display = val === "" || val == null ? "—" : val;
                     const isEditing = canEdit && edit?.id === row.id && edit?.field === c.field;
                     return (
-                      <td key={c.field} className="px-3 py-2" style={{ minWidth: c.wrap ? 200 : 150, maxWidth: c.wrap ? 360 : 260 }}>
+                      <td key={c.field} className="table-body-cell" style={{ minWidth: c.wrap ? 200 : 140 }}>
                         {isEditing ? (
                           <CellEditor col={c} cms={cms} value={c.manager ? (row.managerId || "") : String(val)} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
                         ) : (
@@ -212,13 +213,12 @@ export default function InstructorExitedPage() {
                   })}
                 </tr>
               ))}
-              {loaded && !rows.length && <tr><td colSpan={COLS.length + 1} className="px-5 py-10 text-center text-slate-400">No exited instructors match these filters.</td></tr>}
+              {loaded && !rows.length && <tr><td colSpan={COLS.length + 1} className="table-body-cell py-16 text-center text-gray-400">No exited instructors match these filters.</td></tr>}
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
       </div>
-
-      <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
 
       {/* Right-side filter drawer */}
       {drawer && (
