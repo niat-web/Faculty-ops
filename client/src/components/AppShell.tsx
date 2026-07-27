@@ -145,7 +145,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <aside
-      className="flex h-full flex-col bg-slate-900"
+      className="flex h-full flex-col overflow-visible bg-slate-900"
       style={{ width: SIDEBAR_W }}
     >
       <div className="border-b border-slate-700/80 px-4 py-4">
@@ -165,45 +165,46 @@ export default function AppShell({ children }: { children: ReactNode }) {
         ))}
       </nav>
 
-      <div ref={menuRef} className="relative border-t border-slate-700/80 p-3">
+      <div ref={menuRef} className="relative shrink-0 border-t border-slate-700/80 p-3">
         <button
           onClick={() => setMenuOpen((o) => !o)}
           className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-800 ${menuOpen ? "bg-slate-800" : ""}`}
         >
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-700 text-sm font-bold text-white">
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white">
             {user.name.charAt(0).toUpperCase()}
             {unread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-brand-500" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-white">{user.name}</div>
-            <div className="truncate text-[11px] text-slate-400">{ROLE_LABEL[user.role]}</div>
+            <div className="truncate text-sm font-semibold text-white">{user.name}</div>
+            <div className="truncate text-[11px] font-medium text-slate-400">{ROLE_LABEL[user.role]}</div>
           </div>
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${menuOpen ? "rotate-180" : ""}`} strokeWidth={1.75} />
         </button>
 
+        {/* Popover opens to the RIGHT of the sidebar (Veytrix-style), not stacked inside it */}
         {menuOpen && (
-          <div className="absolute bottom-full left-3 right-3 z-50 mb-2 overflow-hidden rounded-lg border border-slate-600 bg-slate-800 py-1 shadow-xl">
+          <div className="absolute bottom-0 left-[calc(100%+8px)] z-[60] w-52 overflow-hidden rounded-lg border border-slate-600 bg-slate-800 py-1 shadow-xl">
             <div className="border-b border-slate-700 px-3 py-2">
-              <div className="truncate text-sm font-medium text-white">{user.name}</div>
+              <div className="truncate text-sm font-semibold text-white">{user.name}</div>
               <div className="truncate text-[11px] text-slate-400">{user.email}</div>
             </div>
-            <button onClick={() => go("/app/account")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700/60">
+            <button onClick={() => go("/app/account")} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-white/90 hover:bg-slate-700/60">
               <UserCircle className="h-4 w-4 text-slate-400" strokeWidth={1.75} /> My Account
             </button>
-            <button onClick={() => go("/app/notifications")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700/60">
+            <button onClick={() => go("/app/notifications")} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-white/90 hover:bg-slate-700/60">
               <Bell className="h-4 w-4 text-slate-400" strokeWidth={1.75} />
               <span className="flex-1">Notifications</span>
               {unread > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{unread}</span>}
             </button>
             {user.role === "OPS_ADMIN" && (
-              <button onClick={() => go("/app/data")} className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700/60">
+              <button onClick={() => go("/app/data")} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-white/90 hover:bg-slate-700/60">
                 <Database className="h-4 w-4 text-slate-400" strokeWidth={1.75} /> Data
               </button>
             )}
             <div className="my-1 border-t border-slate-700" />
             <button
               onClick={async () => { setMenuOpen(false); await logout(); navigate("/login"); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-400 hover:bg-slate-700/60"
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-red-400 hover:bg-slate-700/60"
             >
               <LogOut className="h-4 w-4" strokeWidth={1.75} /> Logout
             </button>

@@ -77,18 +77,18 @@ table { font-variant-numeric: tabular-nums; }
   .chip-status { @apply border border-brand-200 bg-brand-50 text-brand-700; }
   .chip-gray { @apply border border-gray-200 bg-gray-50 text-gray-600; }
 
-  /* ── Sidebar nav (dark) ── */
+  /* ── Sidebar nav (dark) — Veytrix-style bold white labels ── */
   .nav-link {
-    @apply flex items-center gap-2.5 border-l-2 border-transparent py-2 pl-3 pr-2 text-[13px] font-medium text-slate-400 transition-colors;
+    @apply flex items-center gap-2.5 border-l-2 border-transparent py-2 pl-3 pr-2 text-[13px] font-semibold text-white/75 transition-colors;
   }
-  .nav-link:hover { @apply bg-slate-800/50 text-slate-200; }
+  .nav-link:hover { @apply bg-slate-800/60 text-white; }
   .nav-link-active {
     @apply border-brand-500 bg-slate-800/80 text-white;
   }
   .nav-sublink {
-    @apply block rounded-md py-1.5 pl-9 pr-2 text-[12px] font-medium text-slate-400 transition-colors;
+    @apply block rounded-md py-1.5 pl-9 pr-2 text-[12px] font-semibold text-white/60 transition-colors;
   }
-  .nav-sublink:hover { @apply text-slate-200; }
+  .nav-sublink:hover { @apply text-white/90; }
   .nav-sublink-active { @apply text-white; }
 
   /* ── Table shell (flat enterprise) ── */

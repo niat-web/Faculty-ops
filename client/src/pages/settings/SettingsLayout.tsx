@@ -18,9 +18,7 @@ export default function SettingsLayout() {
       <Breadcrumbs items={[{ label: "Dashboard", to: "/app" }, { label: "Settings" }]} />
       <div className="page-header flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="label-muted mb-1">Administration</div>
           <h1 className="page-title flex items-center gap-2"><SettingsIcon className="h-6 w-6 text-brand-600" strokeWidth={1.75} /> Settings</h1>
-          <p className="page-subtitle mt-1">Manage the schema, notifications, emails and system configuration for FacultyOps.</p>
         </div>
         <a href="/docs" target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm shrink-0"><BookOpen className="h-4 w-4 text-brand-600" strokeWidth={1.75} /> Documentation</a>
       </div>
