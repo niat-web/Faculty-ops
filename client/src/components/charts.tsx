@@ -5,7 +5,7 @@ import {
   LabelList, RadialBarChart, RadialBar, AreaChart, Area, Legend,
 } from "recharts";
 
-export const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#a855f7", "#ef4444", "#14b8a6"];
+export const COLORS = ["#F25C05", "#22c55e", "#f59e0b", "#ec4899", "#06b6d4", "#FF9440", "#ef4444", "#14b8a6"];
 
 const TONES: Record<string, string> = {
   brand: "text-brand-600 bg-brand-50", emerald: "text-emerald-600 bg-emerald-50", amber: "text-amber-600 bg-amber-50",
@@ -116,14 +116,14 @@ export function CampusBars({ data, height = 260, onBar }: { data: any[]; height?
           <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={data.length > 6 ? -20 : 0} textAnchor={data.length > 6 ? "end" : "middle"} height={data.length > 6 ? 50 : 24} />
           <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
           <Tooltip />
-          <Bar dataKey="value" fill="#6366f1" radius={[6, 6, 0, 0]} onClick={onBar ? (d: any) => onBar(d?.payload || d) : undefined} className={onBar ? "cursor-pointer" : ""}><LabelList dataKey="value" position="top" className="fill-slate-400" style={{ fontSize: 11 }} /></Bar>
+          <Bar dataKey="value" fill="#F25C05" radius={[6, 6, 0, 0]} onClick={onBar ? (d: any) => onBar(d?.payload || d) : undefined} className={onBar ? "cursor-pointer" : ""}><LabelList dataKey="value" position="top" className="fill-slate-400" style={{ fontSize: 11 }} /></Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function HBar({ data, color = "#6366f1", max, height = 260 }: { data: any[]; color?: string; max?: number; height?: number }) {
+export function HBar({ data, color = "#F25C05", max, height = 260 }: { data: any[]; color?: string; max?: number; height?: number }) {
   if (!data?.length) return <Empty h={height} />;
   return (
     <div style={{ height }}>
@@ -139,7 +139,7 @@ export function HBar({ data, color = "#6366f1", max, height = 260 }: { data: any
   );
 }
 
-export function RadialGauge({ value, label, color = "#6366f1", height = 200 }: { value: number; label?: string; color?: string; height?: number }) {
+export function RadialGauge({ value, label, color = "#F25C05", height = 200 }: { value: number; label?: string; color?: string; height?: number }) {
   const v = Math.max(0, Math.min(100, Number(value) || 0));
   return (
     <div className="relative" style={{ height }}>
@@ -155,7 +155,7 @@ export function RadialGauge({ value, label, color = "#6366f1", height = 200 }: {
   );
 }
 
-export function TrendArea({ data, color = "#6366f1", height = 240 }: { data: any[]; color?: string; height?: number }) {
+export function TrendArea({ data, color = "#F25C05", height = 240 }: { data: any[]; color?: string; height?: number }) {
   if (!data?.length) return <Empty h={height} />;
   return (
     <div style={{ height }}>

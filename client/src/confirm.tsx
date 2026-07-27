@@ -62,7 +62,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         const danger = state.danger !== false;
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => finish(false)}>
-            <div className="card w-full max-w-sm p-0" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-0" onMouseDown={(e) => e.stopPropagation()}>
               <div className="flex items-start gap-3 px-5 pt-5">
                 <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${danger ? "bg-rose-100 text-rose-600" : "bg-brand-100 text-brand-600"}`}>
                   <AlertTriangle className="h-5 w-5" />
@@ -74,7 +74,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 <button onClick={() => finish(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>
               </div>
               <div className="flex justify-end gap-2 px-5 pb-5 pt-5">
-                <button onClick={() => finish(false)} className="btn btn-ghost btn-sm">{state.cancelText || "Cancel"}</button>
+                <button onClick={() => finish(false)} className="btn btn-outline btn-sm">{state.cancelText || "Cancel"}</button>
                 <button autoFocus onClick={() => finish(true)} className={`btn btn-sm ${danger ? "btn-danger" : "btn-primary"}`}>{state.confirmText || "Delete"}</button>
               </div>
             </div>
@@ -88,7 +88,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         const submit = () => { if (canSubmit) finish(value); };
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => finish(null)}>
-            <div className="card w-full max-w-md p-0" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-0" onMouseDown={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
                 <h2 className="font-semibold text-slate-900">{state.title || "Enter a value"}</h2>
                 <button onClick={() => finish(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>

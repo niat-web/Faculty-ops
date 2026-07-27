@@ -141,7 +141,7 @@ function AdminDash({ d, first }: any) {
   const active = k.active ?? (k.total - (k.exiting || 0)); // active instructors (excludes exited/exit-in-progress)
   const attrition = k.total ? Math.round(((k.exited || 0) / k.total) * 100) : 0;
   const staff = (k.ops || 0) + (k.sm || 0) + (k.cm || 0) || 1;
-  const wf = [{ name: "Ops Admins", value: k.ops || 0, color: "#6366f1" }, { name: "Senior Managers", value: k.sm || 0, color: "#06b6d4" }, { name: "Capability Managers", value: k.cm || 0, color: "#22c55e" }];
+  const wf = [{ name: "Ops Admins", value: k.ops || 0, color: "#F25C05" }, { name: "Senior Managers", value: k.sm || 0, color: "#06b6d4" }, { name: "Capability Managers", value: k.cm || 0, color: "#22c55e" }];
 
   return (
     <div className="space-y-5">
@@ -177,13 +177,13 @@ function AdminDash({ d, first }: any) {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Panel title="Top campuses" sub="By headcount" icon={Building2}><Leaderboard items={(c.byCampus || []).slice(0, 6)} color="#6366f1" to={(it) => `/app/instructors?campus=${enc(it.name)}`} /></Panel>
+        <Panel title="Top campuses" sub="By headcount" icon={Building2}><Leaderboard items={(c.byCampus || []).slice(0, 6)} color="#F25C05" to={(it) => `/app/instructors?campus=${enc(it.name)}`} /></Panel>
         <Panel title="Manager workload" sub="Reportees per manager" icon={Users}><Leaderboard items={(c.workload || []).slice(0, 6)} color="#06b6d4" /></Panel>
         <Panel title="Completion spread" sub="Instructors per band" icon={GraduationCap}><MiniBars data={c.trainingBuckets} colors={BUCKET_COLORS} /></Panel>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Panel title="Joining trend" sub="New records · last 6 months" icon={TrendingUp} className="lg:col-span-2"><TrendArea data={c.joins} color="#6366f1" height={220} /></Panel>
+        <Panel title="Joining trend" sub="New records · last 6 months" icon={TrendingUp} className="lg:col-span-2"><TrendArea data={c.joins} color="#F25C05" height={220} /></Panel>
         <Panel title="Workforce" sub={`${k.ops + k.sm + k.cm} staff total`} icon={ShieldCheck}>
           <div className="mb-4 flex h-2.5 w-full overflow-hidden rounded-full">{wf.map((s, i) => s.value > 0 && <div key={i} style={{ width: `${(s.value / staff) * 100}%`, background: s.color }} />)}</div>
           <LegendList items={wf} total={staff} />
@@ -251,7 +251,7 @@ function SeniorDash({ d, first }: any) {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <Panel title="Top campuses" icon={Building2}><Leaderboard items={(c.byCampus || []).slice(0, 6)} color="#6366f1" to={(it) => `/app/instructors?campus=${enc(it.name)}`} /></Panel>
+        <Panel title="Top campuses" icon={Building2}><Leaderboard items={(c.byCampus || []).slice(0, 6)} color="#F25C05" to={(it) => `/app/instructors?campus=${enc(it.name)}`} /></Panel>
         <Panel title="Manager workload" icon={Users}><Leaderboard items={(c.workload || []).slice(0, 6)} color="#06b6d4" /></Panel>
         <Panel title="Recently added" icon={UserPlus}><RecentlyAdded list={d.recentJoiners} /></Panel>
       </div>

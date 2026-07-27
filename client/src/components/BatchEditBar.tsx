@@ -48,7 +48,7 @@ export default function BatchEditBar() {
       {/* Bottom-centre action bar */}
       {active && (
         <div className="fixed inset-x-0 bottom-5 z-[60] flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-white px-4 py-2.5 shadow-2xl ring-1 ring-brand-100">
+          <div className="flex items-center gap-3 rounded-lg border border-brand-200 bg-white px-4 py-2.5 shadow-lg">
             <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
               <Layers className="h-4 w-4 text-brand-600" />
               Batch edit

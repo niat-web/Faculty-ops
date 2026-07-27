@@ -2,10 +2,10 @@ import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 // Shared palette + semantic lifecycle colors.
-export const PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#06b6d4", "#ec4899", "#a855f7", "#ef4444", "#14b8a6"];
+export const PALETTE = ["#F25C05", "#22c55e", "#f59e0b", "#06b6d4", "#ec4899", "#FF9440", "#ef4444", "#14b8a6"];
 export const STATUS_COLOR: Record<string, string> = {
-  ONBOARDING: "#f59e0b", IN_TRAINING: "#6366f1", CONFIRMED: "#22c55e", TRANSFER: "#06b6d4",
-  EXIT_IN_PROGRESS: "#fb923c", EXITED: "#ef4444", REHIRED: "#a855f7",
+  ONBOARDING: "#f59e0b", IN_TRAINING: "#F25C05", CONFIRMED: "#22c55e", TRANSFER: "#06b6d4",
+  EXIT_IN_PROGRESS: "#FF9440", EXITED: "#ef4444", REHIRED: "#D24E04",
 };
 
 /* ── Panel: the base section card with a compact header ── */
@@ -30,7 +30,7 @@ export function Panel({ title, sub, icon: Icon, action, children, className = ""
 
 /* ── MetricTile: compact KPI with delta chip + sparkline ── */
 const ACCENT: Record<string, { chip: string; stroke: string }> = {
-  brand: { chip: "bg-brand-50 text-brand-600", stroke: "#6366f1" },
+  brand: { chip: "bg-brand-50 text-brand-600", stroke: "#F25C05" },
   emerald: { chip: "bg-emerald-50 text-emerald-600", stroke: "#22c55e" },
   amber: { chip: "bg-amber-50 text-amber-600", stroke: "#f59e0b" },
   rose: { chip: "bg-rose-50 text-rose-600", stroke: "#ef4444" },
@@ -43,7 +43,7 @@ export function MetricTile({ label, value, icon: Icon, tone = "brand", delta, sp
 }) {
   const a = ACCENT[tone] || ACCENT.brand;
   const inner = (
-    <div className="card h-full p-4 transition hover:-translate-y-0.5 hover:shadow-md">
+    <div className="card h-full p-4 transition hover:bg-brand-50/30">
       <div className="flex items-center justify-between">
         <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${a.chip}`}><Icon className="h-5 w-5" /></span>
         {delta != null && (
@@ -66,7 +66,7 @@ export function MetricTile({ label, value, icon: Icon, tone = "brand", delta, sp
 }
 
 /* ── Sparkline (inline SVG) ── */
-export function Sparkline({ data, color = "#6366f1", w = 84, h = 34 }: { data: number[]; color?: string; w?: number; h?: number }) {
+export function Sparkline({ data, color = "#F25C05", w = 84, h = 34 }: { data: number[]; color?: string; w?: number; h?: number }) {
   if (!data?.length) return null;
   const max = Math.max(...data, 1), min = Math.min(...data, 0), range = max - min || 1;
   const pts = data.map((v, i) => [(i / (data.length - 1 || 1)) * w, h - ((v - min) / range) * (h - 4) - 2]);
@@ -138,7 +138,7 @@ export function LegendList({ items, total, onItem }: { items: { name: string; va
 }
 
 /* ── Leaderboard: ranked rows with a proportional bar ── */
-export function Leaderboard({ items, color = "#6366f1", unit = "", to }: { items: { name: string; value: number; id?: string }[]; color?: string; unit?: string; to?: (it: any) => string }) {
+export function Leaderboard({ items, color = "#F25C05", unit = "", to }: { items: { name: string; value: number; id?: string }[]; color?: string; unit?: string; to?: (it: any) => string }) {
   if (!items?.length) return <Empty />;
   const max = Math.max(...items.map((i) => i.value), 1);
   return (

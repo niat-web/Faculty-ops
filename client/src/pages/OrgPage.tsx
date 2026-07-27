@@ -29,15 +29,14 @@ function OrgSkeleton() {
 
 // Per-branch colour (node accent + connector line) so each Senior Manager's tree is distinct.
 const BRANCH = [
-  { hex: "#6366f1", avatar: "bg-brand-100 text-brand-700", chip: "bg-brand-50 text-brand-700" },
+  { hex: "#F25C05", avatar: "bg-brand-100 text-brand-700", chip: "bg-brand-50 text-brand-700" },
   { hex: "#06b6d4", avatar: "bg-cyan-100 text-cyan-700", chip: "bg-cyan-50 text-cyan-700" },
   { hex: "#22c55e", avatar: "bg-emerald-100 text-emerald-700", chip: "bg-emerald-50 text-emerald-700" },
-  { hex: "#a855f7", avatar: "bg-violet-100 text-violet-700", chip: "bg-violet-50 text-violet-700" },
+  { hex: "#FF9440", avatar: "bg-orange-100 text-orange-700", chip: "bg-orange-50 text-orange-700" },
   { hex: "#ec4899", avatar: "bg-pink-100 text-pink-700", chip: "bg-pink-50 text-pink-700" },
 ];
 const AMBER = { hex: "#f59e0b", avatar: "bg-amber-100 text-amber-700", chip: "bg-amber-50 text-amber-700" };
-// Ops Admins branch — distinct indigo accent to read as "organization-wide admins".
-const OPS_ACCENT = { hex: "#4f46e5", avatar: "bg-indigo-100 text-indigo-700", chip: "bg-indigo-50 text-indigo-700" };
+const OPS_ACCENT = { hex: "#D24E04", avatar: "bg-brand-100 text-brand-800", chip: "bg-brand-50 text-brand-800" };
 
 const MIN_ZOOM = 0.3, MAX_ZOOM = 2.2;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -288,7 +287,7 @@ export default function OrgPage() {
             </svg>
 
             {/* Column 1 — Organization */}
-            <div ref={setNode("ORG")} className="relative z-10 w-56 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-600 text-white shadow-md">
+            <div ref={setNode("ORG")} className="relative z-10 w-56 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-brand-600 to-brand-800 text-white">
               <div className="flex items-center gap-3 px-4 py-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20"><Building2 className="h-5 w-5" /></span>
                 <div className="min-w-0"><div className="truncate text-sm font-bold">NIAT — FacultyOps</div><div className="text-[11px] text-white/80">Organization</div></div>

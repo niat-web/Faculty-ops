@@ -299,10 +299,11 @@ export default function InstructorMasterPage() {
   // The full toolbar (title + search + filters + multi-select + actions) is STATIC — render it identically
   // whether or not the dynamic columns (meta) have loaded, so the real page chrome appears instantly.
   const headerBar = (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+    <div className="page-header flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-bold">Instructor Master</h1>
-        <p className="text-sm text-slate-500">Full master sheet — click any cell to edit.</p>
+        <div className="label-muted mb-1">Operations</div>
+        <h1 className="page-title">Instructor Master</h1>
+        <p className="page-subtitle mt-1">Full master sheet — click any cell to edit.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-56 sm:w-64">
@@ -327,11 +328,11 @@ export default function InstructorMasterPage() {
             <button onClick={clearReportingManager} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear reporting-manager filter"><X className="h-3 w-3" /></button>
           </span>
         )}
-        <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">
-          <SlidersHorizontal className="h-4 w-4" /> Filters
-          {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
+        <button onClick={openDrawer} className="btn btn-outline btn-sm shrink-0">
+          <SlidersHorizontal className="h-4 w-4" strokeWidth={1.75} /> Filters
+          {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-bold text-white">{activeCount}</span>}
         </button>
-        {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
+        {activeCount > 0 && <button onClick={clearAll} className="text-sm font-semibold text-red-600 hover:underline">Clear filters</button>}
         <button onClick={() => (selectMode ? exitSelect() : setSelectMode(true))} className={`btn btn-sm ${selectMode ? "btn-primary" : "btn-ghost"}`}><CheckSquare className="h-4 w-4" /> {selectMode ? "Done" : "Multi-select"}</button>
         {/* Actions menu — Add instructor / Import / Export collapsed into one button. */}
         <div ref={actionsRef} className="relative">
@@ -378,8 +379,8 @@ export default function InstructorMasterPage() {
         </div>
       )}
 
-      <div className={`card flex flex-col overflow-hidden rounded-xl ${loadingRows && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className={`table-shell flex flex-col overflow-hidden ${loadingRows && !rows.length ? "min-h-[calc(100vh-13rem)]" : ""}`}>
+        <div className="table-shell-header flex shrink-0 flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-3 text-sm font-medium text-slate-500">
             {loadingRows && !rows.length ? <span className="flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-500" /> Loading instructors…</span> : `${total} instructor(s)`}
             {/* Department quick-filter: blue text button → checkbox dropdown of unique departments. */}
@@ -425,7 +426,7 @@ export default function InstructorMasterPage() {
         </div>
         <div ref={wrapRef} className="overflow-x-auto">
           <table className="w-full whitespace-nowrap text-sm">
-            <thead ref={theadRef} className="relative z-20 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:border-b [&_th]:border-slate-200">
+            <thead ref={theadRef} className="table-head-row relative z-20 text-left [&_th]:table-head-cell">
               <tr>
                 {selectMode && (
                   <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] bg-slate-50 px-2 py-3">
@@ -447,9 +448,9 @@ export default function InstructorMasterPage() {
                 {isOps && <th className="sticky right-0 z-30 border-l border-slate-100 bg-slate-50 px-3 py-3 text-right font-semibold">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {rows.map((row) => (
-                <tr key={row.employeeId} className={`group bg-white transition-colors even:bg-slate-50 hover:!bg-brand-50 ${row.id && selected.has(row.id) ? "!bg-brand-50" : ""}`}>
+                <tr key={row.employeeId} className={`table-body-row group bg-white even:bg-gray-50/50 hover:!bg-brand-50/40 ${row.id && selected.has(row.id) ? "!bg-brand-50/60" : ""}`}>
                   {selectMode && (
                     <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-inherit px-2 py-2">
                       {/* Only rows that exist in Mongo can be bulk-selected (Darwinbox-only rows have no record yet). */}

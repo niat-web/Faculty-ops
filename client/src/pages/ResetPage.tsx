@@ -11,7 +11,7 @@ export default function ResetPage() {
   const { login } = useAuth();
   const token = params.get("token") || "";
   const setup = params.get("setup") === "1";
-  const linkEmail = params.get("email") || ""; // present on set-password links → enables auto sign-in
+  const linkEmail = params.get("email") || "";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -21,7 +21,6 @@ export default function ResetPage() {
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [email, setEmail] = useState("");
-  // Validate the link on load so a used/expired one shows a message instead of the form.
   const [tokenState, setTokenState] = useState<"checking" | "valid" | "invalid">(token ? "checking" : "valid");
 
   useEffect(() => {
@@ -37,12 +36,11 @@ export default function ResetPage() {
     setBusy(true);
     try {
       await api.post("/auth/reset", { token, password });
-      // Password is set — sign the user straight in and drop them on the dashboard.
       if (linkEmail) {
         try {
           const r = await login(linkEmail, password);
-          if (!r.twoFactorRequired) { navigate("/app"); return; } // 2FA users finish on /login
-        } catch { /* fall back to manual sign-in below */ }
+          if (!r.twoFactorRequired) { navigate("/app"); return; }
+        } catch { /* fall back to manual sign-in */ }
       }
       setDone(true);
     } catch (e: any) { setErr(e.message); }
@@ -50,54 +48,53 @@ export default function ResetPage() {
   }
   async function forgot(e: React.FormEvent) {
     e.preventDefault(); setErr(null);
-    // Always show the same neutral confirmation (no enumeration), even on a transient failure.
-    try { await api.post("/auth/forgot", { email }); } catch { /* ignore — still confirm below */ }
+    try { await api.post("/auth/forgot", { email }); } catch { /* ignore */ }
     setSent(true);
   }
 
   return (
-    <div className="relative min-h-screen bg-slate-50">
-      {/* Brand — pinned to the top-left of the page (same wordmark as the sidebar) */}
-      <div className="absolute left-6 top-6 z-10">
-        <Wordmark logoSize={40} />
-      </div>
-
+    <div className="relative min-h-screen bg-slate-100">
       <div className="flex min-h-screen items-center justify-center px-6 py-24">
-      <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold">{setup ? "Set your password" : "Reset password"}</h1>
-        {done ? (
-          <div className="mt-6 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Password set. <Link to="/login" className="font-medium underline">Sign in</Link>.</div>
-        ) : token && tokenState === "checking" ? (
-          <p className="mt-6 text-sm text-slate-500">Checking your link…</p>
-        ) : token && tokenState === "invalid" ? (
-          <div className="mt-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">This link is invalid or has already been used — set-password links work only once. <Link to="/reset" className="font-medium underline">Request a new link</Link>.</div>
-        ) : token ? (
-          <form onSubmit={setPw} className="mt-6 space-y-4">
-            <div><label className="label">New password</label>
-              <div className="relative">
-                <input className="input pr-10" type={showPw ? "text" : "password"} minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
-                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
-              </div>
-            </div>
-            <div><label className="label">Confirm password</label>
-              <div className="relative">
-                <input className="input pr-10" type={showConfirm ? "text" : "password"} minLength={8} placeholder="Re-enter your password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
-                <button type="button" onClick={() => setShowConfirm((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
-              </div>
-            </div>
-            {err && <p className="text-sm text-rose-600">{err}</p>}
-            <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Saving…" : "Save password"}</button>
-          </form>
-        ) : sent ? (
-          <div className="mt-6 rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-700">If that email exists, a reset link has been sent (valid 1 hour).</div>
-        ) : (
-          <form onSubmit={forgot} className="mt-6 space-y-4">
-            <div><label className="label">Email</label><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
-            <button className="btn btn-primary w-full">Send reset link</button>
-          </form>
-        )}
-        <p className="mt-6 text-center text-sm text-slate-500"><Link to="/login" className="text-brand-600 hover:underline">Back to sign in</Link></p>
-      </div>
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex justify-center">
+            <Wordmark logoSize={40} dark={false} />
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">{setup ? "Set your password" : "Reset password"}</h1>
+            {done ? (
+              <div className="mt-6 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Password set. <Link to="/login" className="font-semibold underline">Sign in</Link>.</div>
+            ) : token && tokenState === "checking" ? (
+              <p className="mt-6 text-sm text-slate-500">Checking your link…</p>
+            ) : token && tokenState === "invalid" ? (
+              <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">This link is invalid or has already been used. <Link to="/reset" className="font-semibold underline">Request a new link</Link>.</div>
+            ) : token ? (
+              <form onSubmit={setPw} className="mt-6 space-y-4">
+                <div><label className="label">New password</label>
+                  <div className="relative">
+                    <input className="input pr-10" type={showPw ? "text" : "password"} minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
+                    <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showPw ? <EyeOff className="h-4 w-4" strokeWidth={1.75} /> : <Eye className="h-4 w-4" strokeWidth={1.75} />}</button>
+                  </div>
+                </div>
+                <div><label className="label">Confirm password</label>
+                  <div className="relative">
+                    <input className="input pr-10" type={showConfirm ? "text" : "password"} minLength={8} placeholder="Re-enter your password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+                    <button type="button" onClick={() => setShowConfirm((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showConfirm ? <EyeOff className="h-4 w-4" strokeWidth={1.75} /> : <Eye className="h-4 w-4" strokeWidth={1.75} />}</button>
+                  </div>
+                </div>
+                {err && <p className="text-sm text-red-600">{err}</p>}
+                <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Saving…" : "Save password"}</button>
+              </form>
+            ) : sent ? (
+              <div className="mt-6 rounded-md border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700">If that email exists, a reset link has been sent (valid 1 hour).</div>
+            ) : (
+              <form onSubmit={forgot} className="mt-6 space-y-4">
+                <div><label className="label">Email</label><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
+                <button className="btn btn-primary w-full">Send reset link</button>
+              </form>
+            )}
+            <p className="mt-6 text-center text-sm text-slate-500"><Link to="/login" className="font-semibold text-brand-600 hover:underline">Back to sign in</Link></p>
+          </div>
+        </div>
       </div>
     </div>
   );

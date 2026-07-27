@@ -2,46 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-html, body, #root { padding: 0; margin: 0; min-height: 100%; }
-body { font-family: var(--font-sans); color: theme("colors.ink"); -webkit-font-smoothing: antialiased; background: #f8fafc; }
+:root {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --radius: 0.65rem;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --primary: 21 96% 48%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 21 96% 48%;
+}
 
-/* Toast auto-dismiss countdown bar (shrinks over the toast's lifetime). */
+html, body, #root { padding: 0; margin: 0; min-height: 100%; }
+
+body {
+  font-family: var(--font-sans);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+  background: #f1f5f9;
+}
+
+/* Thin scrollbar */
+* { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 9999px; }
+*::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Tabular nums on all table data */
+table { font-variant-numeric: tabular-nums; }
+
 @keyframes toastbar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-/* Toast enter animation — slide in from the right + fade. */
 @keyframes toastin { from { opacity: 0; transform: translateX(0.75rem); } to { opacity: 1; transform: translateX(0); } }
 
 @layer components {
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition; }
-  .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700 shadow-sm; }
-  .btn-ghost { @apply bg-slate-100 text-slate-700 hover:bg-slate-200; }
+  /* ── Buttons ── */
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors;
+  }
+  .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700; }
+  .btn-outline { @apply border border-gray-200 bg-white text-gray-700 hover:bg-gray-50; }
+  .btn-ghost { @apply border border-gray-200 bg-white text-gray-700 hover:bg-gray-50; }
   .btn-success { @apply bg-emerald-600 text-white hover:bg-emerald-700; }
-  .btn-danger { @apply bg-rose-600 text-white hover:bg-rose-700; }
-  .btn-sm { @apply px-3 py-1.5 text-xs; }
+  .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
+  .btn-destructive-outline { @apply border border-red-200 bg-white text-red-600 hover:bg-red-50; }
+  .btn-sm { @apply h-8 px-3 text-xs; }
 
-  /* Stable table column: caps the cell width and truncates long text to an ellipsis, so a long value can
-     NEVER resize/grow the column or break the table layout. Pair with a `title` attribute so the full value
-     shows on hover. Shared across every data table for a single, consistent behaviour. */
+  /* ── Cards & inputs ── */
+  .card { @apply border border-slate-200 bg-white; }
+  .input {
+    @apply h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm outline-none transition;
+    @apply focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  .label { @apply mb-1 block text-sm font-medium text-gray-700; }
+  .label-muted { @apply text-[11px] font-semibold uppercase tracking-wider text-gray-500; }
+
+  /* ── Table cells ── */
   .cell-trunc { @apply max-w-[260px] truncate; }
   .cell-trunc-sm { @apply max-w-[160px] truncate; }
 
-  .card { @apply bg-white border border-slate-200 shadow-card; }
-  .input { @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 transition; }
-  .label { @apply block text-xs font-medium text-slate-500 mb-1; }
+  /* ── Status chips ── */
+  .chip { @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide; }
+  .chip-pending { @apply border border-amber-200 bg-amber-50 text-amber-700; }
+  .chip-verified, .chip-approved { @apply border border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .chip-rejected { @apply border border-red-200 bg-red-50 text-red-700; }
+  .chip-partial { @apply border border-blue-200 bg-blue-50 text-blue-700; }
+  .chip-public { @apply border border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .chip-necessary { @apply border border-amber-200 bg-amber-50 text-amber-700; }
+  .chip-sensitive { @apply border border-red-200 bg-red-50 text-red-700; }
+  .chip-status { @apply border border-brand-200 bg-brand-50 text-brand-700; }
+  .chip-gray { @apply border border-gray-200 bg-gray-50 text-gray-600; }
 
-  .chip { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium; }
-  .chip-public { @apply bg-emerald-50 text-emerald-700; }
-  .chip-necessary { @apply bg-amber-50 text-amber-700; }
-  .chip-sensitive { @apply bg-rose-50 text-rose-700; }
-  .chip-status { @apply bg-brand-50 text-brand-700; }
-  .chip-gray { @apply bg-slate-100 text-slate-600; }
+  /* ── Sidebar nav (dark) ── */
+  .nav-link {
+    @apply flex items-center gap-2.5 border-l-2 border-transparent py-2 pl-3 pr-2 text-[13px] font-medium text-slate-400 transition-colors;
+  }
+  .nav-link:hover { @apply bg-slate-800/50 text-slate-200; }
+  .nav-link-active {
+    @apply border-brand-500 bg-slate-800/80 text-white;
+  }
+  .nav-sublink {
+    @apply block rounded-md py-1.5 pl-9 pr-2 text-[12px] font-medium text-slate-400 transition-colors;
+  }
+  .nav-sublink:hover { @apply text-slate-200; }
+  .nav-sublink-active { @apply text-white; }
 
-  .nav-link { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition; }
-  .nav-link-active { @apply bg-brand-50 text-brand-700 hover:bg-brand-50 hover:text-brand-700; }
+  /* ── Table shell (flat enterprise) ── */
+  .table-shell { @apply border-y border-slate-200 bg-white; }
+  .table-shell-header { @apply border-b border-gray-200 px-4 py-3; }
+  .table-shell-title { @apply text-sm font-semibold text-gray-900; }
+  .table-head-row { @apply border-b border-gray-200 bg-gray-50; }
+  .table-head-cell { @apply px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-600; }
+  .table-body-row { @apply border-b border-gray-200 hover:bg-gray-50; }
+  .table-body-row-clickable { @apply cursor-pointer hover:bg-brand-50/40; }
+  .table-body-cell { @apply px-4 py-3 text-sm; }
+  .table-pagination { @apply flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-500; }
+
+  /* ── KPI grid ── */
+  .kpi-grid { @apply grid gap-px bg-slate-200; }
+  .kpi-cell { @apply bg-white p-4; }
+
+  /* ── Page chrome ── */
+  .page-header { @apply border-b border-slate-200 py-4; }
+  .page-title { @apply text-2xl font-semibold tracking-tight text-slate-900; }
+  .page-subtitle { @apply text-sm leading-relaxed text-slate-600; }
+  .breadcrumb { @apply text-sm text-gray-600; }
+  .breadcrumb-link { @apply text-brand-600 hover:underline; }
+  .breadcrumb-current { @apply font-medium text-gray-900; }
+
+  /* ── Attendance / pct colors ── */
+  .pct-high { color: #16a34a; }
+  .pct-mid { color: #d97706; }
+  .pct-low { color: #dc2626; }
 }
 
-/* ── Loading animations ──────────────────────────────────────────────── */
-/* Global top loading bar — sliding indeterminate blue gradient. */
+/* Global top loading bar — orange brand */
 @keyframes global-loader-slide {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
@@ -49,17 +128,16 @@ body { font-family: var(--font-sans); color: theme("colors.ink"); -webkit-font-s
 .global-loader {
   position: fixed; top: 0; left: 0; right: 0;
   height: 3px; z-index: 200; overflow: hidden;
-  background: rgba(49, 104, 244, 0.12);
+  background: rgba(242, 92, 5, 0.12);
   pointer-events: none;
   transition: opacity 250ms ease;
 }
 .global-loader__bar {
   position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(49,104,244,0) 0%, #3168f4 55%, #6f9bff 100%);
+  background: linear-gradient(90deg, rgba(242,92,5,0) 0%, #F25C05 55%, #FF9440 100%);
   animation: global-loader-slide 1.1s ease-in-out infinite;
 }
 
-/* Skeleton shimmer placeholder. */
 @keyframes skeleton-shimmer {
   0%   { background-position: -240px 0; }
   100% { background-position: 240px 0; }
