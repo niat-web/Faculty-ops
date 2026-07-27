@@ -10,6 +10,7 @@ import { Skeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
 import RowActionsMenu from "../components/RowActionsMenu";
 import { isHealthKey, healthChipClass, stripHealthEmoji } from "../trainingScore";
+import { isAbort } from "../hooks";
 
 // Health-status fields show no emoji — the colour conveys the state (green/amber/red/grey).
 function HealthChip({ value }: { value: any }) {
@@ -81,7 +82,9 @@ export default function InstructorProfilePage() {
   const canAudit = user!.role === "OPS_ADMIN" || user!.role === "SENIOR_MANAGER"; // per-instructor audit tab stays Ops/SM
   const isOps = user!.role === "OPS_ADMIN";
 
-  function load() { api.get(`/instructors/${id}`).then(setP).catch((e) => setErr(e.message)); }
+  function load() {
+    return api.get(`/instructors/${id}`).then(setP).catch((e) => { if (!isAbort(e)) setErr(e.message); });
+  }
   async function withdrawRequest(r: any) {
     if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
     try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
@@ -89,7 +92,13 @@ export default function InstructorProfilePage() {
   // Ops/SM edit inline (direct, audited, no reason prompt); a Capability Manager opens the
   // request modal (their change needs SM approval with a reason).
   const startEdit = (f: any) => { if (canEditFields) setEditKey(f.key); else if (canRequest) setEditField(f); };
-  useEffect(() => { setP(null); load(); }, [id]);
+  useEffect(() => {
+    setP(null);
+    setErr(null);
+    const ac = new AbortController();
+    api.get(`/instructors/${id}`, { signal: ac.signal }).then(setP).catch((e) => { if (!isAbort(e)) setErr(e.message); });
+    return () => ac.abort();
+  }, [id]);
 
   // Open the native dropdown/date picker immediately when a cell enters inline-edit.
   useEffect(() => { if (editKey && inlineRef.current) { try { (inlineRef.current as any).showPicker?.(); } catch { /* not supported */ } } }, [editKey]);

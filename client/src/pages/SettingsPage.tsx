@@ -20,6 +20,8 @@ export default function SettingsPage() {
   async function save() {
     if (password && password !== confirm) { setMsg({ ok: false, text: "Passwords do not match." }); return; }
     if (password && !current) { setMsg({ ok: false, text: "Enter your current password to change it." }); return; }
+    if (password && password.length < 8) { setMsg({ ok: false, text: "Password must be at least 8 characters." }); return; }
+    if (password && (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password))) { setMsg({ ok: false, text: "Password must include letters and numbers." }); return; }
     setBusy(true); setMsg(null);
     try {
       await api.patch("/settings/profile", { name, newPassword: password || undefined, currentPassword: current || undefined });
@@ -61,7 +63,7 @@ export default function SettingsPage() {
               <div className="border-t border-slate-100 pt-3 space-y-3">
                 <p className="text-xs text-slate-400">Change password — leave blank to keep current.</p>
                 <div><label className="label">Current password</label><input type="password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} /></div>
-                <div><label className="label">New password</label><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+                <div><label className="label">New password</label><input type="password" className="input" minLength={8} placeholder="At least 8 chars, letters + numbers" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
                 {password && <div><label className="label">Confirm new password</label><input type="password" className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>}
               </div>
               <div className="flex justify-end pt-1"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>

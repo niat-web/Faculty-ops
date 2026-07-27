@@ -33,7 +33,18 @@ export default function MultiSelect({ values, options, onChange, placeholder = "
       <button type="button" onClick={() => setOpen((o) => !o)} className="input flex h-9 w-full items-center justify-between gap-2 text-left text-sm">
         <span className={`truncate ${values.length ? "text-slate-800" : "text-slate-400"}`}>{label}</span>
         <span className="flex items-center gap-1">
-          {values.length > 0 && <X className="h-3.5 w-3.5 text-slate-400 hover:text-rose-500" onClick={(e) => { e.stopPropagation(); onChange([]); }} />}
+          {values.length > 0 && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="rounded p-0.5 text-slate-400 hover:text-rose-500"
+              aria-label="Clear selection"
+              onClick={(e) => { e.stopPropagation(); onChange([]); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onChange([]); } }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          )}
           <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
         </span>
       </button>

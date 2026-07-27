@@ -52,6 +52,8 @@ if (isProd) {
   if (config.jwtSecret.length < 32) problems.push("JWT_SECRET must be at least 32 characters");
   if (!config.clientUrls.length) problems.push("CLIENT_URL must be set in production");
   for (const u of config.clientUrls) if (!/^https:\/\//.test(u)) problems.push(`CLIENT_URL origin must be https in production: ${u}`);
+  if (!config.cronSecret) problems.push("CRON_SECRET is required in production");
+  if (!process.env.ENCRYPTION_KEY) problems.push("ENCRYPTION_KEY is required in production (2FA secrets + sensitive fields)");
 }
 
 if (problems.length) {

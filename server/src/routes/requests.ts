@@ -1,8 +1,10 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import multer from "multer";
 import { EditRequest, EditRequestBatch, FieldDefinition, Instructor, User } from "../models";
 import { Role } from "../enums";
 import { canApproveRequests, canAccessInstructor } from "../lib/rbac";
+import { requestsListScope, canCommentOnRequest } from "../lib/requestScope";
 import { applyFieldChange, notify, writeAudit, validateValue } from "../lib/services";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
 
@@ -12,10 +14,12 @@ const MASK = "••••";
 const encMaybe = (sensitive: boolean, v: any) => (sensitive ? encrypt(String(v ?? "")) : (v ?? ""));
 const showMaybe = (sensitive: boolean, v: any) => (sensitive ? MASK : (maybeDecrypt(v) ?? v ?? ""));
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
+import { validateUploadBuffer } from "../lib/fileMagic";
 import { requireUser } from "../middleware";
 
 const router = Router();
 router.use(requireUser());
+router.param("id", (req, res, next, id) => (mongoose.isValidObjectId(id) ? next() : res.status(400).json({ error: "Invalid id" })));
 // Proof files must be an image or PDF — reject anything else (esp. HTML/SVG → stored XSS). (Bug B3)
 const ALLOWED_PROOF = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "application/pdf"]);
 const upload = multer({
@@ -33,19 +37,10 @@ router.get("/", async (req, res) => {
   const u = req.user!;
   const isOps = u.role === Role.OPS_ADMIN;
   const status = String(req.query.status || "").trim();
-  const q: any = {};
-  if (status) q.status = status;
-  // Senior Managers see what they approve AND what they themselves submitted; CMs see their own.
-  if (u.role === Role.SENIOR_MANAGER) q.$or = [{ approverId: u.id }, { requesterId: u.id }];
-  else if (u.role === Role.CAPABILITY_MANAGER) q.requesterId = u.id;
-  // Ops Admin sees all
+  const scope = requestsListScope(u, status || undefined);
+  if (!scope) return res.json({ requests: [], batches: [] });
+  const { q, bq } = scope;
   const rows = await EditRequest.find(q).sort({ createdAt: -1 }).limit(200).lean();
-
-  // Batch requests visible to the same viewer (Ops sees all; SM sees approve+own; CM sees own).
-  const bq: any = {};
-  if (status) bq.status = status;
-  if (u.role === Role.SENIOR_MANAGER) bq.$or = [{ approverId: u.id }, { requesterId: u.id }];
-  else if (u.role === Role.CAPABILITY_MANAGER) bq.requesterId = u.id;
   const batches = await EditRequestBatch.find(bq).sort({ createdAt: -1 }).limit(200).lean();
 
   res.json({
@@ -139,12 +134,17 @@ router.post("/batch/:id/decide", async (req, res) => {
   if (decision === "APPROVE") {
     // Apply every item. Each applyFieldChange re-reads the real oldValue + writes its own (masked) audit row.
     // Sensitive items are stored encrypted (Bug 1.4) — decrypt the real value to apply; applyFieldChange re-encrypts.
+    const failed: string[] = [];
     for (const it of b.items) {
       try {
         const realNew = it.sensitive ? (maybeDecrypt(it.newValue) ?? "") : it.newValue;
         await applyFieldChange({ actor: u, instructorId: String(it.instructorId), fieldKey: it.fieldKey, fieldLabel: it.fieldLabel, newValue: realNew, reason: b.reason || "Batch edit" });
-      } catch (e: any) { console.error("[batch] apply failed:", it.fieldKey, e?.message); }
+      } catch (e: any) {
+        console.error("[batch] apply failed:", it.fieldKey, e?.message);
+        failed.push(it.fieldKey);
+      }
     }
+    if (failed.length) return res.status(409).json({ error: "Some changes could not be applied.", failed });
     b.status = "APPROVED"; b.decisionComment = comment; b.decidedAt = new Date(); await b.save();
     await notify(String(b.requesterId), { type: "EDIT_REQUEST_APPROVED", title: "Your batch change request was approved", body: `${b.items.length} change(s) applied${comment ? " — " + comment : ""}`, link: "/app/requests" });
   } else if (decision === "REJECT") {
@@ -173,6 +173,10 @@ router.post("/", uploadProof, async (req, res) => {
   const { instructorId, fieldKey, newValue, reason } = req.body || {};
   if (!String(reason || "").trim()) return res.status(400).json({ error: "A reason is required." });
   const proof = (req as any).file; // optional — proof attachments are no longer required
+  if (proof) {
+    const issue = validateUploadBuffer(proof.buffer, proof.mimetype || "");
+    if (issue) return res.status(400).json({ error: issue });
+  }
   if (!(await canAccessInstructor(u, instructorId))) return res.status(403).json({ error: "Out of scope" });
   const def: any = await FieldDefinition.findOne({ key: fieldKey, archivedAt: null }).lean();
   if (!def) return res.status(404).json({ error: "Unknown field" });
@@ -280,6 +284,7 @@ router.post("/:id/comment", async (req, res) => {
   if (!body) return res.status(400).json({ error: "Comment required" });
   const r: any = await EditRequest.findById(req.params.id);
   if (!r) return res.status(404).json({ error: "Request not found" });
+  if (!canCommentOnRequest(req.user!, r)) return res.status(403).json({ error: "Forbidden" });
   r.comments.push({ body, authorId: req.user!.id, authorName: req.user!.name });
   await r.save();
   // Notify the other party (requester ↔ approver), in-app only.

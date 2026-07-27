@@ -34,7 +34,6 @@ import ResetPage from "./pages/ResetPage";
 const PrintProfilePage = lazy(() => import("./pages/PrintProfilePage"));
 const CertificationFormPage = lazy(() => import("./pages/CertificationFormPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
-const InstructorsPage = lazy(() => import("./pages/InstructorsPage"));
 const InstructorMasterPage = lazy(() => import("./pages/InstructorMasterPage"));
 const InstructorExitedPage = lazy(() => import("./pages/InstructorExitedPage"));
 const InstructorMovedPage = lazy(() => import("./pages/InstructorMovedPage"));

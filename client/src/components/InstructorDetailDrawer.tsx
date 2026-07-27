@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isAbort } from "../hooks";
 import { X, Pencil, Trash2, RefreshCw, Printer, ExternalLink, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { api } from "../api";
 import { useAuth, LIFECYCLE_LABEL } from "../auth";
@@ -56,9 +57,19 @@ export default function InstructorDetailDrawer({ instructorId, onClose, onChange
   const navIds = batchMode ? batch.scopedIds : [];
   const navIdx = navIds.indexOf(instructorId);
 
-  function load() { api.get(`/instructors/${instructorId}`).then(setP).catch((e) => setErr(e.message)); }
+  function load(signal?: AbortSignal) {
+    return api.get(`/instructors/${instructorId}`, signal ? { signal } : undefined)
+      .then(setP)
+      .catch((e) => { if (!isAbort(e)) setErr(e.message); });
+  }
   function reload() { load(); onChanged?.(); }
-  useEffect(() => { setP(null); setErr(null); load(); /* eslint-disable-next-line */ }, [instructorId]);
+  useEffect(() => {
+    setP(null);
+    setErr(null);
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [instructorId]);
 
   // Close on Escape; lock background scroll while open.
   useEffect(() => {

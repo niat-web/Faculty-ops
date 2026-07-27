@@ -6,9 +6,13 @@ import { config } from "../config";
 
 const router = Router();
 
-// Gate: header x-cron-secret must match CRON_SECRET (skipped if none configured in dev).
+// Gate: header x-cron-secret must match CRON_SECRET. Production requires CRON_SECRET at boot; dev may omit it.
 router.use((req, res, next) => {
-  if (config.cronSecret && req.headers["x-cron-secret"] !== config.cronSecret) return res.status(401).json({ error: "Unauthorized" });
+  if (!config.cronSecret) {
+    if (config.isProd) return res.status(503).json({ error: "Cron not configured" });
+    return next();
+  }
+  if (req.headers["x-cron-secret"] !== config.cronSecret) return res.status(401).json({ error: "Unauthorized" });
   next();
 });
 

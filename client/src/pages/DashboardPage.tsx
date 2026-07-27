@@ -60,6 +60,9 @@ export default function DashboardPage() {
       {d.role === "SENIOR_MANAGER" && <SeniorDash d={d} first={first} />}
       {d.role === "CAPABILITY_MANAGER" && <CapabilityDash d={d} first={first} />}
       {d.role === "INSTRUCTOR" && <InstructorDash d={d} first={first} user={user!} />}
+      {!["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"].includes(d.role) && (
+        <div className="card p-6 text-sm text-slate-600">Dashboard is not available for your role. Use the sidebar to navigate.</div>
+      )}
       <DashboardAssistant />
     </>
   );

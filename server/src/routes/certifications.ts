@@ -4,6 +4,7 @@ import { Certification } from "../models";
 import { Role } from "../enums";
 import { requireUser } from "../middleware";
 import { uploadCertificate, driveConfigured } from "../lib/drive";
+import { validateUploadBuffer } from "../lib/fileMagic";
 
 // Public "Certificates" form + admin management. The form is now SCHEMA-DRIVEN — an Ops Admin edits the
 // sections/fields/types/options/order in the builder and the public form + submissions table follow.
@@ -31,7 +32,7 @@ const clean = (v: any) => String(v ?? "").trim();
 async function formGate(req: any, res: any, next: any) {
   const { getCertForm } = await import("../lib/settings");
   const cfg = await getCertForm();
-  const token = String(req.query.token || req.body?.token || "");
+  const token = String(req.headers["x-form-token"] || req.query.token || req.body?.token || "");
   if (!cfg.token || token !== cfg.token) return res.status(404).json({ error: "This form link is invalid or has been reset." });
   if (!cfg.enabled) return res.status(403).json({ error: "This form isn't accepting responses right now." });
   if (cfg.requireLogin && !req.user) return res.status(401).json({ error: "Please sign in to fill this form." });
@@ -45,7 +46,8 @@ const staffOnly = (req: any, res: any, next: any) => ([Role.OPS_ADMIN, Role.SENI
 router.get("/config", async (req, res) => {
   const { getCertForm, getBranding, getCertSchema } = await import("../lib/settings");
   const cfg = await getCertForm();
-  const valid = !!cfg.token && String(req.query.token || "") === cfg.token;
+  const tok = String(req.headers["x-form-token"] || req.query.token || "");
+  const valid = !!cfg.token && tok === cfg.token;
   res.json({ valid, enabled: cfg.enabled, requireLogin: cfg.requireLogin, branding: await getBranding(), schema: valid ? await getCertSchema() : null });
 });
 
@@ -77,6 +79,8 @@ router.post("/submit", formGate, uploadAny, async (req, res) => {
     if (field.type === "FILE") {
       const f = fileByKey.get(field.key);
       if (!f) continue;
+      const issue = validateUploadBuffer(f.buffer, f.mimetype || "");
+      if (issue) return res.status(400).json({ error: `${field.label}: ${issue}` });
       try {
         const { link } = await uploadCertificate(f.buffer, f.originalname || field.key, f.mimetype || "application/octet-stream");
         answers[field.key] = link;

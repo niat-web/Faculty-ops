@@ -22,6 +22,7 @@ const UserSchema = new Schema(
     twoFactorSecret: { type: String, default: null },
     twoFactorLastCounter: { type: Number, default: 0 },
     passwordChangedAt: { type: Date, default: null }, // sessions issued before this are rejected
+    sessionInvalidAfter: { type: Date, default: null }, // sessions issued before logout are rejected
     lastLoginAt: { type: Date, default: null }, // set on each successful login (presence tracking)
     lastSeenAt: { type: Date, default: null },  // bumped on authenticated activity (throttled) → live status
 

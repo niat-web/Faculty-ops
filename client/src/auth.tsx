@@ -28,7 +28,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { setUser(null); setBlocked(false); }
     finally { setLoading(false); }
   }
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await api.get<{ user: SessionUser | null; blocked?: boolean; message?: string }>("/auth/me");
+        if (!alive) return;
+        setUser(r.user); setBlocked(!!r.blocked); setBlockedMessage(r.message || "");
+      } catch {
+        if (!alive) return;
+        setUser(null); setBlocked(false);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   async function login(email: string, password: string, token?: string) {
     const r = await api.post<{ user?: SessionUser; twoFactorRequired?: boolean }>("/auth/login", { email, password, token });

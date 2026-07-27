@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { User } from "../models";
-import { hashPassword, passwordIssue, verifyPassword, signSession, setSessionCookie, clearSessionCookie } from "../lib/auth";
-import { hashResetToken, encrypt, maybeDecrypt } from "../lib/crypto";
+import { hashPassword, passwordIssue, verifyPassword, signSession, setSessionCookie, clearSessionCookie, SESSION_COOKIE } from "../lib/auth";
+import { hashResetToken, encrypt, maybeDecrypt, encryptionEnabled } from "../lib/crypto";
 import { recordLogin } from "../lib/services";
 import { isLocked, recordFailure, clearFailures } from "../lib/throttle";
 import { generateSecret, verifyToken, verifyTokenCounter, otpauthURL } from "../lib/totp";
@@ -114,6 +114,7 @@ router.post("/login", async (req, res) => {
 
 // --- Two-factor (TOTP) management for the signed-in user ---
 router.get("/2fa/setup", requireUser(), async (req, res) => {
+  if (!encryptionEnabled()) return res.status(503).json({ error: "Two-factor setup requires ENCRYPTION_KEY to be configured." });
   const me: any = await User.findById(req.user!.id);
   if (!me) return res.status(404).json({ error: "Not found" });
   const secret = generateSecret();
@@ -155,7 +156,13 @@ router.get("/2fa/status", requireUser(), async (req, res) => {
   res.json({ enabled: !!me?.twoFactorEnabled });
 });
 
-router.post("/logout", (_req, res) => { clearSessionCookie(res); res.json({ ok: true }); });
+router.post("/logout", async (req, res) => {
+  if (req.user) {
+    await User.findByIdAndUpdate(req.user.id, { $set: { sessionInvalidAfter: new Date() } });
+  }
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
 
 // Request a set-password / reset link (always 200 — never reveals if email exists).
 router.post("/forgot", async (req, res) => {
@@ -193,15 +200,12 @@ router.post("/reset", async (req, res) => {
   const issue = passwordIssue(password, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity });
   if (issue) return res.status(400).json({ error: issue });
 
-  const user = await User.findOne({ resetTokenHash: hashResetToken(token), resetTokenExp: { $gt: new Date() } });
+  const user = await User.findOneAndUpdate(
+    { resetTokenHash: hashResetToken(token), resetTokenExp: { $gt: new Date() } },
+    { $set: { passwordHash: await hashPassword(password), resetTokenHash: null, resetTokenExp: null, mustSetPassword: false, passwordChangedAt: new Date() } },
+    { new: true },
+  );
   if (!user) return res.status(400).json({ error: "This link is invalid or has expired." });
-
-  user.passwordHash = await hashPassword(password);
-  user.resetTokenHash = null;
-  user.resetTokenExp = null;
-  user.mustSetPassword = false;
-  user.passwordChangedAt = new Date(); // invalidate any sessions issued before the reset (Security)
-  await user.save();
   res.json({ ok: true });
 });
 

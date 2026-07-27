@@ -5,14 +5,16 @@ import { useState } from "react";
 // so it sorts across ALL rows, not just the current page. No layout change — just a clickable header.
 export type SortState = { sort: string; dir: "asc" | "desc" | "" };
 
-export function useSort(initialSort = "", initialDir: "asc" | "desc" | "" = "") {
+export function useSort(initialSort = "", initialDir: "asc" | "desc" | "" = "", onChange?: () => void) {
   const [state, setState] = useState<SortState>({ sort: initialSort, dir: initialDir });
-  const toggle = (key: string) =>
+  const toggle = (key: string) => {
     setState((s) =>
       s.sort !== key ? { sort: key, dir: "asc" }
         : s.dir === "asc" ? { sort: key, dir: "desc" }
-          : { sort: "", dir: "" } // third click → back to default
+          : { sort: "", dir: "" }
     );
+    onChange?.();
+  };
   return { ...state, toggle, setSort: setState };
 }
 
@@ -22,9 +24,10 @@ export function SortHeader({ label, k, state, onToggle, className = "", align = 
 }) {
   if (!k) return <th className={className}>{label}</th>;
   const active = state.sort === k;
+  const ariaSort = active ? (state.dir === "asc" ? "ascending" : "descending") : "none";
   const just = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
   return (
-    <th className={className}>
+    <th className={className} aria-sort={ariaSort as "ascending" | "descending" | "none"}>
       <button type="button" onClick={() => onToggle(k)} className={`inline-flex w-full items-center gap-1 ${just} hover:text-slate-700`}>
         <span>{label}</span>
         {active

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
+import { backdropClick } from "./lib/backdropClose";
 
 interface ConfirmOptions {
   title?: string;
@@ -61,8 +62,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {state.kind === "confirm" && (() => {
         const danger = state.danger !== false;
         return (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => finish(false)}>
-            <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-0" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" role="presentation" onClick={backdropClick(() => finish(false))}>
+            <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-0" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start gap-3 px-5 pt-5">
                 <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${danger ? "bg-rose-100 text-rose-600" : "bg-brand-100 text-brand-600"}`}>
                   <AlertTriangle className="h-5 w-5" />
@@ -87,8 +88,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         const canSubmit = !state.required || trimmed.length > 0;
         const submit = () => { if (canSubmit) finish(value); };
         return (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => finish(null)}>
-            <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-0" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4" role="presentation" onClick={backdropClick(() => finish(null))}>
+            <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-0" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
                 <h2 className="font-semibold text-slate-900">{state.title || "Enter a value"}</h2>
                 <button onClick={() => finish(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>

@@ -5,17 +5,18 @@ secure, role-aware profile per instructor** — covering the entire lifecycle fr
 joining to exit. Built per PRD v3.0.
 
 ## Tech stack
-- **Next.js 14** (App Router) — landing page + authenticated app + API routes in one deployable
-- **MongoDB** via **Mongoose** (flexible documents suit the dynamic-field requirement)
+- **React + Vite** — SPA frontend with code-split routes
+- **Express + TypeScript** — REST API
+- **MongoDB** via **Mongoose**
 - **AWS SES** for email notifications (graceful no-op until keys are added)
-- **Tailwind CSS + lucide-react + recharts** for a modern, responsive UI
+- **Tailwind CSS + lucide-react + recharts**
 - **JWT** httpOnly-cookie sessions, **bcrypt** password hashing
 
-## Quick start (zero config)
+## Quick start
 
 ```bash
-npm install
-npm run dev          # http://localhost:3000
+cd server && npm install && npm run dev   # API on http://localhost:4000
+cd client && npm install && npm run dev   # UI on http://localhost:5173
 ```
 
 With **no `MONGODB_URI`**, the app boots an **in-memory MongoDB** and auto-seeds a
@@ -36,8 +37,14 @@ Copy `.env.example` → `.env`. Everything is optional for local dev:
 |-----|---------|
 | `MONGODB_URI` | MongoDB connection (Atlas etc.). Blank → in-memory dev DB. |
 | `JWT_SECRET` | Session signing secret (set a long random value in prod). |
+| `CLIENT_URL` | Allowed frontend origin(s), comma-separated. |
 | `APP_URL` | Base URL used in email links. |
+| `CRON_SECRET` | Required in production — protects scheduled sync/prune endpoints. |
+| `ENCRYPTION_KEY` | Required in production — encrypts 2FA secrets and sensitive field values. |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_FROM_EMAIL` | AWS SES email. Without them, emails are logged, not sent. |
+| `GROQ_API_KEY` | Dashboard AI assistant (optional). |
+| `GOOGLE_APPLICATION_CREDENTIALS`, `BIGQUERY_*` | BigQuery training sync (optional). |
+| `DARWINBOX_*` | HR sync from Darwinbox (optional). |
 
 > You can paste real credentials into `.env` at any time — no code changes needed.
 

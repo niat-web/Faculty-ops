@@ -70,6 +70,7 @@ export function useCachedGet<T = any>(path: string | null) {
 
   useEffect(() => {
     if (!path) return;
+    setError(null); // clear stale error when navigating to a cached route
     const cached = _cache.get(path);
     if (cached !== undefined) { setData(cached); setLoading(false); } else setLoading(true);
     const ac = new AbortController();
@@ -99,4 +100,11 @@ export function useDebouncedValue<T>(value: T, delay = 300): T {
 // True if an error is a fetch abort (from an AbortController) — safe to ignore.
 export function isAbort(e: any): boolean {
   return e?.name === "AbortError" || e?.code === 20;
+}
+
+/** Clamp current page when filters shrink total pages (avoids empty grids on page 5 of 1). */
+export function usePageClamp(page: number, pages: number, setPage: (p: number) => void) {
+  useEffect(() => {
+    if (pages >= 1 && page > pages) setPage(pages);
+  }, [page, pages, setPage]);
 }

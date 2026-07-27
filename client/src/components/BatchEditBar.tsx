@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Layers, Send, X, Loader2 } from "lucide-react";
 import { useBatchEdit } from "../batchEdit";
 import { useToast } from "../toast";
@@ -18,6 +18,9 @@ export default function BatchEditBar() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ count: number; instructors: number } | null>(null);
+  const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => { if (bannerTimer.current) clearTimeout(bannerTimer.current); }, []);
 
   if (!active && !banner) return null;
 
@@ -29,8 +32,9 @@ export default function BatchEditBar() {
       const r = await submit(reason.trim());
       setReasonOpen(false);
       setReason("");
-      setBanner({ count: r.count, instructors: r.instructors }); // success banner (top-right)
-      setTimeout(() => setBanner(null), 8000);
+      setBanner({ count: r.count, instructors: r.instructors });
+      if (bannerTimer.current) clearTimeout(bannerTimer.current);
+      bannerTimer.current = setTimeout(() => setBanner(null), 8000);
     } catch (e: any) {
       toast.error(e.message || "Failed to submit changes");
     } finally {

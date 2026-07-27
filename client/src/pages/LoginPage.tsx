@@ -28,7 +28,7 @@ export default function LoginPage() {
   useEffect(() => {
     api.get("/auth/google/status").then((r) => { setGoogleOn(r.enabled); localStorage.setItem("fo_google", r.enabled ? "1" : "0"); }).catch(() => {});
     const e = params.get("error"); if (e) setErr(GOOGLE_ERR[e] || "Sign-in failed.");
-  }, []);
+  }, [params]);
 
   if (user) return <Navigate to="/app" replace />;
 

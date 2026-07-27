@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
 import { ROLE_LABEL } from "../auth";
-import { useDebouncedValue, isAbort, useStickyThead } from "../hooks";
+import { useDebouncedValue, isAbort, useStickyThead, usePageClamp } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
@@ -54,7 +54,7 @@ export default function UsersPage() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const sort = useSort();
+  const sort = useSort("", "", () => setPage(1));
   // Roles quick-filter (checkbox dropdown next to the heading, like the Master's "Departments" filter).
   const [roleFilter, setRoleFilter] = useState<Set<string>>(new Set(ROLES));
   const [roleOpen, setRoleOpen] = useState(false);
@@ -70,7 +70,7 @@ export default function UsersPage() {
     const p = new URLSearchParams({ page: String(page), per: String(per) });
     if (dq) p.set("q", dq);
     // Only send `roles` when it actually narrows (some unchecked); all-checked = show every role.
-    if (roleFilter.size < ROLES.length) p.set("roles", [...roleFilter].join(","));
+    if (roleFilter.size > 0 && roleFilter.size < ROLES.length) p.set("roles", [...roleFilter].join(","));
     else if (applied.role) p.set("role", applied.role);
     if (applied.managerId) p.set("managerId", applied.managerId);
     if (applied.status) p.set("status", applied.status);
@@ -102,6 +102,7 @@ export default function UsersPage() {
   }
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
+  usePageClamp(page, pages, setPage);
 
   return (
     <div className="flex flex-col space-y-5">

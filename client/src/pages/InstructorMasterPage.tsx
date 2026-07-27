@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal, Download, Upload, Plus, Pencil, Trash2, EyeO
 import Papa from "papaparse";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL, LIFECYCLE_LABEL, useAuth } from "../auth";
-import { useDebouncedValue, isAbort, useStickyThead } from "../hooks";
+import { useDebouncedValue, isAbort, useStickyThead, usePageClamp } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import Modal from "../components/Modal";
@@ -155,7 +155,7 @@ export default function InstructorMasterPage() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   // Build the query string shared by the list fetch and the CSV export.
-  const sort = useSort();
+  const sort = useSort("", "", () => setPage(1));
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (dq) p.set("q", dq);
@@ -187,6 +187,7 @@ export default function InstructorMasterPage() {
   useStickyThead(wrapRef, theadRef, [meta, rows.length]);
 
   const [loadingRows, setLoadingRows] = useState(true);
+  useEffect(() => { setRows([]); }, [query]);
   useEffect(() => {
     const ac = new AbortController();
     const p = new URLSearchParams(query);
@@ -206,6 +207,7 @@ export default function InstructorMasterPage() {
   useEffect(() => { api.get("/master/universities").then((r) => setUniversities(r.universities || [])).catch(() => {}); }, []);
 
   const pages = Math.max(1, Math.ceil(total / per));
+  usePageClamp(page, pages, setPage);
 
   const managerName = useMemo(() => Object.fromEntries((meta?.managers || []).map((m) => [m.id, m.name])), [meta]);
   const activeCount = Object.values(applied).filter((a) => a.length).length;

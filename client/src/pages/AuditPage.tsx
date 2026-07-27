@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Download, SlidersHorizontal, X } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { ROLE_LABEL } from "../auth";
-import { useDebouncedValue, isAbort } from "../hooks";
+import { useDebouncedValue, isAbort, usePageClamp } from "../hooks";
 import Pagination from "../components/Pagination";
 import MultiSelect from "../components/MultiSelect";
 import { SkeletonRows } from "../components/scaffold";
@@ -49,6 +49,9 @@ export default function AuditPage() {
     api.get(`/audit?${p}`, { signal: ac.signal }).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); });
     return () => ac.abort();
   }, [query, page, per]);
+
+  const pages = data?.pages ?? 1;
+  usePageClamp(page, pages, setPage);
 
   const activeCount = Object.values(applied).filter((v) => (Array.isArray(v) ? v.length : v)).length;
   function openDrawer() { setDraft(applied); setDrawer(true); }

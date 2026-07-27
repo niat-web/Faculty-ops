@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, X, MessageSquare, Paperclip, Search, Plus, Trash2, SlidersHorizontal, Download } from "lucide-react";
+import { Check, X, MessageSquare, Paperclip, Search, Plus, Trash2, SlidersHorizontal, Download, Loader2 } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
+import { isAbort } from "../hooks";
+import { backdropClick } from "../lib/backdropClose";
 import Modal from "../components/Modal";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
@@ -23,6 +25,7 @@ export default function RequestsPage() {
   const canDecide = user!.role === "SENIOR_MANAGER" || user!.role === "OPS_ADMIN";
   const canRaise = ["CAPABILITY_MANAGER", "SENIOR_MANAGER", "OPS_ADMIN"].includes(user!.role);
   const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<any>(null); // request being decided/commented
   const [activeBatch, setActiveBatch] = useState<any>(null); // batch being decided
@@ -34,9 +37,17 @@ export default function RequestsPage() {
 
   const { id: focusId } = useParams(); // deep link: /app/requests/:id opens that one request
   function load() {
-    api.get(`/requests`).then((r) => { setData(r); setErr(null); }).catch((e) => setErr(e.message));
+    return api.get(`/requests`).then((r) => { setData(r); setErr(null); }).catch((e) => { if (!isAbort(e)) setErr(e.message); }).finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setLoading(true);
+    const ac = new AbortController();
+    api.get(`/requests`, { signal: ac.signal })
+      .then((r) => { setData(r); setErr(null); })
+      .catch((e) => { if (!isAbort(e)) setErr(e.message); })
+      .finally(() => setLoading(false));
+    return () => ac.abort();
+  }, []);
   async function removeRequest(r: any) {
     if (!(await confirm({ title: "Delete request?", message: `Withdraw your pending request for "${r.fieldLabel}"? The value won't change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
     try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
@@ -45,11 +56,13 @@ export default function RequestsPage() {
     if (!(await confirm({ title: "Delete request?", message: `Withdraw this pending batch of ${b.items.length} change(s)? Nothing will change and this can't be undone.`, confirmText: "Delete", danger: true }))) return;
     try { await api.del(`/requests/batch/${b.id}`); toast.success("Request deleted."); load(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
   }
-  // When arriving via a unique link, open exactly that request.
+  // When arriving via a unique link, open exactly that request or batch.
   useEffect(() => {
     if (!focusId || !data) return;
     const r = (data.requests || []).find((x: any) => x.id === focusId);
-    if (r) setActive(r);
+    if (r) { setActive(r); return; }
+    const b = (data.batches || []).find((x: any) => x.id === focusId);
+    if (b) setActiveBatch(b);
   }, [focusId, data]);
 
   const all: any[] = data?.requests || [];
@@ -87,7 +100,10 @@ export default function RequestsPage() {
         {canRaise && <button onClick={() => setNewReq(true)} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> New request</button>}
       </div>
 
-      {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
+      {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={() => load()} className="btn btn-ghost btn-sm">Retry</button></div>}
+      {loading && !data && !err && (
+        <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-brand-500" /> Loading requests…</div>
+      )}
 
       {/* Pending batch requests (multi-field submissions from CM/SM) */}
       {pendingBatches.length > 0 && (
@@ -330,8 +346,8 @@ function BatchDecideModal({ batch, onClose, onDone }: any) {
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 py-16" onMouseDown={onClose}>
-      <div className="card w-full max-w-md p-5" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 py-16" role="presentation" onClick={backdropClick(onClose)}>
+      <div className="card w-full max-w-md p-5" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h2 className="font-semibold">{approve ? "Approve batch" : "Reject batch"}</h2>
         <p className="mt-1 text-sm text-slate-500">{approve ? "Apply" : "Reject"} all {batch.items.length} change(s) from {batch.requesterName}.</p>
         {err && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
@@ -360,8 +376,8 @@ function DecideModal({ req, onClose, onDone }: any) {
   }
   const title = isComment ? "Add comment" : req.mode === "APPROVE" ? "Approve request" : "Reject request";
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 py-16" onMouseDown={onClose}>
-      <div className="card w-full max-w-md p-5" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 p-4 py-16" role="presentation" onClick={backdropClick(onClose)}>
+      <div className="card w-full max-w-md p-5" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <h2 className="font-semibold">{title}</h2>
         <p className="mt-1 text-sm text-slate-500">{req.fieldLabel} → {req.newValue} for {req.instructorName}</p>
         {err && <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}

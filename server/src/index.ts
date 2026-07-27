@@ -8,7 +8,7 @@ import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 import { config } from "./config";
 import { connectDB, disconnectDB } from "./db";
-import { attachUser, enforceRoleAccess } from "./middleware";
+import { attachUser, enforceRoleAccess, enforceMutationOrigin } from "./middleware";
 
 import authRoutes from "./routes/auth";
 import userRoutes from "./routes/users";
@@ -38,17 +38,28 @@ async function main() {
   app.use(express.json({ limit: "2mb" }));
   app.use(cookieParser());
   app.use(attachUser); // attaches req.user when a valid session cookie is present
+  app.use("/api", enforceMutationOrigin);
 
   // Liveness (process up) vs readiness (can serve traffic / DB connected).
   app.get("/api/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
-  app.get("/api/ready", (_req, res) => {
-    const up = mongoose.connection.readyState === 1;
-    res.status(up ? 200 : 503).json({ ok: up, db: up ? "connected" : "down" });
+  app.get("/api/ready", async (_req, res) => {
+    const dbUp = mongoose.connection.readyState === 1;
+    const { driveConfigured } = await import("./lib/drive");
+    const bq = config.bigQuery.credentials && config.bigQuery.projectId;
+    const darwin = config.darwinbox.endpoint && config.darwinbox.apiKey;
+    res.status(dbUp ? 200 : 503).json({
+      ok: dbUp,
+      db: dbUp ? "connected" : "down",
+      bigQuery: bq ? "configured" : "not_configured",
+      drive: driveConfigured() ? "configured" : "not_configured",
+      darwinbox: darwin ? "configured" : "not_configured",
+    });
   });
 
   // Rate limit ONLY the sensitive auth actions (above the per-account DB lockout) to blunt brute force.
   // NOT the whole /api/auth — /auth/me and /auth/google/status are polled/idempotent and must stay unlimited.
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Please try again later." } });
+  const assistantLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many assistant requests. Please try again shortly." } });
   // Block disabled-role sessions on every /api route (lets /auth/* through to recover).
   app.use("/api", enforceRoleAccess);
   app.use(["/api/auth/login", "/api/auth/forgot", "/api/auth/reset"], authLimiter);
@@ -65,7 +76,7 @@ async function main() {
   app.use("/api/exit-alerts", exitAlertRoutes); // Darwinbox-driven exit alerts (banner + finalise)
   app.use("/api/certifications", certificationRoutes); // public Certificates form + admin management
   app.use("/api/removed", removedRoutes); // hide/restore people app-wide (Ops only) + removed list
-  app.use("/api/assistant", assistantRoutes); // Dashboard AI assistant (Ops/SM/CM, role-scoped, read-only)
+  app.use("/api/assistant", assistantLimiter, assistantRoutes); // Dashboard AI assistant (Ops/SM/CM, role-scoped, read-only)
   app.use("/api/cron", cronRoutes); // reminders, digest (x-cron-secret gated)
   app.use("/api", miscRoutes); // dashboard, org, audit, notifications, settings, saved views
 
