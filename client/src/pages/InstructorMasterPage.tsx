@@ -303,9 +303,7 @@ export default function InstructorMasterPage() {
   const headerBar = (
     <div className="page-header flex flex-wrap items-start justify-between gap-4">
       <div>
-        <div className="label-muted mb-1">Operations</div>
         <h1 className="page-title">Instructor Master</h1>
-        <p className="page-subtitle mt-1">Full master sheet — click any cell to edit.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-56 sm:w-64">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, RefreshCw, SlidersHorizontal, Download, X, Pencil, History } from "lucide-react";
+import { RefreshCw, SlidersHorizontal, Download, X, Pencil, History } from "lucide-react";
 import Papa from "papaparse";
 import { api } from "../api";
 import { useToast } from "../toast";
@@ -129,14 +129,8 @@ export default function InstructorMovedPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-100 text-brand-700"><Building2 className="h-5 w-5" /></span>
-          <div>
-            <h1 className="text-2xl font-bold">Instructor Moved</h1>
-            <p className="text-sm text-slate-500">Instructors moved to University payroll — with their university / campus.</p>
-          </div>
-        </div>
+      <div className="page-header flex flex-wrap items-start justify-between gap-4">
+        <h1 className="page-title">Instructor Moved <span className="text-base font-medium text-slate-400">· {loaded ? filtered.length.toLocaleString() : "…"}</span></h1>
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput onSearch={(v) => setQ(v)} placeholder="Name, ID, university…" />
           <button onClick={openDrawer} className="btn btn-ghost btn-sm shrink-0">

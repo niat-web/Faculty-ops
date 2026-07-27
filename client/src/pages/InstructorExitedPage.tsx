@@ -150,9 +150,7 @@ export default function InstructorExitedPage() {
     <div className="flex flex-col gap-4">
       <div className="page-header flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="label-muted mb-1">Operations</div>
           <h1 className="page-title">Instructor Exited <span className="text-base font-medium text-slate-400">· {total.toLocaleString()}</span></h1>
-          <p className="page-subtitle mt-1">Instructors who have exited NIAT{canEdit ? " — click any cell to edit." : "."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput onSearch={(v) => { setPage(1); setDq(v); }} placeholder="Name, ID, email…" />

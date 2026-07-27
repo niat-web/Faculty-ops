@@ -14,14 +14,12 @@ const SIDEBAR_W = 240;
 
 const NAV_SECTIONS: any[] = [
   {
-    label: "Main",
     items: [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
       { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
     ],
   },
   {
-    label: "Operations",
     roles: STAFF,
     items: [
       { label: "Instructors", icon: Users2, roles: STAFF, children: [
@@ -41,7 +39,6 @@ const NAV_SECTIONS: any[] = [
     ],
   },
   {
-    label: "Administration",
     roles: ["OPS_ADMIN", "SENIOR_MANAGER"],
     items: [
       { to: "/app/users", label: "Users", icon: UserCog, roles: ["OPS_ADMIN"] },
