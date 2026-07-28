@@ -21,11 +21,16 @@ function inline(text: string, kb: string): ReactNode[] {
 
 const BLOCK_START = /^(#{1,4}\s|```|>|\s*[-*]\s|\s*\d+\.\s|\|)/;
 
-export default function Markdown({ source }: { source: string }) {
+type MarkdownProps = { source: string; variant?: "docs" | "chat" };
+const chat = (variant: MarkdownProps["variant"]) => variant === "chat";
+
+export default function Markdown({ source, variant = "docs" }: MarkdownProps) {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const out: ReactNode[] = [];
   let i = 0, key = 0;
   const push = (el: ReactNode) => out.push(<div key={key++}>{el}</div>);
+  const gap = chat(variant) ? "my-1" : "my-2";
+  const gapLg = chat(variant) ? "my-2" : "my-3";
 
   while (i < lines.length) {
     const line = lines[i];
@@ -36,7 +41,7 @@ export default function Markdown({ source }: { source: string }) {
       const buf: string[] = []; i++;
       while (i < lines.length && !lines[i].trim().startsWith("```")) { buf.push(lines[i]); i++; }
       i++;
-      push(<pre className="my-3 overflow-x-auto rounded-lg bg-slate-900 p-4 text-xs leading-relaxed text-slate-100"><code>{buf.join("\n")}</code></pre>);
+      push(<pre className={`${gapLg} overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100`}><code>{buf.join("\n")}</code></pre>);
       continue;
     }
 
@@ -44,21 +49,21 @@ export default function Markdown({ source }: { source: string }) {
     const h = line.match(/^(#{1,4})\s+(.*)$/);
     if (h) {
       const lvl = h[1].length, txt = inline(h[2], `h${i}`);
-      if (lvl === 1) push(<h1 className="mb-3 text-2xl font-bold text-slate-900">{txt}</h1>);
-      else if (lvl === 2) push(<h2 className="mb-2 mt-6 border-b border-slate-100 pb-1.5 text-lg font-bold text-slate-900">{txt}</h2>);
-      else if (lvl === 3) push(<h3 className="mb-1.5 mt-4 text-xs font-bold uppercase tracking-wide text-brand-700">{txt}</h3>);
-      else push(<h4 className="mb-1 mt-3 text-sm font-semibold text-slate-800">{txt}</h4>);
+      if (lvl === 1) push(<h1 className={chat(variant) ? "mb-1 text-base font-bold text-slate-900" : "mb-3 text-2xl font-bold text-slate-900"}>{txt}</h1>);
+      else if (lvl === 2) push(<h2 className={chat(variant) ? "mb-1 mt-2 text-sm font-bold text-slate-900" : "mb-2 mt-6 border-b border-slate-100 pb-1.5 text-lg font-bold text-slate-900"}>{txt}</h2>);
+      else if (lvl === 3) push(<h3 className={chat(variant) ? "mb-0.5 mt-1.5 text-xs font-bold uppercase tracking-wide text-brand-700" : "mb-1.5 mt-4 text-xs font-bold uppercase tracking-wide text-brand-700"}>{txt}</h3>);
+      else push(<h4 className={chat(variant) ? "mb-0.5 mt-1 text-sm font-semibold text-slate-800" : "mb-1 mt-3 text-sm font-semibold text-slate-800"}>{txt}</h4>);
       i++; continue;
     }
 
     // horizontal rule
-    if (/^---+$/.test(line.trim())) { push(<hr className="my-5 border-slate-100" />); i++; continue; }
+    if (/^---+$/.test(line.trim())) { push(<hr className={`${chat(variant) ? "my-2" : "my-5"} border-slate-100`} />); i++; continue; }
 
     // blockquote / callout
     if (line.trim().startsWith(">")) {
       const buf: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith(">")) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
-      push(<blockquote className="my-3 rounded-r-lg border-l-4 border-amber-300 bg-amber-50/70 px-4 py-2.5 text-sm text-slate-700">{buf.map((b, k) => <p key={k} className={k ? "mt-1" : ""}>{inline(b, `q${i}-${k}`)}</p>)}</blockquote>);
+      push(<blockquote className={`${gapLg} rounded-r-lg border-l-4 border-amber-300 bg-amber-50/70 px-3 py-2 text-sm text-slate-700`}>{buf.map((b, k) => <p key={k} className={k ? "mt-1" : ""}>{inline(b, `q${i}-${k}`)}</p>)}</blockquote>);
       continue;
     }
 
@@ -69,8 +74,8 @@ export default function Markdown({ source }: { source: string }) {
       const rows: string[][] = [];
       while (i < lines.length && lines[i].trim().startsWith("|")) { rows.push(lines[i].trim().replace(/^\||\|$/g, "").split("|").map((s) => s.trim())); i++; }
       push(
-        <div className="my-3 overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full text-sm">
+        <div className={`${gapLg} overflow-x-auto rounded-lg border border-slate-200`}>
+          <table className={`w-full ${chat(variant) ? "text-xs" : "text-sm"}`}>
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>{header.map((hd, k) => <th key={k} className="px-4 py-2.5 font-semibold">{inline(hd, `th${k}`)}</th>)}</tr>
             </thead>
@@ -87,7 +92,7 @@ export default function Markdown({ source }: { source: string }) {
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i++; }
-      push(<ul className="my-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-slate-700 marker:text-brand-400">{items.map((it, k) => <li key={k}>{inline(it, `ul${i}-${k}`)}</li>)}</ul>);
+      push(<ul className={`${gap} list-disc space-y-0.5 pl-4 text-sm leading-relaxed text-slate-700 marker:text-brand-400`}>{items.map((it, k) => <li key={k}>{inline(it, `ul${i}-${k}`)}</li>)}</ul>);
       continue;
     }
 
@@ -95,15 +100,19 @@ export default function Markdown({ source }: { source: string }) {
     if (/^\s*\d+\.\s+/.test(line)) {
       const items: string[] = [];
       while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++; }
-      push(<ol className="my-2 list-decimal space-y-1 pl-5 text-sm leading-relaxed text-slate-700 marker:text-brand-500 marker:font-semibold">{items.map((it, k) => <li key={k}>{inline(it, `ol${i}-${k}`)}</li>)}</ol>);
+      push(<ol className={`${gap} list-decimal space-y-0.5 pl-4 text-sm leading-relaxed text-slate-700 marker:text-brand-500 marker:font-semibold`}>{items.map((it, k) => <li key={k}>{inline(it, `ol${i}-${k}`)}</li>)}</ol>);
       continue;
     }
 
     // paragraph
     const buf: string[] = [];
     while (i < lines.length && lines[i].trim() && !BLOCK_START.test(lines[i]) && !/^---+$/.test(lines[i].trim())) { buf.push(lines[i]); i++; }
-    push(<p className="my-2 text-sm leading-relaxed text-slate-700">{inline(buf.join(" "), `p${i}`)}</p>);
+    push(<p className={`${gap} text-sm leading-relaxed text-slate-700`}>{inline(buf.join(" "), `p${i}`)}</p>);
   }
 
-  return <div>{out}</div>;
+  return (
+    <div className={chat(variant) ? "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0" : undefined}>
+      {out}
+    </div>
+  );
 }

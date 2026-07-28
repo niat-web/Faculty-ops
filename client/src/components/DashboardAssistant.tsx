@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import Markdown from "./Markdown";
 
 // Dashboard-only AI assistant — a floating button (bottom-right) that opens a chat panel. Shown ONLY to
 // Ops Admin / Senior Manager / Capability Manager. Every answer is role-scoped server-side: a Capability
@@ -97,7 +98,9 @@ export default function DashboardAssistant() {
             )}
             {msgs.map((m, i) => (
               <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm ${m.role === "user" ? "bg-brand-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-100"}`}>{m.content}</div>
+                <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${m.role === "user" ? "whitespace-pre-wrap bg-brand-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-100"}`}>
+                  {m.role === "assistant" ? <Markdown source={m.content} variant="chat" /> : m.content}
+                </div>
               </div>
             ))}
             {busy && (
