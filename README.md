@@ -42,7 +42,7 @@ Copy `.env.example` → `.env`. Everything is optional for local dev:
 | `CRON_SECRET` | Required in production — protects scheduled sync/prune endpoints. |
 | `ENCRYPTION_KEY` | Required in production — encrypts 2FA secrets and sensitive field values. |
 | `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_FROM_EMAIL` | AWS SES email. Without them, emails are logged, not sent. |
-| `GROQ_API_KEY` | Dashboard AI assistant (optional). |
+| `MISTRAL_API_KEY` | Dashboard AI assistant (Mistral). Optional — model defaults to `ministral-3b-2512`. |
 | `GOOGLE_APPLICATION_CREDENTIALS`, `BIGQUERY_*` | BigQuery training sync (optional). |
 | `DARWINBOX_*` | HR sync from Darwinbox (optional). |
 

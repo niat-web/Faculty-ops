@@ -22,13 +22,13 @@ export const config = {
   // service-account credentials as BigQuery. Files are made "anyone with the link (viewer)".
   googleCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
   driveCertFolderId: process.env.GDRIVE_CERTIFICATES_FOLDER_ID || "",
-  // Groq (OpenAI-compatible) — powers the Dashboard AI assistant. Model is tool-calling; all data access
-  // is role-scoped server-side. When GROQ_API_KEY is unset the assistant endpoint returns a clear "not
-  // configured" message instead of failing.
-  groq: {
-    apiKey: process.env.GROQ_API_KEY || "",
-    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
-    baseUrl: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1",
+  // Mistral (OpenAI-compatible) — powers the Dashboard AI assistant. Model supports tool-calling;
+  // all data access is role-scoped server-side. When MISTRAL_API_KEY is unset the assistant
+  // endpoint returns a clear "not configured" message instead of failing.
+  mistral: {
+    apiKey: process.env.MISTRAL_API_KEY || "",
+    model: process.env.MISTRAL_MODEL || "ministral-3b-2512",
+    baseUrl: (process.env.MISTRAL_BASE_URL || "https://api.mistral.ai/v1").replace(/\/$/, ""),
   },
   darwinbox: {
     endpoint: process.env.DARWINBOX_ENDPOINT || "",

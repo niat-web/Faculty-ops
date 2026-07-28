@@ -1,4 +1,4 @@
-// Dashboard AI assistant (Groq · Llama-3.3-70B, tool-calling). Ops Admin / Senior Manager / Capability
+// Dashboard AI assistant (Mistral · ministral-3b-2512, tool-calling). Ops Admin / Senior Manager / Capability
 // Manager only. EVERY data lookup is role-scoped: we load the caller's scoped instructor set ONCE
 // (instructorScopeFilter + removed-exclusion + the same non-instructor-department gate the Master/Dashboard
 // use) and all tools operate only on that in-memory set. So a Capability Manager asking "how many
@@ -72,7 +72,7 @@ export async function loadScopedContext(user: SessionUser): Promise<Ctx> {
   return { user, scopeLabel, instructors };
 }
 
-// ── Tool schema (OpenAI/Groq function-calling format) ───────────────────────────────────────────────
+// ── Tool schema (OpenAI/Mistral function-calling format) ───────────────────────────────────────────
 export const TOOLS = [
   { type: "function", function: {
     name: "instructor_counts",
@@ -238,7 +238,7 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
   }
 }
 
-// ── Groq chat loop ──────────────────────────────────────────────────────────────────────────────────
+// ── Mistral chat loop ───────────────────────────────────────────────────────────────────────────────
 const SYSTEM = (ctx: Ctx) => `You are the FacultyOps assistant, a friendly, concise helper embedded in an instructor-lifecycle CRM.
 The signed-in user is a ${ctx.user.role.replace("_", " ").toLowerCase()}. Every data tool is ALREADY scoped to exactly the data they may see (${ctx.scopeLabel}).
 You are READ-ONLY: you can only look up and DISPLAY data. You cannot add, edit, delete, move, or change anything — if asked to, politely say you can only show information, and point them to the relevant page.
@@ -260,7 +260,7 @@ Keep answers clear and short. Plain lists (comma-separated or bulleted) are fine
 type Msg = { role: string; content?: string | null; tool_calls?: any[]; tool_call_id?: string; name?: string };
 
 export async function askAssistant(user: SessionUser, userMessages: { role: string; content: string }[]): Promise<{ ok: boolean; answer?: string; error?: string; toolsUsed?: string[] }> {
-  if (!config.groq.apiKey) return { ok: false, error: "The assistant isn't configured yet (missing GROQ_API_KEY). Ask an administrator to set it up." };
+  if (!config.mistral.apiKey) return { ok: false, error: "The assistant isn't configured yet (missing MISTRAL_API_KEY). Ask an administrator to set it up." };
   const ctx = await loadScopedContext(user);
 
   // Keep only the last ~8 turns of user/assistant text (bound tokens).
@@ -270,7 +270,7 @@ export async function askAssistant(user: SessionUser, userMessages: { role: stri
 
   const TOOL_NAMES = new Set<string>(TOOLS.map((t) => t.function.name));
   for (let step = 0; step < 6; step++) {
-    const res = await callGroq(messages);
+    const res = await callMistral(messages);
     if (!res.ok) return { ok: false, error: res.error };
     const msg = res.message;
     messages.push(msg);
@@ -287,7 +287,7 @@ export async function askAssistant(user: SessionUser, userMessages: { role: stri
       continue; // let the model read the tool results
     }
 
-    // Recovery for a Llama-on-Groq quirk: it sometimes writes a tool call as TEXT in `content`
+    // Recovery for models that sometimes write a tool call as TEXT in `content`
     // (e.g. <function=upcoming_exits>{"list":true}</function>) instead of the structured tool_calls
     // field. Detect that, execute the tool for real, and continue — so it never leaks to the user.
     const raw = String(msg.content || "");
@@ -309,17 +309,17 @@ export async function askAssistant(user: SessionUser, userMessages: { role: stri
   return { ok: true, answer: "That took too many steps — please rephrase or ask something more specific.", toolsUsed: [...new Set(toolsUsed)] };
 }
 
-async function callGroq(messages: Msg[]): Promise<{ ok: true; message: Msg } | { ok: false; error: string }> {
+async function callMistral(messages: Msg[]): Promise<{ ok: true; message: Msg } | { ok: false; error: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
   try {
-    const res = await fetch(`${config.groq.baseUrl}/chat/completions`, {
+    const res = await fetch(`${config.mistral.baseUrl}/chat/completions`, {
       method: "POST", signal: controller.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.groq.apiKey}` },
-      body: JSON.stringify({ model: config.groq.model, messages, tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 800 }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.mistral.apiKey}` },
+      body: JSON.stringify({ model: config.mistral.model, messages, tools: TOOLS, tool_choice: "auto", temperature: 0.2, max_tokens: 800 }),
     });
     const text = await res.text();
-    if (!res.ok) { console.error("[assistant] groq error", res.status, text.slice(0, 300)); return { ok: false, error: res.status === 429 ? "The assistant is busy (rate limit) — try again in a moment." : "The assistant is temporarily unavailable." }; }
+    if (!res.ok) { console.error("[assistant] mistral error", res.status, text.slice(0, 300)); return { ok: false, error: res.status === 429 ? "The assistant is busy (rate limit) — try again in a moment." : "The assistant is temporarily unavailable." }; }
     const data = JSON.parse(text);
     const message = data?.choices?.[0]?.message;
     if (!message) return { ok: false, error: "The assistant returned an empty response." };
