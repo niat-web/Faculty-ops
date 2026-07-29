@@ -15,6 +15,7 @@ import userRoutes from "./routes/users";
 import instructorRoutes from "./routes/instructors";
 import fieldRoutes from "./routes/fields";
 import requestRoutes from "./routes/requests";
+import taskRoutes from "./routes/tasks";
 import mappingRoutes from "./routes/mapping";
 import miscRoutes from "./routes/misc";
 import cronRoutes from "./routes/cron";
@@ -71,6 +72,7 @@ async function main() {
   app.use("/api/master", masterRoutes);
   app.use("/api/fields", fieldRoutes);
   app.use("/api/requests", requestRoutes);
+  app.use("/api/tasks", taskRoutes);
   app.use("/api/mapping", mappingRoutes);
   app.use("/api/training", trainingRoutes);
   app.use("/api/contribution", contributionRoutes);

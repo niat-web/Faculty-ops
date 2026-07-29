@@ -600,6 +600,25 @@ router.patch("/settings/profile", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Task assignment controls (Ops only) ──
+router.get("/settings/tasks", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { getTasksSettings } = await import("../lib/settings");
+  res.json({ tasks: await getTasksSettings() });
+});
+router.patch("/settings/tasks", async (req, res) => {
+  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { setTasksSettings } = await import("../lib/settings");
+  const b = req.body || {};
+  const patch: Record<string, boolean> = {};
+  if (b.cmCanAssignToInstructors != null) patch.cmCanAssignToInstructors = !!b.cmCanAssignToInstructors;
+  if (b.seniorManagerCanAssign != null) patch.seniorManagerCanAssign = !!b.seniorManagerCanAssign;
+  const tasks = await setTasksSettings(patch);
+  const { writeAudit } = await import("../lib/services");
+  await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "SETTINGS_CHANGE", fieldName: "Task settings", newValue: JSON.stringify(tasks), reason: "Task assignment controls" });
+  res.json({ tasks });
+});
+
 // Saved filter views (max 20/user).
 router.get("/settings/views", async (req, res) => {
   const me: any = await User.findById(req.user!.id).select("savedViews").lean();

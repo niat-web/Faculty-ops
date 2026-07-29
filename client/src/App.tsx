@@ -19,7 +19,7 @@ function routeSkeleton(p: string) {
   if (p.startsWith("/app/instructors/master") || p.startsWith("/app/instructors/exited") || p.startsWith("/app/instructors/moved")) return <GridSkeleton />;
   if (/^\/app\/instructors\/[^/]+$/.test(p)) return <FormSkeleton sections={3} />; // instructor profile
   if (p.startsWith("/app/settings") || p.startsWith("/app/account")) return <FormSkeleton />;
-  if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/audit")) return <GridSkeleton />;
+  if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/tasks") || p.startsWith("/app/audit")) return <GridSkeleton />;
   return <PageSkeleton />;
 }
 function RouteFallback() {
@@ -51,6 +51,7 @@ const UsersPage = lazy(() => import("./pages/UsersPage"));
 const FieldsPage = lazy(() => import("./pages/FieldsPage"));
 const OrgPage = lazy(() => import("./pages/OrgPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
+const TasksPage = lazy(() => import("./pages/TasksPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -169,6 +170,7 @@ export default function App() {
                 <Route path="org" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><OrgPage /></RequireRole>} />
                 <Route path="requests" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
+                <Route path="tasks" element={<TasksPage />} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}

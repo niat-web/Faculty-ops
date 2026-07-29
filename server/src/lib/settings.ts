@@ -49,6 +49,8 @@ export const EMAIL_EVENTS = [
   { key: "INSTRUCTOR_ONBOARD", role: "INSTRUCTOR", label: "Onboarding welcome", desc: "Sent to the instructor when their status is set to Onboarding." },
   { key: "INSTRUCTOR_DOCUMENTS", role: "INSTRUCTOR", label: "Submit documents & details", desc: "Sent to the instructor to collect documents and fill in their details." },
   { key: "INSTRUCTOR_REPORTING_DAY", role: "INSTRUCTOR", label: "Reporting day (deployed)", desc: "Sent to the instructor when their reporting day is set / they are deployed." },
+  { key: "TASK_ASSIGNED", role: "ALL", label: "Task assigned", desc: "Sent when someone assigns a task to you." },
+  { key: "TASK_COMPLETED", role: "ALL", label: "Task completed", desc: "Sent to the task creator when an assignee marks it done." },
 ] as const;
 export type EmailEventKey = (typeof EMAIL_EVENTS)[number]["key"];
 const EMAIL_KEYS = new Set(EMAIL_EVENTS.map((e) => e.key));
@@ -107,6 +109,8 @@ export const NOTIFY_EVENTS = [
   { key: "SCHEMA_CHANGED", role: "OPS_ADMIN", label: "A dynamic field was added", desc: "A new field/module was created." },
   { key: "EXIT_ALERT", role: "OPS_ADMIN", label: "Instructor exit alert", desc: "An instructor's Darwinbox last-working-day is approaching (Ops Admins & Senior Managers)." },
   { key: "REMINDER", role: "ALL", label: "Reminders & weekly digest", desc: "Pending-request nudges, exit deadlines and the weekly summary." },
+  { key: "TASK_ASSIGNED", role: "ALL", label: "Task assigned", desc: "Someone assigned you a new task." },
+  { key: "TASK_COMPLETED", role: "ALL", label: "Task completed", desc: "An assignee marked your task as done." },
 ] as const;
 export type NotifyEventKey = (typeof NOTIFY_EVENTS)[number]["key"];
 const NOTIFY_KEYS = new Set(NOTIFY_EVENTS.map((e) => e.key));
@@ -285,4 +289,25 @@ export async function setUniversities(list: string[]) {
   const doc = await AppSetting.findOneAndUpdate({ key: KEY }, { $set: { universities: clean } }, { new: true, upsert: true });
   cache = doc.toObject(); cacheAt = Date.now();
   return clean;
+}
+
+// ── Task assignment controls (Ops only) ─────────────────────────────────
+export type TasksSettings = {
+  cmCanAssignToInstructors: boolean;
+  seniorManagerCanAssign: boolean;
+};
+const DEFAULT_TASKS: TasksSettings = { cmCanAssignToInstructors: false, seniorManagerCanAssign: false };
+export async function getTasksSettings(): Promise<TasksSettings> {
+  const t = (await getSettings()).tasks || {};
+  return {
+    cmCanAssignToInstructors: t.cmCanAssignToInstructors === true,
+    seniorManagerCanAssign: t.seniorManagerCanAssign === true,
+  };
+}
+export async function setTasksSettings(patch: Partial<TasksSettings>) {
+  const clean: Record<string, any> = {};
+  if (patch.cmCanAssignToInstructors != null) clean.cmCanAssignToInstructors = !!patch.cmCanAssignToInstructors;
+  if (patch.seniorManagerCanAssign != null) clean.seniorManagerCanAssign = !!patch.seniorManagerCanAssign;
+  await writeGroup("tasks", clean);
+  return getTasksSettings();
 }

@@ -279,6 +279,28 @@ const LoginEventSchema = new Schema({
 LoginEventSchema.index({ userId: 1, at: -1 });
 
 // ---------------------------------------------------------------------------
+// Task — assignable work items (Ops → staff/instructors; CM → instructors when enabled).
+const TaskSchema = new Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    body: { type: String, default: "" },
+    status: { type: String, default: "OPEN" }, // OPEN | DONE | CANCELLED
+    dueAt: { type: Date, required: true },
+    assignerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    assignerName: String,
+    assignerRole: String,
+    assigneeId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    assigneeName: String,
+    assigneeRole: String,
+    instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", default: null },
+    completedAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+TaskSchema.index({ assigneeId: 1, status: 1, dueAt: 1 });
+TaskSchema.index({ assignerId: 1, createdAt: -1 });
+
+// ---------------------------------------------------------------------------
 // AppSetting — single global document holding admin-configurable system settings.
 // roleAccess gates whether users of a given role may log in / use the portal.
 const AppSettingSchema = new Schema(
@@ -314,6 +336,8 @@ const AppSettingSchema = new Schema(
     // Which payroll entities the Instructor Master grid shows (Ops-controlled): { nxtwave, university } booleans.
     // Missing = both true (show all). The Instructor-Moved page ignores this and shows ALL University-payroll people.
     masterPayroll: { type: Schema.Types.Mixed, default: {} },
+    // Task assignment controls (/app/settings/operations): { cmCanAssignToInstructors, seniorManagerCanAssign }.
+    tasks: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
@@ -468,4 +492,5 @@ export const DarwinboxEmployee = compile("DarwinboxEmployee", DarwinboxEmployeeS
 export const Certification = compile("Certification", CertificationSchema);
 export const LoginAttempt = compile("LoginAttempt", LoginAttemptSchema);
 export const LoginEvent = compile("LoginEvent", LoginEventSchema);
+export const Task = compile("Task", TaskSchema);
 export type ID = Types.ObjectId | string;

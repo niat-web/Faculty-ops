@@ -5,7 +5,8 @@ import { useToast } from "../../toast";
 import { ROLE_LABEL } from "../../auth";
 import { Skeleton } from "../../components/Skeleton";
 
-const ROLE_ORDER = ["SENIOR_MANAGER", "CAPABILITY_MANAGER", "OPS_ADMIN", "INSTRUCTOR"];
+const ROLE_ORDER = ["SENIOR_MANAGER", "CAPABILITY_MANAGER", "OPS_ADMIN", "INSTRUCTOR", "ALL"];
+const groupLabel = (role: string) => (role === "ALL" ? "Everyone" : ROLE_LABEL[role] || role);
 
 export default function EmailsSettingsPage() {
   const toast = useToast();
@@ -53,7 +54,7 @@ export default function EmailsSettingsPage() {
 
       {groups.map((g) => (
         <div key={g.role} className="card overflow-hidden">
-          <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">To {ROLE_LABEL[g.role] || g.role}</div>
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">To {groupLabel(g.role)}</div>
           <div className="divide-y divide-slate-100">
             {g.items.map((e) => {
               const on = settings[e.key] !== false;

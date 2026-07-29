@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText,
   BarChart3, BookOpen, Award, LogOut, ChevronDown, UserCircle, Settings as SettingsIcon,
-  Database, Menu, X,
+  Database, Menu, X, CheckSquare,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
@@ -16,6 +16,7 @@ const NAV_SECTIONS: any[] = [
   {
     items: [
       { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true },
+      { to: "/app/tasks", label: "Tasks", icon: CheckSquare, badgeTasks: true },
       { to: "/app/my-stats", label: "My Stats", icon: BarChart3, roles: ["INSTRUCTOR"] },
     ],
   },
@@ -53,6 +54,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
+  const [pendingRequests, setPendingRequests] = useState(0);
+  const [openTasks, setOpenTasks] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -63,7 +66,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
     let on = true;
-    const pollCount = () => { if (document.visibilityState === "visible") api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {}); };
+    const pollCount = () => {
+      if (document.visibilityState !== "visible") return;
+      api.get("/notifications/count").then((r) => on && setUnread(r.count)).catch(() => {});
+      if (STAFF.includes(user!.role)) {
+        api.get("/requests/count").then((r) => on && setPendingRequests(r.pending)).catch(() => {});
+      }
+      api.get("/tasks/count").then((r) => on && setOpenTasks(r.open)).catch(() => {});
+    };
     const onFocus = () => { if (document.visibilityState === "visible") { pollCount(); refresh(); } };
     pollCount();
     const t = setInterval(pollCount, 60000);
@@ -133,8 +143,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
       >
         <n.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
         <span className="flex-1">{n.label}</span>
-        {n.badge && unread > 0 && (
-          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">{unread}</span>
+        {n.badge && pendingRequests > 0 && (
+          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">{pendingRequests}</span>
+        )}
+        {n.badgeTasks && openTasks > 0 && (
+          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{openTasks}</span>
         )}
       </NavLink>
     );

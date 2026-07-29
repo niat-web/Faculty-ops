@@ -38,6 +38,8 @@ const TYPE_EMAIL_KEY: Record<string, string> = {
   EDIT_REQUEST_APPROVED: "REQUEST_APPROVED",
   EDIT_REQUEST_REJECTED: "REQUEST_REJECTED",
   SCHEMA_CHANGED: "SCHEMA_CHANGED",
+  TASK_ASSIGNED: "TASK_ASSIGNED",
+  TASK_COMPLETED: "TASK_COMPLETED",
 };
 
 export async function notify(userId: string, { type, title, body, link, email = true, emailKey }: { type: string; title: string; body?: string; link?: string; email?: boolean; emailKey?: string }) {

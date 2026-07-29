@@ -63,6 +63,17 @@ router.get("/", async (req, res) => {
   });
 });
 
+// Pending edit-request count for the sidebar badge (matches the Requests page "Pending" section).
+router.get("/count", async (req, res) => {
+  const scope = requestsListScope(req.user!, "PENDING");
+  if (!scope) return res.json({ pending: 0 });
+  const [reqCount, batchCount] = await Promise.all([
+    EditRequest.countDocuments(scope.q),
+    EditRequestBatch.countDocuments(scope.bq),
+  ]);
+  res.json({ pending: reqCount + batchCount });
+});
+
 // Submit a BATCH of field edits (one or more instructors) as a single request → routed to an Ops Admin.
 // Used by CM/SM "multi-select / submit changes" flow. Ops Admins edit directly, so they don't use this.
 router.post("/batch", async (req, res) => {

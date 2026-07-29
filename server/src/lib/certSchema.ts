@@ -41,7 +41,21 @@ export const DEGREE_TYPES = [
   "M.Tech", "M.E.", "M.Sc", "MCA", "MBA", "M.A", "M.Com", "PGDM", "M.Ed",
   "Integrated M.Tech", "PhD", "Other",
 ];
-export const HAVE = ["Yes — I have it", "No — I have not received it yet"];
+export const HAVE = ["Yes - I have it", "No - I have not received it yet"];
+
+/** Plain ASCII labels — avoids em/en-dash mojibake (â€") in browsers or stored Mongo schemas. */
+export function sanitizeCertText(s: string): string {
+  return String(s ?? "")
+    .replace(/[\u2013\u2014]/g, " - ")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u00e2\u0080[\u0093\u0094]/g, " - ") // UTF-8 dash misread as ISO-8859-1
+    .replace(/â€[\u0093\u0094\u201c\u201d"]/g, " - ") // UTF-8 dash misread as Windows-1252
+    .replace(/â€™/g, "'")
+    .replace(/â€˜/g, "'")
+    .replace(/\s+-\s+/g, " - ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 // The default schema = the original hard-coded form, so nothing is lost on first use.
 export const DEFAULT_CERT_SCHEMA: CertSchema = {
@@ -59,15 +73,15 @@ export const DEFAULT_CERT_SCHEMA: CertSchema = {
     { id: "highestQualification", key: "highestQualification", label: "Highest Qualification", type: "TEXT", sectionId: "your-details", help: "Fill this if your degree isn't in the list." },
     { id: "domain", key: "domain", label: "Domain / Specialization", type: "TEXT", sectionId: "your-details" },
     { id: "yearOfPassing", key: "yearOfPassing", label: "Year of Passing", type: "TEXT", sectionId: "your-details" },
-    { id: "odHave", key: "odHave", label: "Original Degree (OD) — Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
-    { id: "odExpected", key: "odExpected", label: "OD — Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
-    { id: "odLink", key: "odLink", label: "OD — Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
-    { id: "cmmHave", key: "cmmHave", label: "Consolidated Marksheet (CMM) — Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
-    { id: "cmmExpected", key: "cmmExpected", label: "CMM — Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
-    { id: "cmmLink", key: "cmmLink", label: "CMM — Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
-    { id: "pcHave", key: "pcHave", label: "Provisional Certificate (PC) — Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
-    { id: "pcExpected", key: "pcExpected", label: "PC — Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
-    { id: "pcLink", key: "pcLink", label: "PC — Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
+    { id: "odHave", key: "odHave", label: "Original Degree (OD) - Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
+    { id: "odExpected", key: "odExpected", label: "OD - Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
+    { id: "odLink", key: "odLink", label: "OD - Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
+    { id: "cmmHave", key: "cmmHave", label: "Consolidated Marksheet (CMM) - Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
+    { id: "cmmExpected", key: "cmmExpected", label: "CMM - Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
+    { id: "cmmLink", key: "cmmLink", label: "CMM - Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
+    { id: "pcHave", key: "pcHave", label: "Provisional Certificate (PC) - Do you have it?", type: "DROPDOWN", sectionId: "certificates", options: HAVE },
+    { id: "pcExpected", key: "pcExpected", label: "PC - Expected Month & Year (if not)", type: "TEXT", sectionId: "certificates", placeholder: "e.g. Aug 2026 / NA" },
+    { id: "pcLink", key: "pcLink", label: "PC - Upload image", type: "FILE", sectionId: "certificates", accept: "image/*" },
     { id: "remarks", key: "remarks", label: "Remarks / Additional Comments", type: "TEXTAREA", sectionId: "certificates" },
   ],
 };
@@ -84,7 +98,7 @@ export function normalizeSchema(raw: any): CertSchema {
     const id = String(s?.id || slug(s?.title || "")) || `s${sections.length + 1}`;
     if (!id || seenSec.has(id)) continue;
     seenSec.add(id);
-    sections.push({ id, title: String(s?.title || "Section").slice(0, 80) || "Section" });
+    sections.push({ id, title: sanitizeCertText(String(s?.title || "Section").slice(0, 80) || "Section") });
   }
   if (!sections.length) sections.push({ id: "section-1", title: "Section 1" });
   const secIds = new Set(sections.map((s) => s.id));
@@ -103,12 +117,12 @@ export function normalizeSchema(raw: any): CertSchema {
     while (seenKey.has(key)) key = `${key}_${fields.length + 1}`;
     seenKey.add(key);
     const sectionId = secIds.has(f?.sectionId) ? f.sectionId : sections[0].id;
-    const out: CertField = { id: String(f?.id || key), key, label: String(f?.label || "Field").slice(0, 120) || "Field", type, sectionId };
+    const out: CertField = { id: String(f?.id || key), key, label: sanitizeCertText(String(f?.label || "Field").slice(0, 120) || "Field"), type, sectionId };
     if (f?.required) out.required = true;
-    if (HAS_OPTIONS.has(type)) out.options = (Array.isArray(f?.options) ? f.options : []).map((o: any) => String(o).trim()).filter(Boolean);
+    if (HAS_OPTIONS.has(type)) out.options = (Array.isArray(f?.options) ? f.options : []).map((o: any) => sanitizeCertText(String(o).trim())).filter(Boolean);
     if (type === "FILE") out.accept = String(f?.accept || "image/*").slice(0, 120) || "image/*";
-    if (f?.help) out.help = String(f.help).slice(0, 200);
-    if (f?.placeholder) out.placeholder = String(f.placeholder).slice(0, 120);
+    if (f?.help) out.help = sanitizeCertText(String(f.help).slice(0, 200));
+    if (f?.placeholder) out.placeholder = sanitizeCertText(String(f.placeholder).slice(0, 120));
     fields.push(out);
   }
   return { sections, fields };
