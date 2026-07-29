@@ -1,26 +1,82 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BookOpen, Search, ChevronRight } from "lucide-react";
-import { DOCS, getDocsForRole } from "../docs";
+import { BookOpen, Search, ChevronRight, PlayCircle } from "lucide-react";
+import { getDocsForRole } from "../docs";
 import { ROLE_LABEL } from "../auth";
 import Markdown from "../components/Markdown";
 
-const VALID_ROLES = new Set(["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"]);
+const VALID_ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"] as const;
+type AppRole = (typeof VALID_ROLES)[number];
 
-function parseRole(raw: string | null): string | null {
+function parseRole(raw: string | null): AppRole | null {
   if (!raw) return null;
-  const role = raw.trim().toUpperCase().replace(/-/g, "_");
-  return VALID_ROLES.has(role) ? role : null;
+  const role = raw.trim().toUpperCase().replace(/-/g, "_") as AppRole;
+  return VALID_ROLES.includes(role) ? role : null;
 }
 
-/** Public standalone documentation at /docs — no login. Optional ?role= filters sections. */
+function defaultSectionId(role: AppRole | null, sections: { id: string }[]): string {
+  if (role === "CAPABILITY_MANAGER" && sections.some((s) => s.id === "cm-intro-video")) return "cm-intro-video";
+  return sections[0]?.id || "";
+}
+
+function RolePicker() {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center bg-slate-50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
+            <BookOpen className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-lg font-bold text-slate-900">FacultyOps Documentation</h1>
+            <p className="text-sm text-slate-500">Choose your role to open the right guide</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {VALID_ROLES.map((role) => (
+            <a
+              key={role}
+              href={`/docs?role=${encodeURIComponent(role)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-800 transition hover:border-brand-300 hover:bg-brand-50/50"
+            >
+              {ROLE_LABEL[role] || role}
+              <ChevronRight className="h-4 w-4 text-slate-400" />
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DriveVideoPreview({ fileId }: { fileId: string }) {
+  return (
+    <div className="mb-6 w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
+      <iframe
+        src={`https://drive.google.com/file/d/${fileId}/preview`}
+        title="Capability Manager intro video"
+        className="aspect-video w-full border-0"
+        allow="autoplay; encrypted-media"
+        allowFullScreen
+      />
+    </div>
+  );
+}
+
+/** Public standalone documentation at /docs — no login. Requires ?role= for role-specific content. */
 export default function DocsPage() {
   const [searchParams] = useSearchParams();
   const role = parseRole(searchParams.get("role"));
-  const sections = useMemo(() => (role ? getDocsForRole(role) : DOCS), [role]);
+  const sections = useMemo(() => (role ? getDocsForRole(role) : []), [role]);
 
-  const [activeId, setActiveId] = useState(sections[0]?.id || "");
+  const [activeId, setActiveId] = useState("");
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    if (role && sections.length) setActiveId(defaultSectionId(role, sections));
+  }, [role, sections]);
 
   useEffect(() => {
     const prevHtml = document.documentElement.style.overflow;
@@ -34,8 +90,10 @@ export default function DocsPage() {
   }, []);
 
   useEffect(() => {
-    if (!sections.some((d) => d.id === activeId)) setActiveId(sections[0]?.id || "");
-  }, [sections, activeId]);
+    if (sections.length && !sections.some((d) => d.id === activeId)) {
+      setActiveId(defaultSectionId(role, sections));
+    }
+  }, [sections, activeId, role]);
 
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
@@ -52,6 +110,8 @@ export default function DocsPage() {
     return order.map((g) => ({ group: g, items: map.get(g)! }));
   }, [filtered]);
 
+  if (!role) return <RolePicker />;
+
   const active = sections.find((d) => d.id === activeId) || sections[0];
   const idx = active ? sections.findIndex((d) => d.id === active.id) : -1;
   const prev = idx > 0 ? sections[idx - 1] : null;
@@ -66,7 +126,7 @@ export default function DocsPage() {
     );
   }
 
-  const roleLabel = role ? ROLE_LABEL[role] || role : null;
+  const roleLabel = ROLE_LABEL[role] || role;
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-white">
@@ -77,16 +137,15 @@ export default function DocsPage() {
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-bold leading-tight text-slate-900 sm:text-lg">FacultyOps Documentation</h1>
           <p className="truncate text-xs text-slate-500">
-            {roleLabel ? `Guide for ${roleLabel} — ${sections.length} sections` : `Complete reference — ${sections.length} sections`}
+            Guide for {roleLabel} — {sections.length} sections
           </p>
         </div>
-        <span className="hidden shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500 sm:inline">
-          {sections.length} sections
+        <span className="hidden shrink-0 rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 ring-1 ring-brand-200 sm:inline">
+          {roleLabel}
         </span>
       </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Left nav — fixed header search + independently scrollable menu */}
         <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50/80 sm:w-72">
           <div className="shrink-0 border-b border-slate-200 p-3">
             <div className="relative">
@@ -113,7 +172,11 @@ export default function DocsPage() {
                         on ? "bg-brand-600 font-medium text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-900"
                       }`}
                     >
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-white" : "bg-slate-300 group-hover:bg-brand-400"}`} />
+                      {d.videoId ? (
+                        <PlayCircle className={`h-3.5 w-3.5 shrink-0 ${on ? "text-white" : "text-brand-500"}`} strokeWidth={1.75} />
+                      ) : (
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-white" : "bg-slate-300 group-hover:bg-brand-400"}`} />
+                      )}
                       <span className="truncate">{d.title}</span>
                     </button>
                   );
@@ -126,15 +189,16 @@ export default function DocsPage() {
           </nav>
         </aside>
 
-        {/* Right content — scrolls independently per selected section */}
         <section id="doc-content-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white">
           {active && (
-            <div className="mx-auto max-w-5xl px-5 py-6 sm:px-8 lg:px-12">
+            <div className={active.videoId ? "w-full px-5 py-6 sm:px-8 lg:px-10" : "mx-auto max-w-5xl px-5 py-6 sm:px-8 lg:px-12"}>
               <div className="mb-5 flex items-center gap-1.5 text-xs font-medium text-slate-400">
                 <span>{active.group}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
                 <span className="text-slate-600">{active.title}</span>
               </div>
+
+              {active.videoId && <DriveVideoPreview fileId={active.videoId} />}
 
               <Markdown source={active.body} />
 

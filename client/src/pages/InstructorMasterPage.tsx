@@ -452,7 +452,7 @@ export default function InstructorMasterPage() {
             <thead ref={theadRef} className="table-head-row relative z-20 text-left [&_th]:table-head-cell">
               <tr>
                 {selectMode && (
-                  <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] bg-slate-50 px-2 py-3">
+                  <th className="sticky left-0 z-40 w-8 min-w-[2rem] max-w-[2rem] border-r border-slate-200 bg-slate-50 px-2 py-3 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.1)]">
                     <input type="checkbox" checked={allOnPage} onChange={toggleSelectAll} title="Select all on this page" className="h-4 w-4 cursor-pointer rounded border-slate-300" />
                   </th>
                 )}
@@ -460,10 +460,10 @@ export default function InstructorMasterPage() {
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
                       className={`px-3 py-3 font-semibold ${c.editable && !darwinboxKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
-                        c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px]`
-                          : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-30 min-w-[130px] border-r border-slate-200`
-                            : "z-20"}`} />
-                    {/* Campus + Training quick-view columns sit right after the frozen Name + Employee ID pair. */}
+                        c.key === "name"
+                          ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px] border-r border-slate-200 bg-slate-50 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.1)]`
+                          : "z-20"}`} />
+                    {/* Campus + Training quick-view columns sit right after Name + Employee ID. */}
                     {c.key === "employeeId" && <SortHeader label="Campus" k="campus" state={sort} onToggle={sort.toggle} className="z-20 bg-slate-50 px-3 py-3 font-semibold" />}
                     {c.key === "employeeId" && <th className="z-20 bg-slate-50 px-3 py-3 font-semibold">Training</th>}
                   </Fragment>
@@ -472,19 +472,22 @@ export default function InstructorMasterPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.employeeId} className={`table-body-row group bg-white even:bg-gray-50/50 hover:!bg-brand-50/40 ${row.id && selected.has(row.id) ? "!bg-brand-50/60" : ""}`}>
+              {rows.map((row, ri) => {
+                const rowSelected = !!(row.id && selected.has(row.id));
+                const stickyRowBg = rowSelected ? "bg-brand-50" : ri % 2 === 1 ? "bg-slate-50" : "bg-white";
+                return (
+                <tr key={row.employeeId} className={`table-body-row group bg-white even:bg-gray-50/50 hover:!bg-brand-50/40 ${rowSelected ? "!bg-brand-50/60" : ""}`}>
                   {selectMode && (
-                    <td className="sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] bg-inherit px-2 py-2">
+                    <td className={`sticky left-0 z-20 w-8 min-w-[2rem] max-w-[2rem] px-2 py-2 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-brand-50/80 ${stickyRowBg}`}>
                       {/* Only rows that exist in Mongo can be bulk-selected (Darwinbox-only rows have no record yet). */}
                       {row.id ? <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" /> : <span className="text-slate-300">—</span>}
                     </td>
                   )}
                   {displayColumns.map((c) => {
-                    // Name + Employee ID are both frozen while horizontally scrolling (like the Training Stats grid).
-                    const sticky = c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 bg-inherit w-[200px] min-w-[200px]`
-                      : c.key === "employeeId" ? `sticky ${selectMode ? "left-[232px]" : "left-[200px]"} z-10 bg-inherit min-w-[130px] border-r border-slate-200`
-                        : "";
+                    // Only Name stays frozen while horizontally scrolling — solid bg so cells behind don't bleed through.
+                    const sticky = c.key === "name"
+                      ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 w-[200px] min-w-[200px] border-r border-slate-200 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.08)] group-hover:bg-brand-50/80 ${stickyRowBg}`
+                      : "";
                     const display = row[c.key] === "" || row[c.key] == null ? "—" : row[c.key];
                     const isEditing = edit?.empId === row.employeeId && edit?.key === c.key;
                     // Darwinbox-sourced columns are read-only; only the manual FacultyOps columns are editable.
@@ -512,7 +515,7 @@ export default function InstructorMasterPage() {
                           </button>
                         )}
                       </td>
-                      {/* Campus + Training quick-view columns, right after the frozen Name + Employee ID. */}
+                      {/* Campus + Training quick-view columns, right after Name + Employee ID. */}
                       {c.key === "employeeId" && (
                         <td className="px-3 py-2 text-slate-500">{row.campus || <span className="text-slate-300">—</span>}</td>
                       )}
@@ -530,7 +533,7 @@ export default function InstructorMasterPage() {
                     );
                   })}
                   {isOps && (
-                    <td className="sticky right-0 z-10 border-l border-slate-100 bg-inherit px-3 py-2 text-right">
+                    <td className={`sticky right-0 z-10 border-l border-slate-100 px-3 py-2 text-right group-hover:bg-brand-50/80 ${stickyRowBg}`}>
                       <div className="flex justify-end">
                         <RowActionsMenu actions={[
                           { label: "Edit", icon: Pencil, onClick: () => setEditing(row) },
@@ -541,7 +544,8 @@ export default function InstructorMasterPage() {
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
               {/* While loading (fresh fetch, no rows yet) show shimmer rows that fill the grid — never a
                   tiny empty table or a premature "no instructors" message. */}
               {loadingRows && !rows.length && Array.from({ length: 18 }).map((_, i) => (
@@ -549,7 +553,7 @@ export default function InstructorMasterPage() {
                   {selectMode && <td className="px-2 py-3"><Skeleton width="16px" height="16px" /></td>}
                   {displayColumns.map((c) => (
                     <Fragment key={c.key}>
-                      <td className={`px-3 py-3 ${c.key === "name" ? "sticky left-0 bg-white" : c.key === "employeeId" ? "sticky left-[200px] border-r border-slate-200 bg-white" : ""}`}><Skeleton width={c.key === "name" ? "80%" : "60%"} height="12px" /></td>
+                      <td className={`px-3 py-3 ${c.key === "name" ? `sticky ${selectMode ? "left-8" : "left-0"} z-10 border-r border-slate-200 bg-white shadow-[4px_0_8px_-4px_rgba(15,23,42,0.08)]` : ""}`}><Skeleton width={c.key === "name" ? "80%" : "60%"} height="12px" /></td>
                       {c.key === "employeeId" && <td className="px-3 py-3"><Skeleton width="55%" height="12px" /></td>}
                       {c.key === "employeeId" && <td className="px-3 py-3"><Skeleton width="36px" height="12px" /></td>}
                     </Fragment>

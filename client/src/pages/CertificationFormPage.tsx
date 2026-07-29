@@ -75,9 +75,9 @@ export default function CertificationFormPage() {
           return (
             <section key={sec.id} className="card p-6">
               <div className="mb-4 flex items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">{si + 1}</span><h2 className="font-semibold text-slate-800">{sec.title}</h2></div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
                 {fields.map((f) => (
-                  <div key={f.id} className={f.type === "TEXTAREA" || f.type === "EMPLOYEE" || f.type === "CHECKBOX" || f.type === "RADIO" ? "sm:col-span-2" : ""}>
+                  <div key={f.id} className={f.type === "TEXTAREA" || f.type === "EMPLOYEE" || f.type === "CHECKBOX" || f.type === "RADIO" ? "md:col-span-3" : ""}>
                     <FieldInput
                       field={f}
                       value={values[f.key] || ""}
@@ -154,7 +154,7 @@ function FieldInput({ field: f, value, onChange, fileRef, tq, onEmployee }: {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-slate-50"><div className="mx-auto max-w-2xl px-4 py-6">{children}</div></div>;
+  return <div className="min-h-screen bg-slate-50"><div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">{children}</div></div>;
 }
 function CenterCard({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4"><div className="card w-full max-w-md p-8 text-center">{children}</div></div>;
