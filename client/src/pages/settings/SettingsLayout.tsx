@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { Settings as SettingsIcon, BookOpen } from "lucide-react";
 import { FormSkeleton } from "../../components/skeletons";
 import Breadcrumbs from "../../components/Breadcrumbs";
@@ -20,7 +20,7 @@ export default function SettingsLayout() {
         <div>
           <h1 className="page-title flex items-center gap-2"><SettingsIcon className="h-6 w-6 text-brand-600" strokeWidth={1.75} /> Settings</h1>
         </div>
-        <a href="/docs" target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-sm shrink-0"><BookOpen className="h-4 w-4 text-brand-600" strokeWidth={1.75} /> Documentation</a>
+        <Link to="/app/docs" className="btn btn-outline btn-sm shrink-0"><BookOpen className="h-4 w-4 text-brand-600" strokeWidth={1.75} /> Documentation</Link>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-1 border-b border-slate-200">

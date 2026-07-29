@@ -1,60 +1,4 @@
-// In-app documentation content (Markdown). Each entry = one left-nav section.
-// Written for end users (Ops / managers): what each page does, every section and field, the exact
-// data source (Darwinbox / BigQuery / MongoDB app-managed / computed), whether it's editable, and the
-// fallback behaviour when a source is slow or down. Stay within the Markdown subset the renderer in
-// components/Markdown.tsx supports (#/##/### headings, **bold**, `code`, [links](url), - / 1. lists,
-// | tables |, > callouts, ``` fences, --- rules).
-
-export type DocSection = { id: string; title: string; group: string; body: string };
-
-const STAFF_ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
-const LEADER_ROLES = ["OPS_ADMIN", "SENIOR_MANAGER"];
-
-/** Which roles can see each section. Sections not listed are visible to every role. */
-export const DOC_ROLES: Partial<Record<string, string[]>> = {
-  "data-sync": LEADER_ROLES,
-  master: STAFF_ROLES,
-  exited: STAFF_ROLES,
-  moved: STAFF_ROLES,
-  training: STAFF_ROLES,
-  roles: LEADER_ROLES,
-  org: LEADER_ROLES,
-  contribution: LEADER_ROLES,
-  requests: STAFF_ROLES,
-  "exit-alerts": STAFF_ROLES,
-  users: ["OPS_ADMIN"],
-  removed: ["OPS_ADMIN"],
-  settings: ["OPS_ADMIN"],
-  emails: ["OPS_ADMIN"],
-  certifications: ["OPS_ADMIN"],
-  audit: LEADER_ROLES,
-  "my-stats": ["INSTRUCTOR"],
-};
-
-const ROLE_GUIDE_ID: Record<string, string> = {
-  OPS_ADMIN: "guide-ops-admin",
-  SENIOR_MANAGER: "guide-senior-manager",
-  CAPABILITY_MANAGER: "guide-capability-manager",
-  INSTRUCTOR: "guide-instructor",
-};
-
-/** Documentation sections visible to the signed-in role (sidebar → Documentation). */
-export function getDocsForRole(role: string): DocSection[] {
-  const myGuide = ROLE_GUIDE_ID[role];
-  return DOCS.filter((d) => {
-    if (d.id.startsWith("guide-") && d.id !== myGuide) return false;
-    const allowed = DOC_ROLES[d.id];
-    if (allowed && !allowed.includes(role)) return false;
-    return true;
-  });
-}
-
-export const DOCS: DocSection[] = [
-  {
-    id: "guide-ops-admin",
-    title: "Ops Admin quick start",
-    group: "Your role",
-    body: `# Ops Admin — quick start
+import{k as C,r as l,j as e,m as I,o as E,p as O}from"./index-CuBYtdjx.js";import{M as R}from"./Markdown-D5hTwLg6.js";import{A as T}from"./arrow-left-aWJ6zZ-b.js";import{S as N}from"./search-hMiIxsMx.js";import{C as P}from"./chevron-right-UsSAyon9.js";const d=["OPS_ADMIN","SENIOR_MANAGER","CAPABILITY_MANAGER"],u=["OPS_ADMIN","SENIOR_MANAGER"],q={"data-sync":u,master:d,exited:d,moved:d,training:d,roles:u,org:u,contribution:u,requests:d,"exit-alerts":d,users:["OPS_ADMIN"],removed:["OPS_ADMIN"],settings:["OPS_ADMIN"],emails:["OPS_ADMIN"],certifications:["OPS_ADMIN"],audit:u,"my-stats":["INSTRUCTOR"]},j={OPS_ADMIN:"guide-ops-admin",SENIOR_MANAGER:"guide-senior-manager",CAPABILITY_MANAGER:"guide-capability-manager",INSTRUCTOR:"guide-instructor"};function F(s){const p=j[s];return S.filter(i=>{if(i.id.startsWith("guide-")&&i.id!==p)return!1;const t=q[i.id];return!(t&&!t.includes(s))})}const S=[{id:"guide-ops-admin",title:"Ops Admin quick start",group:"Your role",body:`# Ops Admin — quick start
 
 You have **full access** to FacultyOps: every instructor, every setting, and every audit entry.
 
@@ -79,14 +23,7 @@ You have **full access** to FacultyOps: every instructor, every setting, and eve
 - **Resolve any exit alert** if a Capability Manager is unavailable.
 - Configure **who gets emails/notifications** under Settings → Notifications & Emails.
 
-> Use **Documentation** (sidebar, above your profile) anytime — this guide is tailored to your role.`,
-  },
-
-  {
-    id: "guide-senior-manager",
-    title: "Senior Manager quick start",
-    group: "Your role",
-    body: `# Senior Manager — quick start
+> Use **Documentation** (sidebar, above your profile) anytime — this guide is tailored to your role.`},{id:"guide-senior-manager",title:"Senior Manager quick start",group:"Your role",body:`# Senior Manager — quick start
 
 You see **every instructor** org-wide and can edit directly. You also **approve** change requests from Capability Managers who report to you.
 
@@ -110,14 +47,7 @@ You see **every instructor** org-wide and can edit directly. You also **approve*
 - View **Audit Log** (read-only history of every change).
 - See **exit alerts** on the dashboard; the reporting Capability Manager confirms the outcome.
 
-> You cannot access Users or Settings — those are Ops Admin only.`,
-  },
-
-  {
-    id: "guide-capability-manager",
-    title: "Capability Manager quick start",
-    group: "Your role",
-    body: `# Capability Manager — quick start
+> You cannot access Users or Settings — those are Ops Admin only.`},{id:"guide-capability-manager",title:"Capability Manager quick start",group:"Your role",body:`# Capability Manager — quick start
 
 You see **only your reportees** — instructors who report to you in Darwinbox. Everything is scoped to your team.
 
@@ -145,14 +75,7 @@ You see **only your reportees** — instructors who report to you in Darwinbox. 
 - Darwinbox-owned fields (name, email, department…) sync hourly and are read-only in practice.
 - You **cannot** access Org Chart, Contribution rollups, Users, Settings, or Audit Log.
 
-> If the exit-alert banner appears, open it and confirm each person’s outcome before their last working day.`,
-  },
-
-  {
-    id: "guide-instructor",
-    title: "Instructor quick start",
-    group: "Your role",
-    body: `# Instructor — quick start
+> If the exit-alert banner appears, open it and confirm each person’s outcome before their last working day.`},{id:"guide-instructor",title:"Instructor quick start",group:"Your role",body:`# Instructor — quick start
 
 FacultyOps gives you a **personal view** of your profile and training progress. You see **only yourself**.
 
@@ -178,14 +101,7 @@ FacultyOps gives you a **personal view** of your profile and training progress. 
 - Edit HR fields (name, department, manager) — those come from Darwinbox.
 - Access admin pages (Master, Settings, Requests, etc.).
 
-> Use **My Account** (profile menu) to change your password and notification preferences.`,
-  },
-
-  {
-    id: "overview",
-    title: "Overview",
-    group: "Start here",
-    body: `# FacultyOps — Overview
+> Use **My Account** (profile menu) to change your password and notification preferences.`},{id:"overview",title:"Overview",group:"Start here",body:`# FacultyOps — Overview
 
 FacultyOps is the NIAT instructor-lifecycle system. It keeps **one trusted record** of every instructor and staff member, tracks their training, and drives the org chart, contribution rollups and lifecycle (onboarding → exit).
 
@@ -210,14 +126,7 @@ Three sources feed the app. **Everything you see on a page is read from MongoDB.
 | **BigQuery** (learning platform) | Training/course progress per module | **Every hour**; Training Stats also overlays it live |
 | **MongoDB** (app DB) | Everything the app owns: Contribution, Payroll, Remarks, Access, requests, audit, settings | Serves every page instantly |
 
-> Data can be up to one hour old between syncs. Use **"Refresh from Darwinbox"** on the Master to pull immediately. See **Data & Sync** for the exact matching keys, conflict rules and fallbacks.`,
-  },
-
-  {
-    id: "data-sync",
-    title: "Data & Sync",
-    group: "Start here",
-    body: `# Data & Sync
+> Data can be up to one hour old between syncs. Use **"Refresh from Darwinbox"** on the Master to pull immediately. See **Data & Sync** for the exact matching keys, conflict rules and fallbacks.`},{id:"data-sync",title:"Data & Sync",group:"Start here",body:`# Data & Sync
 
 This is the single most important page to understand: how outside data lands in FacultyOps, which side **wins** a conflict, and what happens when a source is unavailable.
 
@@ -261,14 +170,7 @@ Ops can also trigger it on demand (Master → **Refresh from Darwinbox**, or the
 - **Manual refresh fails** → it logs the error and serves the **current Mongo data**.
 - **Darwinbox unavailable** → the sync writes nothing; existing Mongo data is untouched.
 - **BigQuery unavailable / not configured** → training persist is skipped; the **last-known** module statuses are retained.
-- **Live Training pull fails** → the grid falls back to the **stored** \`moduleStatus\` and stays usable.`,
-  },
-
-  {
-    id: "master",
-    title: "Instructor Master",
-    group: "Instructors",
-    body: `# Instructor Master
+- **Live Training pull fails** → the grid falls back to the **stored** \`moduleStatus\` and stays usable.`},{id:"master",title:"Instructor Master",group:"Instructors",body:`# Instructor Master
 
 A full spreadsheet of every **active** instructor. **Click an editable (amber-tinted) cell to change it.** Click a **Name** to open the detail drawer.
 
@@ -322,14 +224,7 @@ Derived from employment status + any finalised exit-alert outcome: **Active**, *
 - **Multi-select** → bulk **Edit** (all staff), **Remove** (hide, Ops), **Delete** (Ops). Identity fields are excluded from bulk edit.
 - **Row menu (⋮)** (Ops): Edit · Remove (hide) · Delete.
 - **Actions menu:** Add instructor (Ops) · Import CSV (Ops) · Export CSV (all — mirrors current filters).
-- **Inline edit:** click an amber cell; the editor is type-aware (text / number / date / dropdown).`,
-  },
-
-  {
-    id: "exited",
-    title: "Instructor Exited",
-    group: "Instructors",
-    body: `# Instructor Exited
+- **Inline edit:** click an amber cell; the editor is type-aware (text / number / date / dropdown).`},{id:"exited",title:"Instructor Exited",group:"Instructors",body:`# Instructor Exited
 
 Everyone who has left NIAT (or is exit-in-progress), with the exit-specific columns.
 
@@ -351,14 +246,7 @@ Everyone who has left NIAT (or is exit-in-progress), with the exit-specific colu
 - **Export CSV** mirrors the active filters.
 
 ## Who can edit
-Only **Ops / Senior Manager** can click a cell to edit here; Ops may additionally edit the Employee ID.`,
-  },
-
-  {
-    id: "moved",
-    title: "Instructor Moved",
-    group: "Instructors",
-    body: `# Instructor Moved
+Only **Ops / Senior Manager** can click a cell to edit here; Ops may additionally edit the Employee ID.`},{id:"moved",title:"Instructor Moved",group:"Instructors",body:`# Instructor Moved
 
 Everyone who has been **moved to University payroll** — with the university / campus they moved to.
 
@@ -378,14 +266,7 @@ Name · Employee ID · **University / Campus** · Department · Capability Manag
 - **Filters** drawer (top-right) — Department, University / Campus, Capability Manager and Status, populated from the real values in this table; a badge shows how many are applied and **Clear filters** resets them.
 - **Export CSV** downloads the currently-filtered list.
 
-> This page **always lists every University-payroll instructor**, even if University rows are hidden from the Master grid by the payroll-visibility control. A **Capability Manager** sees only their own reportees here.`,
-  },
-
-  {
-    id: "training",
-    title: "Training Stats",
-    group: "Instructors",
-    body: `# Training Stats
+> This page **always lists every University-payroll instructor**, even if University rows are hidden from the Master grid by the payroll-visibility control. A **Capability Manager** sees only their own reportees here.`},{id:"training",title:"Training Stats",group:"Instructors",body:`# Training Stats
 
 A per-track grid of every instructor's course progress and health.
 
@@ -438,14 +319,7 @@ Each module cell shows **Completed / In Progress / On Hold / Not Started** with 
 ## Sections & actions
 - **Track dropdown** (in the title), **Search** (name / ID), **All managers** filter, **Export CSV** (current filtered table).
 - **Filter drawer:** Track, Department, Primary / Secondary / Ongoing Track, Ongoing-start range, deadline range, and Primary / Secondary score-% ranges.
-- Manage columns per track under **Settings → Dynamic Fields → Training Stats columns** (a column links to BigQuery by its **Course ID**).`,
-  },
-
-  {
-    id: "roles",
-    title: "Roles",
-    group: "Instructors",
-    body: `# Roles
+- Manage columns per track under **Settings → Dynamic Fields → Training Stats columns** (a column links to BigQuery by its **Course ID**).`},{id:"roles",title:"Roles",group:"Instructors",body:`# Roles
 
 Counts of people by role, derived from Darwinbox — click a role to open it filtered. (Ops Admin / Senior Manager.)
 
@@ -463,14 +337,7 @@ Counts read from **MongoDB** (the hourly-synced master). **Removed people are ne
 ## Sections & actions
 - **Search** a person to see which role they fall under.
 - **Export CSV** of the role counts.
-- **Click a role row** → opens the Master filtered to that role. *Exception:* clicking **Capability Manager** opens the **Capability Manager Distribution** page instead.`,
-  },
-
-  {
-    id: "org",
-    title: "Org Chart",
-    group: "Instructors",
-    body: `# Org Chart
+- **Click a role row** → opens the Master filtered to that role. *Exception:* clicking **Capability Manager** opens the **Capability Manager Distribution** page instead.`},{id:"org",title:"Org Chart",group:"Instructors",body:`# Org Chart
 
 A visual hierarchy: **Organization → Ops Admins → Senior Managers → their Capability Managers → reportee counts.** (Ops Admin / Senior Manager.)
 
@@ -482,14 +349,7 @@ Built from the **Darwinbox directory mirror in MongoDB** (every employee + their
 - **Click a Capability Manager** → opens the Master filtered to exactly their reportees.
 - **Search manager** — highlights and pans to the match (it never filters the tree away).
 - **Expand all / Collapse all**, **wheel-zoom + drag-pan**, **Zoom in / out**, **Reset / fit**, and **Export as PNG**.
-- **Removed people (and their counts) never appear.**`,
-  },
-
-  {
-    id: "contribution",
-    title: "Contribution",
-    group: "Instructors",
-    body: `# Contribution
+- **Removed people (and their counts) never appear.**`},{id:"contribution",title:"Contribution",group:"Instructors",body:`# Contribution
 
 Three rollups over the **same active-instructor population as the Master** — the counts always match the Master's Active tab. Data is from **MongoDB** (hourly-synced); removed people are excluded.
 
@@ -506,14 +366,7 @@ Per campus (read-only): **No. of Instructors**, **University Payroll** count, **
 Every Darwinbox reporting manager with their **Employee ID** and **Reportees count** (read-only). **"View reportees"** opens the Master filtered to that manager's team.
 
 ## Search
-Each page has a search box that filters its list (by contribution value / campus / manager).`,
-  },
-
-  {
-    id: "dashboard",
-    title: "Dashboard",
-    group: "Overview pages",
-    body: `# Dashboard
+Each page has a search box that filters its list (by contribution value / campus / manager).`},{id:"dashboard",title:"Dashboard",group:"Overview pages",body:`# Dashboard
 
 A **role-specific** summary shown on sign-in. Everything is from **MongoDB** (hourly-synced); removed people are excluded from every number.
 
@@ -531,14 +384,7 @@ Exit-alert banner, a pending-approvals banner, and the same KPI/panels (minus th
 - **Panels:** Reportee status, Top performers, **Learners requiring immediate attention** (At Risk + Overdue), Team training health, Upcoming deadlines, and a "Manage all your reportees" link.
 
 ## Instructor
-Profile card, **training-completion ring**, review score, and a journey stepper (Onboarding → In Training → Confirmed). Shows a friendly empty state if no profile is linked yet.`,
-  },
-
-  {
-    id: "tasks",
-    title: "Tasks",
-    group: "Overview pages",
-    body: `# Tasks
+Profile card, **training-completion ring**, review score, and a journey stepper (Onboarding → In Training → Confirmed). Shows a friendly empty state if no profile is linked yet.`},{id:"tasks",title:"Tasks",group:"Overview pages",body:`# Tasks
 
 Assign work to your team and track completion — similar to a lightweight task manager.
 
@@ -564,14 +410,7 @@ Click **+ Assign task** to open the assign panel on the right:
 - Click a row to open the **task detail** page (comments, mark done, view attachments).
 
 ## Notifications
-Assignees receive in-app notifications (and email if enabled) when a task is assigned or reminded.`,
-  },
-
-  {
-    id: "my-stats",
-    title: "My Stats",
-    group: "Overview pages",
-    body: `# My Stats
+Assignees receive in-app notifications (and email if enabled) when a task is assigned or reminded.`},{id:"my-stats",title:"My Stats",group:"Overview pages",body:`# My Stats
 
 Your personal training grid — the same course columns as Training Stats, but **scoped to you only**.
 
@@ -584,14 +423,7 @@ Fields marked by Ops Admin as **“Instructors can edit on My Stats”** appear 
 
 ## Health & progress
 - **% Done** and **Health Status** (On Track / Needs Monitoring / At Risk / Overdue) are computed from your module progress and deadlines — same rules as Training Stats.
-- Use this page to keep your dates and manual fields up to date so your Capability Manager sees accurate health on Training Stats.`,
-  },
-
-  {
-    id: "my-account",
-    title: "My Account & Notifications",
-    group: "Overview pages",
-    body: `# My Account & Notifications
+- Use this page to keep your dates and manual fields up to date so your Capability Manager sees accurate health on Training Stats.`},{id:"my-account",title:"My Account & Notifications",group:"Overview pages",body:`# My Account & Notifications
 
 Personal settings available to **every signed-in user** via the **profile menu** (bottom of the sidebar).
 
@@ -610,14 +442,7 @@ Personal settings available to **every signed-in user** via the **profile menu**
 | **My Account** | Password, 2FA, email prefs |
 | **Notifications** | In-app message history |
 | **Data** | Ops Admin only — raw Darwinbox / BigQuery browser |
-| **Logout** | End your session |`,
-  },
-
-  {
-    id: "requests",
-    title: "Edit Requests",
-    group: "Overview pages",
-    body: `# Edit Requests
+| **Logout** | End your session |`},{id:"requests",title:"Edit Requests",group:"Overview pages",body:`# Edit Requests
 
 Change requests raised by Capability Managers / Senior Managers and **approved by an Ops Admin (or the assigned Senior Manager)**. Data is in **MongoDB**; every decision is written to the Audit Log.
 
@@ -633,14 +458,7 @@ Change requests raised by Capability Managers / Senior Managers and **approved b
 4. The requester can **withdraw** their own request while it is still Pending.
 
 ## History
-A searchable **History** table with a filter drawer (Status / Field / Requested by) and **Export CSV**. Statuses are **Pending / Approved / Rejected**.`,
-  },
-
-  {
-    id: "users",
-    title: "Users",
-    group: "Administration",
-    body: `# Users
+A searchable **History** table with a filter drawer (Status / Field / Requested by) and **Export CSV**. Statuses are **Pending / Approved / Rejected**.`},{id:"users",title:"Users",group:"Administration",body:`# Users
 
 The **login accounts** (Ops Admin only). This is separate from the Instructor Master — it's about **who can sign in**.
 
@@ -665,14 +483,7 @@ Name · Email · Role · **Reports to** · Status · Last login · **Live** (an 
 - **Filters drawer:** Role, Reports to, Status, Live (online / offline).
 - **Add user** · **Invite pending** (sends set-password links to everyone still Pending).
 - **Row menu (⋮):** Send invite · Edit · Delete.
-- In the user modal, when the role is **Capability Manager** you also set **Reports to** (their Senior Manager).`,
-  },
-
-  {
-    id: "removed",
-    title: "Removed",
-    group: "Administration",
-    body: `# Removed people
+- In the user modal, when the role is **Capability Manager** you also set **Reports to** (their Senior Manager).`},{id:"removed",title:"Removed",group:"Administration",body:`# Removed people
 
 A way to **hide** a person the app is showing wrongly (e.g. Darwinbox still lists them in an instructor department by mistake) — **without deleting anything.** (Ops Admin only.)
 
@@ -684,14 +495,7 @@ Removing a person (Master → **row ⋮ → Remove**, or multi-select → **Remo
 ## Restore
 - **Search** removed people by name / Employee ID / email (enriched from both Darwinbox and the database).
 - **Restore** a single person, or tick several and **Restore selected** to bring them back everywhere.
-- A **Source** chip shows whether the person exists in *Darwinbox + DB* or *Database only*.`,
-  },
-
-  {
-    id: "settings",
-    title: "Settings",
-    group: "Administration",
-    body: `# Settings
+- A **Source** chip shows whether the person exists in *Darwinbox + DB* or *Database only*.`},{id:"settings",title:"Settings",group:"Administration",body:`# Settings
 
 Ops-only configuration, organised into tabs. Everything is stored in **MongoDB** (a single settings document); changes take effect within **~30 seconds**. The **Documentation** button (top-right) opens this guide in a new tab.
 
@@ -719,14 +523,7 @@ Per-event on/off toggles, grouped by recipient role. **In-app** notifications an
 - **Certifications:** controls for the public certificates form — see the **Certifications** page.
 
 ## Removed
-See the **Removed people** section.`,
-  },
-
-  {
-    id: "emails",
-    title: "Emails & Notifications",
-    group: "Administration",
-    body: `# Emails & Notifications
+See the **Removed people** section.`},{id:"emails",title:"Emails & Notifications",group:"Administration",body:`# Emails & Notifications
 
 FacultyOps sends two kinds of message: **in-app notifications** (the bell) and **emails**. Every message maps to an **event key**, and each event can be turned on or off — independently for in-app vs email — under **Settings → Notifications & Emails**. A missing toggle means **on** (default).
 
@@ -834,14 +631,7 @@ was approved.
 [ Open in CRM ]
 \`\`\`
 
-> Every email carries the same simple, branded layout — a heading, a short body, an optional action link, and the **"NIAT — FacultyOps"** footer. The instructor's real name, Employee ID and reporting day are substituted in automatically.`,
-  },
-
-  {
-    id: "certifications",
-    title: "Certifications form",
-    group: "Administration",
-    body: `# Certifications form
+> Every email carries the same simple, branded layout — a heading, a short body, an optional action link, and the **"NIAT — FacultyOps"** footer. The instructor's real name, Employee ID and reporting day are substituted in automatically.`},{id:"certifications",title:"Certifications form",group:"Administration",body:`# Certifications form
 
 A **public** form for collecting instructor certificates. It is **fully admin-controllable** — no developer needed to change what it asks.
 
@@ -860,14 +650,7 @@ The form **and** the submissions table render entirely from an admin-editable **
 ## Where uploads go
 - **File fields upload to Google Drive**; only the **Drive link** is stored. All answers are saved to **MongoDB** and mirrored to the legacy columns.
 - If Google Drive isn't configured, the **text answers still save** and a warning is shown.
-- Submissions appear on each instructor's **profile** (Documents), and in the **submissions table** in Settings (its columns follow the schema).`,
-  },
-
-  {
-    id: "exit-alerts",
-    title: "Exit Alerts",
-    group: "Administration",
-    body: `# Exit Alerts
+- Submissions appear on each instructor's **profile** (Documents), and in the **submissions table** in Settings (its columns follow the schema).`},{id:"exit-alerts",title:"Exit Alerts",group:"Administration",body:`# Exit Alerts
 
 Catches upcoming instructor exits from Darwinbox and asks the right Capability Manager to confirm the outcome — so a departure is never missed and the lifecycle stays correct.
 
@@ -891,14 +674,7 @@ The banner opens a modal. Only the **reporting CM** (or an Ops Admin) can finali
 Resolving writes a **Lifecycle-change** audit entry and marks the alert resolved. If the person existed only in Darwinbox, a minimal instructor record is created so the outcome can be recorded.
 
 ## Where it's configured
-**Settings → Operations → Exit Alerts:** the lead-time (days ahead) and the University-names list used in the modal.`,
-  },
-
-  {
-    id: "audit",
-    title: "Audit Log",
-    group: "Administration",
-    body: `# Audit Log
+**Settings → Operations → Exit Alerts:** the lead-time (days ahead) and the University-names list used in the modal.`},{id:"audit",title:"Audit Log",group:"Administration",body:`# Audit Log
 
 An **append-only** record of every change in the system (Ops Admin / Senior Manager). Stored in **MongoDB**.
 
@@ -911,6 +687,4 @@ Automatically whenever a field is edited, a status changes, a request is decided
 ## Sections & actions
 - **Search** across instructor / actor / field / value / reason.
 - **Filters drawer:** Action, Department, Capability Manager, Changed by (role), Date range.
-- **Export CSV** (mirrors the filters).`,
-  },
-];
+- **Export CSV** (mirrors the filters).`}];function H({embedded:s=!1}){var x;const{user:p}=C(),i=s&&p?p.role:null,t=l.useMemo(()=>i?F(i):S,[i]),[h,v]=l.useState(((x=t[0])==null?void 0:x.id)||""),[m,A]=l.useState("");l.useEffect(()=>{var a;t.some(r=>r.id===h)||v(((a=t[0])==null?void 0:a.id)||"")},[t,h]);const g=l.useMemo(()=>{const a=m.trim().toLowerCase();return a?t.filter(r=>(r.title+" "+r.body).toLowerCase().includes(a)):t},[m,t]),D=l.useMemo(()=>{const a=[],r=new Map;for(const o of g)r.has(o.group)||(r.set(o.group,[]),a.push(o.group)),r.get(o.group).push(o);return a.map(o=>({group:o,items:r.get(o)}))},[g]),n=t.find(a=>a.id===h)||t[0],c=n?t.findIndex(a=>a.id===n.id):-1,y=c>0?t[c-1]:null,f=c>=0&&c<t.length-1?t[c+1]:null,b=a=>{var r;v(a),(r=document.getElementById("doc-scroll"))==null||r.scrollTo({top:0})};if(!t.length)return e.jsx("div",{className:"flex min-h-[40vh] items-center justify-center text-sm text-slate-500",children:"No documentation sections are available for your role."});const w=i?O[i]||i:null,k=s?"flex min-h-[calc(100vh-4rem)] w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:min-h-[calc(100vh-2.5rem)]":"flex h-screen w-full flex-col overflow-hidden bg-white";return e.jsx("div",{className:s?"-mx-4 -my-5 sm:-mx-6 lg:-mx-8":"",children:e.jsxs("div",{className:k,children:[e.jsxs("header",{className:"flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5",children:[s&&e.jsx(I,{to:"/app",className:"hidden rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 sm:inline-flex","aria-label":"Back to app",children:e.jsx(T,{className:"h-4 w-4",strokeWidth:1.75})}),e.jsx("span",{className:"flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm",children:e.jsx(E,{className:"h-5 w-5"})}),e.jsxs("div",{className:"min-w-0 flex-1",children:[e.jsx("h1",{className:"truncate text-base font-bold leading-tight text-slate-900 sm:text-lg",children:s?"Documentation":"FacultyOps Documentation"}),e.jsx("p",{className:"truncate text-xs text-slate-500",children:s&&w?`Guide for ${w} — ${t.length} sections`:"How every page works, each field, and where the data comes from."})]}),e.jsxs("span",{className:"hidden shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500 sm:inline",children:[t.length," sections"]})]}),e.jsxs("div",{className:"flex min-h-0 flex-1 overflow-hidden",children:[e.jsxs("aside",{className:"flex w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50/80 sm:w-72",children:[e.jsx("div",{className:"shrink-0 border-b border-slate-200 p-3",children:e.jsxs("div",{className:"relative",children:[e.jsx(N,{className:"pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"}),e.jsx("input",{value:m,onChange:a=>A(a.target.value),placeholder:"Search docs…",className:"h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100"})]})}),e.jsxs("nav",{className:"min-h-0 flex-1 overflow-y-auto p-2.5",children:[D.map(({group:a,items:r})=>e.jsxs("div",{className:"mb-3",children:[e.jsx("div",{className:"px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400",children:a}),r.map(o=>{const M=h===o.id;return e.jsxs("button",{onClick:()=>b(o.id),className:`group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition ${M?"bg-brand-600 font-medium text-white shadow-sm":"text-slate-600 hover:bg-white hover:text-slate-900"}`,children:[e.jsx("span",{className:`h-1.5 w-1.5 shrink-0 rounded-full ${M?"bg-white":"bg-slate-300 group-hover:bg-brand-400"}`}),e.jsx("span",{className:"truncate",children:o.title})]},o.id)})]},a)),!g.length&&e.jsxs("div",{className:"px-3 py-6 text-center text-sm text-slate-400",children:["No section matches “",m,"”."]})]})]}),e.jsx("section",{id:"doc-scroll",className:"min-h-0 flex-1 overflow-y-auto bg-white",children:n&&e.jsxs("div",{className:"mx-auto max-w-5xl px-5 py-6 sm:px-8 lg:px-12",children:[e.jsxs("div",{className:"mb-5 flex items-center gap-1.5 text-xs font-medium text-slate-400",children:[e.jsx("span",{children:n.group}),e.jsx(P,{className:"h-3.5 w-3.5"}),e.jsx("span",{className:"text-slate-600",children:n.title})]}),e.jsx(R,{source:n.body}),e.jsxs("div",{className:"mt-12 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2",children:[y?e.jsxs("button",{onClick:()=>b(y.id),className:"flex flex-col items-start rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:border-brand-300 hover:bg-brand-50/40",children:[e.jsx("span",{className:"text-[11px] font-semibold uppercase tracking-wide text-slate-400",children:"← Previous"}),e.jsx("span",{className:"mt-0.5 text-sm font-medium text-slate-800",children:y.title})]}):e.jsx("span",{}),f?e.jsxs("button",{onClick:()=>b(f.id),className:"flex flex-col items-end rounded-xl border border-slate-200 px-4 py-3 text-right transition hover:border-brand-300 hover:bg-brand-50/40 sm:col-start-2",children:[e.jsx("span",{className:"text-[11px] font-semibold uppercase tracking-wide text-slate-400",children:"Next →"}),e.jsx("span",{className:"mt-0.5 text-sm font-medium text-slate-800",children:f.title})]}):e.jsx("span",{})]})]})})]})]})})}export{H as default};

@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText,
   BarChart3, BookOpen, Award, LogOut, ChevronDown, UserCircle, Settings as SettingsIcon,
-  Database, Menu, X, CheckSquare,
+  Database, Menu, X, CheckSquare, FileText,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
@@ -174,6 +174,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         ))}
       </nav>
+
+      <div className="shrink-0 border-t border-slate-700/80 px-2 py-2">
+        <NavLink
+          to="/app/docs"
+          className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}
+        >
+          <FileText className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
+          <span className="flex-1">Documentation</span>
+        </NavLink>
+      </div>
 
       <div ref={menuRef} className="relative shrink-0 border-t border-slate-700/80 p-3">
         <button
