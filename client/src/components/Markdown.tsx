@@ -89,7 +89,7 @@ export default function Markdown({ source, variant = "docs" }: MarkdownProps) {
       while (i < lines.length && lines[i].trim().startsWith("|")) { rows.push(lines[i].trim().replace(/^\||\|$/g, "").split("|").map((s) => s.trim())); i++; }
       push(
         <div className={`${gapLg} overflow-x-auto rounded-lg border border-slate-200`}>
-          <table className={`w-full ${chat(variant) ? "min-w-[480px] text-xs" : "text-sm"}`}>
+          <table className={`w-full ${chat(variant) ? "min-w-[360px] text-xs" : "text-sm"}`}>
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>{header.map((hd, k) => <th key={k} className={`font-semibold ${chat(variant) ? "px-2.5 py-2" : "px-4 py-2.5"}`}>{inline(hd, `th${k}`)}</th>)}</tr>
             </thead>

@@ -10,10 +10,9 @@ const ALLOWED = new Set(["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"]);
 const SUGGESTIONS_BY_ROLE: Record<string, string[]> = {
   OPS_ADMIN: [
     "How many active instructors are there?",
-    "How many completed React JS?",
+    "Who is Kella Tirupathi Rao?",
+    "How many users by role?",
     "Show certification submissions by department",
-    "Who is at risk on training?",
-    "How many pending requests?",
   ],
   SENIOR_MANAGER: [
     "How many active instructors?",
@@ -118,7 +117,7 @@ export default function DashboardAssistant() {
           role="dialog"
           aria-modal="true"
           aria-label="FacultyOps Assistant"
-          className="fixed z-40 flex flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl bottom-6 right-6 h-[560px] max-h-[calc(100vh-3rem)] w-[560px] max-w-[calc(100vw-2rem)] rounded-2xl max-sm:inset-x-0 max-sm:bottom-0 max-sm:right-0 max-sm:h-[min(100dvh,640px)] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-t-2xl max-sm:rounded-b-none"
+          className="fixed z-40 flex flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl bottom-6 right-6 h-[560px] max-h-[calc(100vh-3rem)] w-[440px] max-w-[calc(100vw-2rem)] rounded-2xl max-sm:inset-x-0 max-sm:bottom-0 max-sm:right-0 max-sm:h-[min(100dvh,640px)] max-sm:max-h-[100dvh] max-sm:w-full max-sm:rounded-t-2xl max-sm:rounded-b-none"
         >
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-brand-600 px-4 py-3 text-white">
             <div className="flex items-center gap-2">

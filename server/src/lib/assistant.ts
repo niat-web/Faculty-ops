@@ -5,7 +5,7 @@
 // instructors" gets THEIR reportees' count — the model can't reach anyone out of scope. Read-only:
 // no tool mutates data, and no SENSITIVE/encrypted field is ever read.
 import { config } from "../config";
-import { MoveHistory, ExitAlert, Certification, EditRequest, EditRequestBatch, Task, Instructor } from "../models";
+import { MoveHistory, ExitAlert, Certification, EditRequest, EditRequestBatch, Task, Instructor, User } from "../models";
 import type { SessionUser } from "./rbac";
 import { resolveCmScopeId, cmRowInScope } from "./cmScope";
 
@@ -204,6 +204,50 @@ export const TOOLS = [
       all: { type: "boolean", description: "Ops Admin only: count/list ALL open tasks, not just mine." },
     } },
   } },
+  { type: "function", function: {
+    name: "search_people",
+    description: "UNIFIED people search — instructors in scope, app Users (staff accounts), AND the Darwinbox employee directory. Use FIRST when a name isn't found via find_instructor, or when the user asks 'who is X' without specifying instructor vs staff.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name, email, or employee ID (partial match ok)." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "find_user",
+    description: "Look up an app User account (Ops Admin, Senior Manager, Capability Manager, Instructor login) by name or email. Returns role and account status — NOT passwords.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name or email." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "list_users",
+    description: "LIST app User accounts. Ops Admin may list all or filter by role; others should pass a search query. Never returns secrets.",
+    parameters: { type: "object", properties: {
+      query: { type: "string", description: "Optional name/email search." },
+      role: { type: "string", enum: ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"], description: "Filter by role." },
+      limit: { type: ["number", "string"], description: "Max rows (default 30, max 50)." },
+    } },
+  } },
+  { type: "function", function: {
+    name: "user_counts",
+    description: "Count app User accounts grouped by role (active / pending password / inactive). Use for 'how many capability managers', 'how many users'.",
+    parameters: { type: "object", properties: {} },
+  } },
+  { type: "function", function: {
+    name: "search_darwinbox",
+    description: "Search the FULL Darwinbox employee directory (all departments — staff, instructors, ops). Use for people who may not be in the instructor master.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name, email, or employee ID." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "instructor_notes",
+    description: "Profile notes for one instructor in scope.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name or Employee ID." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "instructor_skills",
+    description: "Skills ticked on one instructor's profile in scope.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name or Employee ID." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "org_capability_managers",
+    description: "Capability Managers from the org chart with live Darwinbox reportee counts.",
+    parameters: { type: "object", properties: { limit: { type: ["number", "string"], description: "Max rows (default 40)." } } },
+  } },
 ] as const;
 
 // ── Tool execution (pure functions over the pre-scoped set) ─────────────────────────────────────────
@@ -211,10 +255,40 @@ function activeSet(ctx: Ctx) { return ctx.instructors.filter((i) => !i.exited); 
 function pick(ctx: Ctx, query: string): ScopedInst | null {
   const q = norm(query);
   if (!q) return null;
-  return ctx.instructors.find((i) => norm(i.employeeId) === q)
-    || ctx.instructors.find((i) => norm(i.name) === q)
-    || ctx.instructors.find((i) => norm(i.name).includes(q) || norm(i.employeeId).includes(q))
-    || null;
+  const exact = ctx.instructors.find((i) => norm(i.employeeId) === q)
+    || ctx.instructors.find((i) => norm(i.name) === q);
+  if (exact) return exact;
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    const multi = ctx.instructors.find((i) => words.every((w) => norm(i.name).includes(w)));
+    if (multi) return multi;
+  }
+  return ctx.instructors.find((i) => norm(i.name).includes(q) || norm(i.employeeId).includes(q)) || null;
+}
+
+function userOut(u: any) {
+  return {
+    name: u.name, email: u.email, role: u.role,
+    active: u.active !== false,
+    accountStatus: u.active === false ? "Inactive" : u.mustSetPassword ? "Pending password" : "Active",
+    lastLoginAt: u.lastLoginAt || null,
+    lastSeenAt: u.lastSeenAt || null,
+  };
+}
+
+async function findUsers(query: string, limit = 10, role?: string) {
+  const { escapeRegex } = await import("./text");
+  const { removedEmailList } = await import("./removed");
+  const removed = new Set((await removedEmailList()).map((e) => norm(e)));
+  const filter: any = {};
+  if (role) filter.role = role;
+  const q = clean(query);
+  if (q) {
+    const rx = new RegExp(escapeRegex(q), "i");
+    filter.$or = [{ name: rx }, { email: rx }];
+  }
+  const rows = await User.find(filter).select("name email role active mustSetPassword lastLoginAt lastSeenAt").sort({ name: 1 }).limit(limit).lean();
+  return (rows as any[]).filter((u) => !removed.has(norm(u.email)));
 }
 
 // Shared filter used by instructor_counts + list_instructors (same args → same population).
@@ -362,7 +436,7 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
     }
     case "find_instructor": {
       const i = pick(ctx, args.query);
-      if (!i) return { found: false, note: "Not found in your scope. If this person exists, they may report to a different manager (ask the Ops team)." };
+      if (!i) return { found: false, note: "Not found among instructors in your scope. Try search_people to also check app Users and the Darwinbox directory." };
       const row = ctx.masterByEmp.get(norm(i.employeeId));
       return { found: true, instructor: { name: i.name, employeeId: i.employeeId, department: i.department, campus: i.campus, status: i.exited ? "Exited" : "Active", contribution: i.contribution, region: i.region, payroll: i.payroll, trainingPct: i.training, reportingManager: i.reportingManager, darwinbox: darwinboxBlock(row) } };
     }
@@ -505,6 +579,79 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
       }
       return out;
     }
+    case "search_people": {
+      const q = clean(args.query);
+      if (!q) return { error: "query is required." };
+      const nq = norm(q);
+      const words = nq.split(/\s+/).filter(Boolean);
+      const instAll = ctx.instructors.filter((i) => {
+        const nn = norm(i.name);
+        const ne = norm(i.employeeId);
+        if (nn.includes(nq) || ne.includes(nq)) return true;
+        return words.length > 1 && words.every((w) => nn.includes(w));
+      }).slice(0, 10).map((i) => ({ kind: "instructor", name: i.name, employeeId: i.employeeId, department: i.department, status: i.exited ? "Exited" : "Active" }));
+      const users = (await findUsers(q, 10)).map((u) => ({ kind: "app_user", ...userOut(u) }));
+      const { searchDarwinbox } = await import("./staffRoles");
+      const dbx = (await searchDarwinbox(q, 10)).map((p) => ({ kind: "darwinbox", name: p.name, employeeId: p.employeeId, email: p.email, department: p.department, designation: p.designation }));
+      return { query: q, instructors: instAll, users, darwinbox: dbx, scope: ctx.scopeLabel,
+        note: !instAll.length && !users.length && !dbx.length ? "No matches in instructors, Users, or Darwinbox." : undefined };
+    }
+    case "find_user": {
+      const rows = await findUsers(clean(args.query), 5);
+      if (!rows.length) return { found: false, note: "No app User account matches that name or email." };
+      if (rows.length === 1) return { found: true, user: userOut(rows[0]) };
+      return { found: true, multiple: true, users: rows.map(userOut) };
+    }
+    case "list_users": {
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 30));
+      if (ctx.user.role !== "OPS_ADMIN" && !clean(args.query) && !args.role) {
+        return { error: "Provide a search query or role filter to list users." };
+      }
+      const rows = await findUsers(clean(args.query || ""), limit, args.role || undefined);
+      return { total: rows.length, returned: rows.length, users: rows.map(userOut), scope: ctx.user.role === "OPS_ADMIN" ? "all app users" : "search results" };
+    }
+    case "user_counts": {
+      const { removedEmailList } = await import("./removed");
+      const removed = new Set((await removedEmailList()).map((e) => norm(e)));
+      const rows = (await User.find({}).select("role active mustSetPassword email").lean()).filter((u: any) => !removed.has(norm(u.email)));
+      const byRole: Record<string, { total: number; active: number; pending: number; inactive: number }> = {};
+      for (const u of rows as any[]) {
+        const r = u.role || "(unknown)";
+        if (!byRole[r]) byRole[r] = { total: 0, active: 0, pending: 0, inactive: 0 };
+        byRole[r].total++;
+        if (u.active === false) byRole[r].inactive++;
+        else if (u.mustSetPassword) byRole[r].pending++;
+        else byRole[r].active++;
+      }
+      return { totalUsers: rows.length, byRole: Object.entries(byRole).map(([role, c]) => ({ role, ...c })).sort((a, b) => b.total - a.total) };
+    }
+    case "search_darwinbox": {
+      const q = clean(args.query);
+      if (!q) return { error: "query is required." };
+      const { searchDarwinbox } = await import("./staffRoles");
+      const items = await searchDarwinbox(q, 15);
+      return { query: q, count: items.length, people: items.map((p) => ({ name: p.name, employeeId: p.employeeId, email: p.email, department: p.department, designation: p.designation })) };
+    }
+    case "instructor_notes": {
+      const i = pick(ctx, args.query);
+      if (!i?._id) return { found: false, note: "Instructor not found in your scope." };
+      const doc: any = await Instructor.findById(i._id).select("notes").lean();
+      const notes = (doc?.notes || []).slice(-20).map((n: any) => ({ body: n.body, author: n.authorName || "Unknown", when: n.createdAt }));
+      return { found: true, name: i.name, employeeId: i.employeeId, count: notes.length, notes };
+    }
+    case "instructor_skills": {
+      const i = pick(ctx, args.query);
+      if (!i?._id) return { found: false, note: "Instructor not found in your scope." };
+      const doc: any = await Instructor.findById(i._id).select("skills").lean();
+      const skills = Object.entries(doc?.skills || {}).filter(([, v]) => v).map(([k]) => k).sort();
+      return { found: true, name: i.name, employeeId: i.employeeId, skills, count: skills.length };
+    }
+    case "org_capability_managers": {
+      const { getReportingManagers } = await import("./staffRoles");
+      const limit = Math.min(60, Math.max(1, Number(args.limit) || 40));
+      const cms = await getReportingManagers();
+      return { count: cms.length, returned: Math.min(limit, cms.length), managers: cms.slice(0, limit).map((m) => ({ name: m.name, managerEmployeeId: m.managerId, reporteeCount: m.count })) };
+    }
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -526,9 +673,12 @@ When you DO answer with data:
 - IMPORTANT distinction: "UPCOMING exits" / "who is leaving" / "pending exit alerts" → use upcoming_exits (the pending Darwinbox exit alerts, usually a small number). "EXITED" / "how many left / already exited" → use instructor_counts with status=exited. Never answer "upcoming exits" with the exited count.
 - TRAINING questions: use training_summary for averages/on-track/at-risk counts; training_module_stats for a specific module (React, DSA, Python…); training_at_risk_list for WHO is low/at-risk; training_track_breakdown for tech vs math vs english tabs. Data comes from stored Mongo training stats (same as Training Stats page), not live BigQuery.
 - DARWINBOX / HR profile questions (qualification, DOJ, phone, designation, gender, location): use darwinbox_profile or find_instructor (which includes darwinbox fields). Data is synced hourly from Darwinbox into Mongo.
-- CERTIFICATION questions: use certification_summary for totals/by department; certification_lookup for one person's submissions. Scoped to instructors the caller may see.
-- REQUESTS / TASKS: use pending_requests for pending field-change requests; open_tasks for open tasks assigned to or created by the caller. Never use audit logs — audit data is not available here.
-- This assistant covers INSTRUCTORS and related workflows — no raw staff directory or User-account admin data. If asked about the "Ops team" or other staff, say that's not available here and to check Settings → Users.
+- CERTIFICATION questions: use certification_summary for totals/by department; certification_lookup for one person's submissions.
+- REQUESTS / TASKS: use pending_requests for pending field-change requests; open_tasks for open tasks assigned to or created by the caller.
+- USERS / STAFF: use find_user, list_users, or user_counts for app login accounts (Ops Admin, Senior Manager, Capability Manager, Instructor). use search_people or search_darwinbox when a name might be staff OR instructor — search_people checks all three sources at once.
+- PROFILE extras: instructor_notes and instructor_skills for one instructor; org_capability_managers for CM list + reportee counts.
+- AUDIT LOGS are NOT available — never claim audit/history-of-all-changes data. Everything else in FacultyOps (instructors, training, Darwinbox, certifications, users, requests, tasks, exits, org) IS available via tools.
+- When a person isn't found as an instructor, call search_people before saying they don't exist.
 - If the data or person isn't in scope, say so plainly and suggest the owner/source. Never fabricate.
 - If the user is a capability manager, everything is THEIR reportees only — say "your reportees", not "the whole org".
 Keep answers clear and short. Format every reply in Markdown so the UI can render it nicely:

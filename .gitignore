@@ -10,6 +10,7 @@ backups/
 .mongo-memory/
 *.log
 .DS_Store
+server/dist/
 .env.example
 .env.local
 server/.env
