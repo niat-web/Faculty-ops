@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BookOpen, Search, ChevronRight, PlayCircle } from "lucide-react";
+import { Search, ChevronRight, PlayCircle } from "lucide-react";
 import { getDocsForRole } from "../docs";
 import { ROLE_LABEL } from "../auth";
 import Markdown from "../components/Markdown";
+import { Wordmark } from "../components/Logo";
 
 const VALID_ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"] as const;
 type AppRole = (typeof VALID_ROLES)[number];
@@ -23,14 +24,10 @@ function RolePicker() {
   return (
     <div className="flex h-screen flex-col items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <BookOpen className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">FacultyOps Documentation</h1>
-            <p className="text-sm text-slate-500">Choose your role to open the right guide</p>
-          </div>
+        <div className="mb-6">
+          <Wordmark logoSize={36} dark={false} />
+          <p className="mt-3 text-sm font-medium text-slate-700">Documentation</p>
+          <p className="text-sm text-slate-500">Choose your role to open the right guide</p>
         </div>
         <div className="space-y-2">
           {VALID_ROLES.map((role) => (
@@ -130,12 +127,10 @@ export default function DocsPage() {
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-white">
-      <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm">
-          <BookOpen className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-bold leading-tight text-slate-900 sm:text-lg">FacultyOps Documentation</h1>
+      <header className="flex shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
+        <Wordmark logoSize={36} dark={false} className="shrink-0" />
+        <div className="min-w-0 flex-1 border-l border-slate-200 pl-4">
+          <h1 className="truncate text-sm font-semibold leading-tight text-slate-900 sm:text-base">Documentation</h1>
           <p className="truncate text-xs text-slate-500">
             Guide for {roleLabel} — {sections.length} sections
           </p>
