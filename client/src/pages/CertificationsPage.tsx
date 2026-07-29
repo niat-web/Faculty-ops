@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Download, SlidersHorizontal, X, ExternalLink } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { GraduationCap, Download, SlidersHorizontal, X, ExternalLink, Plus, Pencil, Trash2 } from "lucide-react";
 import Papa from "papaparse";
 import { api } from "../api";
 import { useToast } from "../toast";
+import { useConfirm } from "../confirm";
 import { isAbort } from "../hooks";
 import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
+import RowActionsMenu from "../components/RowActionsMenu";
 import { SkeletonRows } from "../components/scaffold";
 import type { CertSchema } from "../certForm";
 
@@ -15,6 +18,8 @@ const EMPTY: Filters = { department: [], from: "", to: "" };
 
 export default function CertificationsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
+  const navigate = useNavigate();
   const [items, setItems] = useState<Cert[] | null>(null);
   const [schema, setSchema] = useState<CertSchema | null>(null);
   const [q, setQ] = useState("");
@@ -24,12 +29,26 @@ export default function CertificationsPage() {
 
   useEffect(() => {
     const ac = new AbortController();
-    api.get("/certifications", { signal: ac.signal })
-      .then((r) => { setItems(r.items || []); setSchema(r.schema || null); })
-      .catch((e) => { if (!isAbort(e)) toast.error(e.message); });
+    load(ac.signal);
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function load(signal?: AbortSignal) {
+    return api.get("/certifications", { signal })
+      .then((r) => { setItems(r.items || []); setSchema(r.schema || null); })
+      .catch((e) => { if (!isAbort(e)) toast.error(e.message); });
+  }
+
+  async function remove(c: Cert) {
+    const label = c.answers?.fullName || c.employeeId || "this submission";
+    if (!(await confirm({ title: "Delete certification?", message: `Delete the certification submission for ${label}? This cannot be undone.`, confirmText: "Delete", danger: true }))) return;
+    try {
+      await api.del(`/certifications/${c.id}`);
+      setItems((prev) => (prev || []).filter((x) => x.id !== c.id));
+      toast.success("Deleted.");
+    } catch (e: any) { toast.error(e.message); }
+  }
 
   const fields = schema?.fields || [];
 
@@ -104,6 +123,7 @@ export default function CertificationsPage() {
           </button>
           {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
           <button onClick={exportCsv} disabled={!items?.length} className="btn btn-ghost btn-sm"><Download className="h-4 w-4" /> Export CSV</button>
+          <Link to="/app/certifications/new" className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add submission</Link>
         </div>
       </div>
 
@@ -117,12 +137,13 @@ export default function CertificationsPage() {
               <tr>
                 {fields.map((f) => <th key={f.id} className="table-head-cell">{f.label}</th>)}
                 <th className="table-head-cell">Submitted</th>
+                <th className="sticky right-0 z-10 table-head-cell border-l border-slate-100 bg-gray-50">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {items === null ? <SkeletonRows rows={10} cols={(fields.length || 6) + 1} cellClass="table-body-cell" /> : <>
+              {items === null ? <SkeletonRows rows={10} cols={(fields.length || 6) + 2} cellClass="table-body-cell" /> : <>
                 {filtered.map((c) => (
-                  <tr key={c.id} className="table-body-row">
+                  <tr key={c.id} className="table-body-row group">
                     {fields.map((f) => {
                       const v = c.answers?.[f.key] || "";
                       return (
@@ -132,9 +153,17 @@ export default function CertificationsPage() {
                       );
                     })}
                     <td className="table-body-cell whitespace-nowrap text-xs text-gray-500">{new Date(c.createdAt).toLocaleString()}</td>
+                    <td className="sticky right-0 z-10 table-body-cell border-l border-slate-100 bg-white px-3 group-hover:bg-slate-50">
+                      <div className="flex justify-end">
+                        <RowActionsMenu actions={[
+                          { label: "Edit", icon: Pencil, onClick: () => navigate(`/app/certifications/${c.id}/edit`) },
+                          { label: "Delete", icon: Trash2, danger: true, onClick: () => remove(c) },
+                        ]} />
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {!filtered.length && <tr><td colSpan={(fields.length || 6) + 1} className="table-body-cell py-16 text-center text-gray-400">No submissions match your search / filters.</td></tr>}
+                {!filtered.length && <tr><td colSpan={(fields.length || 6) + 2} className="table-body-cell py-16 text-center text-gray-400">No submissions match your search / filters.</td></tr>}
               </>}
             </tbody>
           </table>

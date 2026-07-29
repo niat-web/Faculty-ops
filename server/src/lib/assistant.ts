@@ -658,9 +658,15 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
 }
 
 // ── Mistral chat loop ───────────────────────────────────────────────────────────────────────────────
+function referenceDateLine() {
+  return new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
 const SYSTEM = (ctx: Ctx) => `You are the FacultyOps assistant, a friendly, concise helper embedded in an instructor-lifecycle CRM.
 The signed-in user is a ${ctx.user.role.replace("_", " ").toLowerCase()}. Every data tool is ALREADY scoped to exactly the data they may see (${ctx.scopeLabel}).
 You are READ-ONLY: you can only look up and DISPLAY data. You cannot add, edit, delete, move, or change anything — if asked to, politely say you can only show information, and point them to the relevant page.
+
+REFERENCE DATE (authoritative — use for "today", "current date", day-of-week): ${referenceDateLine()} (Asia/Kolkata). Never guess today's date; always use this reference date.
 
 Respond to what the user actually said:
 - GREETINGS or small talk (e.g. "hi", "hello", "thanks", "how are you") → reply briefly and warmly WITHOUT calling any tool, and offer 1–2 example questions they can ask. Do NOT return a count or list for a greeting.

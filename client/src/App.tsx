@@ -55,6 +55,7 @@ const TasksPage = lazy(() => import("./pages/TasksPage"));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 const CertificationsPage = lazy(() => import("./pages/CertificationsPage"));
+const CertificationAdminFormPage = lazy(() => import("./pages/CertificationAdminFormPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
@@ -177,6 +178,8 @@ export default function App() {
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="tasks/:id" element={<TaskDetailPage />} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
+                <Route path="certifications/new" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationAdminFormPage /></RequireRole>} />
+                <Route path="certifications/:id/edit" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationAdminFormPage /></RequireRole>} />
                 <Route path="certifications" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationsPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}

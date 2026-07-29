@@ -140,6 +140,30 @@ router.get("/", requireUser(), opsOnly, async (_req, res) => {
   res.json({ schema: await getCertSchema(), items: rows.map(serialize) });
 });
 
+// Ops Admin — Darwinbox employee search (no public form token required).
+router.get("/admin/employee-search", requireUser(), opsOnly, async (req, res) => {
+  const { searchDarwinbox } = await import("../lib/staffRoles");
+  const items = await searchDarwinbox(clean(req.query.q), 20);
+  res.json({ items: items.map((p) => ({ employeeId: p.employeeId, name: p.name, email: p.email, department: p.department })) });
+});
+
+// Ops Admin — create a submission manually (same schema as the public form).
+router.post("/admin", requireUser(), opsOnly, uploadAny, async (req, res) => {
+  const { getCertSchema } = await import("../lib/settings");
+  const { validateCertSubmit } = await import("../lib/certSchema");
+  const schema = await getCertSchema();
+  try {
+    const { answers, fileByKey, warning } = await buildAnswersFromRequest(schema, req.body || {}, (req.files || []) as any[]);
+    const verr = validateCertSubmit(schema, answers, new Set(fileByKey.keys()));
+    if (verr) return res.status(400).json({ error: verr });
+    const legacy = legacyFromAnswers(answers);
+    const doc = await Certification.create({ employeeId: answers.employeeId || "NA", ...legacy, answers });
+    res.json({ ok: true, id: String(doc._id), warning });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || "Save failed." });
+  }
+});
+
 // Submissions for one employee (staff, scoped) — for the profile Documents section. Each item carries a
 // `files` list (label + Drive url) for the schema's FILE fields, so the profile shows them as links.
 router.get("/for-employee/:employeeId", requireUser(), staffOnly, async (req, res) => {
@@ -164,13 +188,87 @@ router.get("/for-employee/:employeeId", requireUser(), staffOnly, async (req, re
   res.json({ items });
 });
 
+// Ops Admin — one submission (for edit form).
+router.get("/:id", requireUser(), opsOnly, async (req, res) => {
+  if (req.params.id === "admin") return res.status(404).json({ error: "Not found" });
+  const { getCertSchema } = await import("../lib/settings");
+  const doc: any = await Certification.findById(req.params.id).lean();
+  if (!doc) return res.status(404).json({ error: "Not found" });
+  res.json({ item: serialize(doc), schema: await getCertSchema() });
+});
+
+// Ops Admin — update a submission.
+router.patch("/:id", requireUser(), opsOnly, uploadAny, async (req, res) => {
+  const { getCertSchema } = await import("../lib/settings");
+  const { validateCertSubmit } = await import("../lib/certSchema");
+  const doc: any = await Certification.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: "Not found" });
+  const schema = await getCertSchema();
+  const existing = serialize(doc).answers;
+  try {
+    const { answers, fileByKey, warning } = await buildAnswersFromRequest(schema, req.body || {}, (req.files || []) as any[], existing);
+    const verr = validateCertSubmit(schema, answers, new Set(fileByKey.keys()));
+    if (verr) return res.status(400).json({ error: verr });
+    const legacy = legacyFromAnswers(answers);
+    doc.employeeId = answers.employeeId || "NA";
+    for (const [k, v] of Object.entries(legacy)) (doc as any)[k] = v;
+    doc.answers = answers;
+    doc.markModified("answers");
+    await doc.save();
+    res.json({ ok: true, id: String(doc._id), warning });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || "Update failed." });
+  }
+});
+
+// Ops Admin — delete a submission.
+router.delete("/:id", requireUser(), opsOnly, async (req, res) => {
+  const doc = await Certification.findByIdAndDelete(req.params.id);
+  if (!doc) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
 // Flatten a Certification doc into { id, employeeId, createdAt, answers }. Merges the legacy fixed
 // columns (older submissions) UNDER the schema answers map (newer submissions), so both render the same.
 function serialize(c: any) {
   const legacy: Record<string, string> = {};
   for (const k of LEGACY_KEYS) { const v = c[k]; if (v) legacy[k] = String(v); }
-  const answers = { ...legacy, ...(c.answers || {}) };
+  const answers = { ...legacy, ...(c.answers instanceof Map ? Object.fromEntries(c.answers.entries()) : (c.answers || {})) };
   return { id: String(c._id), employeeId: c.employeeId || answers.employeeId || "", createdAt: c.createdAt, answers };
+}
+
+async function buildAnswersFromRequest(schema: any, body: any, files: any[], existing: Record<string, string> = {}) {
+  const fileByKey = new Map<string, any>();
+  for (const f of files) if (f?.fieldname && !fileByKey.has(f.fieldname)) fileByKey.set(f.fieldname, f);
+  const answers: Record<string, string> = { ...existing };
+  let warning: string | undefined;
+  for (const field of schema.fields) {
+    if (field.type === "FILE") {
+      const f = fileByKey.get(field.key);
+      if (f) {
+        const issue = validateUploadBuffer(f.buffer, f.mimetype || "");
+        if (issue) throw new Error(`${field.label}: ${issue}`);
+        try {
+          const { link } = await uploadCertificate(f.buffer, f.originalname || field.key, f.mimetype || "application/octet-stream");
+          answers[field.key] = link;
+        } catch (e: any) {
+          warning = `Details were saved, but a file upload failed: ${e?.message || "Drive error"}.`;
+        }
+      }
+      continue;
+    }
+    const v = clean(body[field.key]);
+    if (v) answers[field.key] = v;
+    else if (!(field.key in body) && existing[field.key]) answers[field.key] = existing[field.key];
+    else if (field.key in body && !v) delete answers[field.key];
+  }
+  return { answers, fileByKey, warning };
+}
+
+function legacyFromAnswers(answers: Record<string, string>) {
+  const legacy: Record<string, any> = {};
+  for (const [k, v] of Object.entries(answers)) if (LEGACY_KEYS.has(k)) legacy[k] = v;
+  return legacy;
 }
 
 export default router;
