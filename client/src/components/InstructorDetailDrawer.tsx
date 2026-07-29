@@ -41,10 +41,8 @@ export default function InstructorDetailDrawer({ instructorId, onClose, onChange
   const [editField, setEditField] = useState<any>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [editKey, setEditKey] = useState<string | null>(null);
-  const [active, setActive] = useState<string>("");
   const inlineRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   // In batch-edit mode, CM/SM may edit ANY field freely (buffered, no per-field request modal).
   const batchMode = batch.active;
@@ -122,12 +120,6 @@ export default function InstructorDetailDrawer({ instructorId, onClose, onChange
     try { await api.del(`/requests/${r.id}`); toast.success("Request deleted."); reload(); } catch (e: any) { toast.error(e.message || "Failed to delete"); }
   }
 
-  function scrollTo(key: string) {
-    const el = sectionRefs.current[key];
-    if (el && scrollRef.current) scrollRef.current.scrollTo({ top: el.offsetTop - 12, behavior: "smooth" });
-    setActive(key);
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
@@ -148,7 +140,7 @@ export default function InstructorDetailDrawer({ instructorId, onClose, onChange
             canEditFields={canEditFields} canRequest={canRequest} canAudit={canAudit}
             editKey={editKey} setEditKey={setEditKey} inlineRef={inlineRef} saveInline={saveInline} startEdit={startEdit}
             withdrawRequest={withdrawRequest} setStatusOpen={setStatusOpen} rehire={rehire} remove={remove}
-            onClose={onClose} reload={reload} scrollRef={scrollRef} sectionRefs={sectionRefs} active={active} scrollTo={scrollTo}
+            onClose={onClose} reload={reload} scrollRef={scrollRef}
             batchMode={batchMode} batch={batch} navIds={navIds} navIdx={navIdx} onNavigate={onNavigate}
           />
         )}
@@ -175,7 +167,7 @@ function DrawerHeader({ title, subtitle, right, onClose }: { title: string; subt
   );
 }
 
-function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canRequest, canAudit, editKey, setEditKey, inlineRef, saveInline, startEdit, withdrawRequest, setStatusOpen, rehire, remove, onClose, reload, scrollRef, sectionRefs, active, scrollTo, batchMode, batch, navIds, navIdx, onNavigate }: any) {
+function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canRequest, canAudit, editKey, setEditKey, inlineRef, saveInline, startEdit, withdrawRequest, setStatusOpen, rehire, remove, onClose, reload, scrollRef, batchMode, batch, navIds, navIdx, onNavigate }: any) {
   const inst = p.instructor || {};
   // Buffered (unsaved) edit for a field in batch mode, if any.
   const buffered = (key: string) => (batchMode ? batch.getEdit(instructorId, key) : undefined);
@@ -194,7 +186,6 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
   ];
   const label = (t: string) => modLabel[t] || ({ SKILLS: "Skills", LIFECYCLE: "Lifecycle & Status", EXIT: "Exit / Offboarding", NOTES: "Notes", DOCUMENTS: "Documents", HISTORY: "History", MAILS: "Mails", AUDIT: "Audit" } as any)[t] || t;
   const pendingByKey: Record<string, any> = Object.fromEntries((p.pendingRequests || []).map((r: any) => [r.fieldKey, r]));
-  const setRef = (key: string) => (el: HTMLElement | null) => { sectionRefs.current[key] = el; };
 
   return (
     <>
@@ -231,17 +222,10 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
         </div>
       )}
 
-      {/* Section jump-bar (anchors, not separate menus — every section lives on this one page). */}
-      <div className="flex flex-wrap gap-1.5 border-b border-slate-200 bg-white px-6 py-2.5">
-        {sections.map((s) => (
-          <button key={s} onClick={() => scrollTo(s)} className={`rounded-full px-3 py-1 text-xs font-medium transition ${active === s ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label(s)}</button>
-        ))}
-      </div>
-
       {/* All sections stacked vertically in one scroll area. */}
       <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
         {moduleSections.map((m: string) => (
-          <section key={m} ref={setRef(m)} className="card p-6">
+          <section key={m} className="card p-6">
             <h3 className="mb-4 font-semibold text-slate-800">{label(m)}</h3>
             <dl className="max-w-3xl divide-y divide-slate-100">
               {(p.byModule?.[m] || []).map((f: any) => {
@@ -288,9 +272,9 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
           </section>
         ))}
 
-        {sections.includes("SKILLS") && <div ref={setRef("SKILLS")}><SkillsTab skills={p.skills} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
+        {sections.includes("SKILLS") && <div><SkillsTab skills={p.skills} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
 
-        <section ref={setRef("LIFECYCLE")} className="card p-6">
+        <section className="card p-6">
           <h3 className="mb-4 font-semibold text-slate-800">Lifecycle & Status</h3>
           <ul className="space-y-3">
             {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
@@ -299,12 +283,12 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
           </ul>
         </section>
 
-        {sections.includes("EXIT") && p.exit && <div ref={setRef("EXIT")}><ExitTab exit={p.exit} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
-        <div ref={setRef("NOTES")}><NotesTab notes={inst.notes} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>
-        {sections.includes("DOCUMENTS") && p.documents !== null && <div ref={setRef("DOCUMENTS")}><DocumentsTab documents={p.documents} instructorId={instructorId} employeeId={inst.employeeId} canEdit={canEdit} onChange={reload} /></div>}
-        <div ref={setRef("HISTORY")}><HistoryTab instructorId={instructorId} /></div>
-        {sections.includes("MAILS") && <div ref={setRef("MAILS")}><MailsTab instructorId={instructorId} canSend={canEdit} /></div>}
-        {sections.includes("AUDIT") && <div ref={setRef("AUDIT")}><AuditTab instructorId={instructorId} /></div>}
+        {sections.includes("EXIT") && p.exit && <div><ExitTab exit={p.exit} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>}
+        <div><NotesTab notes={inst.notes} instructorId={instructorId} canEdit={canEdit} onChange={reload} /></div>
+        {sections.includes("DOCUMENTS") && p.documents !== null && <div><DocumentsTab documents={p.documents} instructorId={instructorId} employeeId={inst.employeeId} canEdit={canEdit} onChange={reload} /></div>}
+        <div><HistoryTab instructorId={instructorId} /></div>
+        {sections.includes("MAILS") && <div><MailsTab instructorId={instructorId} canSend={canEdit} /></div>}
+        {sections.includes("AUDIT") && <div><AuditTab instructorId={instructorId} /></div>}
       </div>
     </>
   );

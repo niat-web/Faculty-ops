@@ -5,18 +5,25 @@
 // instructors" gets THEIR reportees' count — the model can't reach anyone out of scope. Read-only:
 // no tool mutates data, and no SENSITIVE/encrypted field is ever read.
 import { config } from "../config";
-import { MoveHistory, ExitAlert } from "../models";
+import { MoveHistory, ExitAlert, Certification, EditRequest, EditRequestBatch, Task, Instructor } from "../models";
 import type { SessionUser } from "./rbac";
 import { resolveCmScopeId, cmRowInScope } from "./cmScope";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// Only NON-sensitive value keys are ever surfaced (never encrypted SENSITIVE fields).
-const SAFE_VALUE_KEYS = ["department", "contribution", "contribution_region", "payroll_entity", "primary_pct", "reporting_manager", "reporting_manager_employee_id", "workspace"];
 
 type ScopedInst = {
   _id: string; employeeId: string; name: string; status: string; campus: string; joinDate: Date | null;
   department: string; contribution: string; region: string; payroll: string; training: number | null;
   reportingManager: string; exited: boolean;
+};
+type TrainingInst = {
+  employeeId: string; name: string; department: string; contribution: string;
+  track: string | null; primaryPct: number | null; secondaryPct: number | null;
+  primaryHealth: string; secondaryHealth: string; moduleStatus: Record<string, string>;
+};
+type Ctx = {
+  user: SessionUser; scopeLabel: string; instructors: ScopedInst[];
+  masterByEmp: Map<string, Record<string, any>>; _training?: Map<string, TrainingInst>;
 };
 
 // Parse the Darwinbox DOJ (real date of joining) into a LOCAL date so month grouping isn't shifted by
@@ -29,11 +36,20 @@ function parseJoin(doj: any): Date | null {
   const t = Date.parse(s);
   return isNaN(t) ? null : new Date(t);
 }
-type Ctx = { user: SessionUser; scopeLabel: string; instructors: ScopedInst[] };
 
 const clean = (v: any) => String(v ?? "").trim();
 const stripRm = (s: any) => clean(s).replace(/\s*\(NW[^)]*\)\s*$/i, "").replace(/\s+/g, " ").trim();
 const norm = (s: any) => clean(s).toLowerCase();
+const has = (hay: string, needle: any) => needle ? norm(hay).includes(norm(needle)) : true;
+const moduleBucket = (status: string) => {
+  const s = norm(status);
+  if (!s) return "not_started";
+  if (s.includes("complet")) return "completed";
+  if (s.includes("progress")) return "in_progress";
+  if (s.includes("hold")) return "on_hold";
+  if (s.includes("not started")) return "not_started";
+  return "other";
+};
 
 // Load the caller's scoped instructor set (the ONLY data the assistant can ever see). Uses the SAME source
 // and scoping as the Instructor Master, so the assistant's numbers always match what the user sees there:
@@ -55,20 +71,22 @@ export async function loadScopedContext(user: SessionUser): Promise<Ctx> {
   if (user.role === "CAPABILITY_MANAGER") cmScopeId = await resolveCmScopeId(user);
   const inScope = (r: any) => cmRowInScope(r, cmScopeId, user.id);
 
-  const instructors: ScopedInst[] = rows
-    .filter((r) => inScope(r) && !deptExcluded(r.department))
-    .map((r) => {
-      const pct = Number(r.primary_pct);
-      return {
-        _id: String(r.id || ""), employeeId: r.employeeId, name: r.name || "", status: String(r.status || ""),
-        campus: clean(r.campus), joinDate: parseJoin(r.doj), // real Date of Joining (Darwinbox), not the DB import date
-        department: clean(r.department), contribution: clean(r.contribution), region: clean(r.contribution_region),
-        payroll: clean(r.payroll_entity), training: r.primary_pct !== "" && r.primary_pct != null && !isNaN(pct) ? pct : null,
-        reportingManager: stripRm(r.reporting_manager), exited: !!r.exited,
-      };
+  const masterByEmp = new Map<string, Record<string, any>>();
+  const instructors: ScopedInst[] = [];
+  for (const r of rows) {
+    if (!inScope(r) || deptExcluded(r.department)) continue;
+    masterByEmp.set(norm(r.employeeId), r);
+    const pct = Number(r.primary_pct);
+    instructors.push({
+      _id: String(r.id || ""), employeeId: r.employeeId, name: r.name || "", status: String(r.status || ""),
+      campus: clean(r.campus), joinDate: parseJoin(r.doj),
+      department: clean(r.department), contribution: clean(r.contribution), region: clean(r.contribution_region),
+      payroll: clean(r.payroll_entity), training: r.primary_pct !== "" && r.primary_pct != null && !isNaN(pct) ? pct : null,
+      reportingManager: stripRm(r.reporting_manager), exited: !!r.exited,
     });
+  }
   const scopeLabel = user.role === "CAPABILITY_MANAGER" ? "your reportees" : "the organization";
-  return { user, scopeLabel, instructors };
+  return { user, scopeLabel, instructors, masterByEmp };
 }
 
 // ── Tool schema (OpenAI/Mistral function-calling format) ───────────────────────────────────────────
@@ -132,6 +150,60 @@ export const TOOLS = [
     description: "Why/when an instructor changed University or Capability Manager (team). Use for 'why did X move teams'. Returns the recorded change history.",
     parameters: { type: "object", properties: { query: { type: "string", description: "Name or Employee ID." } }, required: ["query"] },
   } },
+  { type: "function", function: {
+    name: "darwinbox_profile",
+    description: "Darwinbox HR profile for ONE instructor in scope: phone, DOJ, designation, qualification, gender, location, reporting manager, exit date. Use for 'what is X's qualification/DOJ/designation/phone'.",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name or Employee ID." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "training_module_stats",
+    description: "Training module completion stats in scope — count how many instructors have a given module Completed / In Progress / Not Started. Use for 'how many completed React JS', 'DSA in progress count'.",
+    parameters: { type: "object", properties: {
+      module: { type: "string", description: "Module name, partial match (e.g. 'React', 'DSA', 'Python')." },
+      status: { type: "string", enum: ["completed", "in_progress", "on_hold", "not_started", "all"], description: "Filter by module status bucket (default all)." },
+      department: { type: "string", description: "Optional department filter, partial match." },
+      contribution: { type: "string", description: "Optional contribution/batch filter, partial match." },
+    }, required: ["module"] },
+  } },
+  { type: "function", function: {
+    name: "training_at_risk_list",
+    description: "LIST active instructors with low training completion (primary % <= 25) or At Risk / Needs Monitoring / Overdue health status. Use for 'who is at risk', 'low training list'.",
+    parameters: { type: "object", properties: {
+      department: { type: "string", description: "Optional department filter." },
+      contribution: { type: "string", description: "Optional contribution filter." },
+      limit: { type: ["number", "string"], description: "Max rows (default 30, max 50)." },
+    } },
+  } },
+  { type: "function", function: {
+    name: "training_track_breakdown",
+    description: "Count active instructors in scope per training track tab (tech, math_aptitude, english). Use for 'how many on tech track', training track distribution.",
+    parameters: { type: "object", properties: {} },
+  } },
+  { type: "function", function: {
+    name: "certification_summary",
+    description: "Certification form submissions in scope — total count and breakdown by department. Use for 'how many certification submissions', 'certifications by department'. Ops Admin sees all; others see only their scoped instructors' submissions.",
+    parameters: { type: "object", properties: {
+      department: { type: "string", description: "Optional department filter, partial match." },
+    } },
+  } },
+  { type: "function", function: {
+    name: "certification_lookup",
+    description: "Look up certification submissions for ONE instructor in scope by name or Employee ID. Returns submission dates and key answers (degree, domain, qualification).",
+    parameters: { type: "object", properties: { query: { type: "string", description: "Name or Employee ID." } }, required: ["query"] },
+  } },
+  { type: "function", function: {
+    name: "pending_requests",
+    description: "Pending field-change requests visible to the caller (NOT audit logs). Use for 'how many pending requests', 'my pending requests'.",
+    parameters: { type: "object", properties: { list: { type: "boolean", description: "true to return request details, not just the count." } } },
+  } },
+  { type: "function", function: {
+    name: "open_tasks",
+    description: "Open tasks assigned to (or created by) the caller. Use for 'how many open tasks', 'my tasks'. Ops Admin may pass all=true to count all open tasks.",
+    parameters: { type: "object", properties: {
+      list: { type: "boolean", description: "true to return task titles + due dates." },
+      all: { type: "boolean", description: "Ops Admin only: count/list ALL open tasks, not just mine." },
+    } },
+  } },
 ] as const;
 
 // ── Tool execution (pure functions over the pre-scoped set) ─────────────────────────────────────────
@@ -147,7 +219,6 @@ function pick(ctx: Ctx, query: string): ScopedInst | null {
 
 // Shared filter used by instructor_counts + list_instructors (same args → same population).
 function filterInstructors(ctx: Ctx, args: any): ScopedInst[] {
-  const has = (hay: string, needle: any) => needle ? norm(hay).includes(norm(needle)) : true;
   let set = args.status === "all" ? ctx.instructors : args.status === "exited" ? ctx.instructors.filter((i) => i.exited) : activeSet(ctx);
   if (args.contribution) set = set.filter((i) => has(i.contribution, args.contribution));
   if (args.department) set = set.filter((i) => has(i.department, args.department));
@@ -160,6 +231,77 @@ function filterInstructors(ctx: Ctx, args: any): ScopedInst[] {
     if (mi >= 0) set = set.filter((i) => i.joinDate && i.joinDate.getMonth() === mi && i.joinDate.getFullYear() === yr);
   }
   return set;
+}
+
+function darwinboxBlock(row: Record<string, any> | undefined) {
+  if (!row) return {};
+  const raw: Record<string, string | undefined> = {
+    email: clean(row.email), phone: clean(row.phone), doj: clean(row.doj), department: clean(row.department),
+    designation: clean(row.designation), qualification: clean(row.qualification), gender: clean(row.gender),
+    nativeLanguage: clean(row.native_language), state: clean(row.emp_state), city: clean(row.emp_city),
+    district: clean(row.emp_district), workspace: clean(row.workspace),
+    reportingManager: stripRm(row.reporting_manager), exitDate: clean(row.exit_date),
+  };
+  return Object.fromEntries(Object.entries(raw).filter(([, v]) => v));
+}
+
+function scopedEmpIds(ctx: Ctx) { return new Set(activeSet(ctx).map((i) => norm(i.employeeId))); }
+
+async function ensureTraining(ctx: Ctx): Promise<Map<string, TrainingInst>> {
+  if (ctx._training) return ctx._training;
+  const { TrainingColumn } = await import("../models");
+  const { seedTrainingColumns, tabForInstructor } = await import("./training");
+  const { computeSummary, summaryStored } = await import("./trainingScore");
+  await seedTrainingColumns();
+  const cols = await TrainingColumn.find({ archivedAt: null }).sort({ track: 1, order: 1 }).lean();
+  const liveTrackKeys: Record<string, string[]> = {};
+  for (const c of cols as any[]) if (c.storage === "module") (liveTrackKeys[c.track] ||= []).push(c.key);
+
+  const active = activeSet(ctx);
+  const empIds = active.map((i) => i.employeeId).filter(Boolean);
+  const docs = empIds.length ? await Instructor.find({ employeeId: { $in: empIds } }).select("employeeId name values moduleStatus").lean() : [];
+  const instByEmp = Object.fromEntries(active.map((i) => [norm(i.employeeId), i]));
+  const map = new Map<string, TrainingInst>();
+  for (const d of docs as any[]) {
+    const key = norm(d.employeeId);
+    const inst = instByEmp[key];
+    if (!inst) continue;
+    const values = d.values || {};
+    const ms = Object.fromEntries(Object.entries(d.moduleStatus || {}).map(([k, v]) => [k, String(v ?? "")]));
+    const track = tabForInstructor(values, ms, liveTrackKeys);
+    if (!track) continue;
+    const stored = summaryStored(computeSummary(values, ms, track));
+    const primaryPct = stored.primary_pct !== "" ? Number(stored.primary_pct) : null;
+    const secondaryPct = stored.secondary_pct !== "" ? Number(stored.secondary_pct) : null;
+    map.set(key, {
+      employeeId: d.employeeId, name: inst.name || d.name || "", department: inst.department, contribution: inst.contribution,
+      track, primaryPct: primaryPct != null && !isNaN(primaryPct) ? primaryPct : null,
+      secondaryPct: secondaryPct != null && !isNaN(secondaryPct) ? secondaryPct : null,
+      primaryHealth: stored.health_status || "", secondaryHealth: stored.secondary_health_status || "",
+      moduleStatus: ms,
+    });
+  }
+  ctx._training = map;
+  return map;
+}
+
+function certAnswers(c: any): Record<string, string> {
+  const legacy: Record<string, string> = {};
+  for (const k of ["fullName", "email", "department", "capabilityManagerName", "degreeType", "highestQualification", "domain", "yearOfPassing"]) {
+    if (c[k]) legacy[k] = String(c[k]);
+  }
+  const ans = c.answers instanceof Map ? Object.fromEntries(c.answers.entries()) : (c.answers || {});
+  return { ...legacy, ...ans };
+}
+
+async function scopedCertifications(ctx: Ctx) {
+  const empIds = scopedEmpIds(ctx);
+  const rows = await Certification.find().sort({ createdAt: -1 }).limit(5000).lean();
+  return (rows as any[]).filter((c) => {
+    const e = norm(c.employeeId);
+    if (!e || e === "na") return ctx.user.role === "OPS_ADMIN";
+    return empIds.has(e);
+  });
 }
 
 export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
@@ -221,7 +363,8 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
     case "find_instructor": {
       const i = pick(ctx, args.query);
       if (!i) return { found: false, note: "Not found in your scope. If this person exists, they may report to a different manager (ask the Ops team)." };
-      return { found: true, instructor: { name: i.name, employeeId: i.employeeId, department: i.department, campus: i.campus, status: i.exited ? "Exited" : "Active", contribution: i.contribution, region: i.region, payroll: i.payroll, trainingPct: i.training, reportingManager: i.reportingManager } };
+      const row = ctx.masterByEmp.get(norm(i.employeeId));
+      return { found: true, instructor: { name: i.name, employeeId: i.employeeId, department: i.department, campus: i.campus, status: i.exited ? "Exited" : "Active", contribution: i.contribution, region: i.region, payroll: i.payroll, trainingPct: i.training, reportingManager: i.reportingManager, darwinbox: darwinboxBlock(row) } };
     }
     case "move_history": {
       const i = pick(ctx, args.query);
@@ -233,6 +376,134 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
         university: h.universityFrom || h.universityTo ? { from: h.universityFrom || "—", to: h.universityTo || "—" } : undefined,
         capabilityManager: h.managerFrom || h.managerTo ? { from: h.managerFrom || "—", to: h.managerTo || "—" } : undefined,
       })) };
+    }
+    case "darwinbox_profile": {
+      const i = pick(ctx, args.query);
+      if (!i) return { found: false, note: "Not found in your scope." };
+      const row = ctx.masterByEmp.get(norm(i.employeeId));
+      const db = darwinboxBlock(row);
+      if (!Object.keys(db).length) return { found: true, name: i.name, employeeId: i.employeeId, note: "No Darwinbox profile fields stored for this person yet (may sync on the next hourly update)." };
+      return { found: true, name: i.name, employeeId: i.employeeId, darwinbox: db, scope: ctx.scopeLabel };
+    }
+    case "training_module_stats": {
+      const training = await ensureTraining(ctx);
+      const modNeedle = norm(args.module);
+      if (!modNeedle) return { error: "module name is required." };
+      const statusFilter = args.status && args.status !== "all" ? String(args.status) : null;
+      let matched = 0;
+      const buckets: Record<string, number> = { completed: 0, in_progress: 0, on_hold: 0, not_started: 0, other: 0 };
+      const moduleKeys = new Set<string>();
+      for (const t of training.values()) {
+        if (args.department && !has(t.department, args.department)) continue;
+        if (args.contribution && !has(t.contribution, args.contribution)) continue;
+        const hit = Object.entries(t.moduleStatus).find(([k]) => norm(k).includes(modNeedle));
+        if (!hit) continue;
+        moduleKeys.add(hit[0]);
+        const bucket = moduleBucket(hit[1]);
+        buckets[bucket] = (buckets[bucket] || 0) + 1;
+        if (!statusFilter || bucket === statusFilter) matched++;
+      }
+      return {
+        moduleQuery: args.module, matchedModules: [...moduleKeys].slice(0, 5), count: matched, breakdown: buckets,
+        statusFilter: statusFilter || "all", instructorsWithTrainingRows: training.size, scope: ctx.scopeLabel,
+        note: !moduleKeys.size ? `No module matching "${args.module}" found in scope.` : undefined,
+      };
+    }
+    case "training_at_risk_list": {
+      const training = await ensureTraining(ctx);
+      const limit = Math.min(50, Math.max(1, Number(args.limit) || 30));
+      const risky = [...training.values()].filter((t) => {
+        if (args.department && !has(t.department, args.department)) return false;
+        if (args.contribution && !has(t.contribution, args.contribution)) return false;
+        const low = t.primaryPct != null && t.primaryPct <= 25;
+        const health = norm(t.primaryHealth);
+        const badHealth = health.includes("risk") || health.includes("overdue") || health.includes("monitoring");
+        return low || badHealth;
+      }).sort((a, b) => (a.primaryPct ?? 0) - (b.primaryPct ?? 0));
+      const rows = risky.slice(0, limit).map((t) => ({
+        name: t.name, employeeId: t.employeeId, department: t.department, track: t.track,
+        primaryPct: t.primaryPct, health: t.primaryHealth || "—",
+      }));
+      return { total: risky.length, returned: rows.length, truncated: risky.length > rows.length, instructors: rows, scope: ctx.scopeLabel };
+    }
+    case "training_track_breakdown": {
+      const training = await ensureTraining(ctx);
+      const map: Record<string, number> = { tech: 0, math_aptitude: 0, english: 0, other: 0 };
+      for (const t of training.values()) {
+        const k = t.track && map[t.track] != null ? t.track : "other";
+        map[k] = (map[k] || 0) + 1;
+      }
+      return { tracks: Object.entries(map).map(([track, count]) => ({ track, count })).sort((a, b) => b.count - a.count), withTrainingRows: training.size, scope: ctx.scopeLabel };
+    }
+    case "certification_summary": {
+      const rows = await scopedCertifications(ctx);
+      const filtered = args.department ? rows.filter((c) => has(certAnswers(c).department || c.department || "", args.department)) : rows;
+      const byDept: Record<string, number> = {};
+      for (const c of filtered) {
+        const d = clean(certAnswers(c).department || c.department) || "(unknown)";
+        byDept[d] = (byDept[d] || 0) + 1;
+      }
+      const thirtyAgo = Date.now() - 30 * 86400000;
+      const recent = filtered.filter((c) => new Date(c.createdAt).getTime() >= thirtyAgo).length;
+      return {
+        total: filtered.length, last30Days: recent, scope: ctx.scopeLabel,
+        byDepartment: Object.entries(byDept).map(([department, count]) => ({ department, count })).sort((a, b) => b.count - a.count).slice(0, 15),
+      };
+    }
+    case "certification_lookup": {
+      const i = pick(ctx, args.query);
+      if (!i) return { found: false, note: "Not found in your scope." };
+      const rows = (await scopedCertifications(ctx)).filter((c) => norm(c.employeeId) === norm(i.employeeId));
+      if (!rows.length) return { found: true, name: i.name, employeeId: i.employeeId, submissions: [], note: "No certification submissions for this person." };
+      const submissions = rows.slice(0, 10).map((c) => {
+        const a = certAnswers(c);
+        return {
+          submittedAt: c.createdAt,
+          department: a.department || c.department || "",
+          degreeType: a.degreeType || a.degree_type || "",
+          highestQualification: a.highestQualification || a.highest_qualification || "",
+          domain: a.domain || "",
+          yearOfPassing: a.yearOfPassing || a.year_of_passing || "",
+        };
+      });
+      return { found: true, name: i.name, employeeId: i.employeeId, count: rows.length, submissions, scope: ctx.scopeLabel };
+    }
+    case "pending_requests": {
+      const { requestsListScope } = await import("./requestScope");
+      const scope = requestsListScope(ctx.user, "PENDING");
+      if (!scope) return { count: 0, scope: ctx.scopeLabel };
+      const [reqCount, batchCount] = await Promise.all([
+        EditRequest.countDocuments(scope.q),
+        EditRequestBatch.countDocuments(scope.bq),
+      ]);
+      const out: any = { count: reqCount + batchCount, individualRequests: reqCount, batches: batchCount, scope: ctx.scopeLabel };
+      if (args.list) {
+        const [reqs, batches] = await Promise.all([
+          EditRequest.find(scope.q).sort({ createdAt: -1 }).limit(15).lean(),
+          EditRequestBatch.find(scope.bq).sort({ createdAt: -1 }).limit(10).lean(),
+        ]);
+        out.requests = (reqs as any[]).map((r) => ({ instructorName: r.instructorName, field: r.fieldLabel, requester: r.requesterName, createdAt: r.createdAt }));
+        out.batchRequests = (batches as any[]).map((b) => ({ requester: b.requesterName, itemCount: (b.items || []).length, createdAt: b.createdAt }));
+      }
+      return out;
+    }
+    case "open_tasks": {
+      const filter: Record<string, any> = { status: "OPEN" };
+      if (ctx.user.role === "OPS_ADMIN" && args.all) {
+        // all open tasks in the system
+      } else {
+        filter.$or = [{ assigneeId: ctx.user.id }, { assignerId: ctx.user.id }];
+      }
+      const count = await Task.countDocuments(filter);
+      const out: any = { count, scope: ctx.user.role === "OPS_ADMIN" && args.all ? "all open tasks" : "your tasks", mine: !(ctx.user.role === "OPS_ADMIN" && args.all) };
+      if (args.list) {
+        const rows = await Task.find(filter).sort({ dueAt: 1, createdAt: -1 }).limit(20).lean();
+        out.tasks = (rows as any[]).map((t) => ({
+          title: t.title, dueAt: t.dueAt, priority: t.priority || "MEDIUM",
+          assignee: t.assigneeName, assigner: t.assignerName, status: t.status,
+        }));
+      }
+      return out;
     }
     default:
       return { error: `Unknown tool: ${name}` };
@@ -253,7 +524,11 @@ When you DO answer with data:
 - Use the tools — never invent numbers or names, and don't claim anything beyond tool results.
 - Give what they ASKED FOR: for "names / who / list / show me" call list_instructors and actually list the names (with Employee IDs); give a bare count only when they asked for a count. If a list is truncated, show what you got, state the total, and suggest narrowing the filter.
 - IMPORTANT distinction: "UPCOMING exits" / "who is leaving" / "pending exit alerts" → use upcoming_exits (the pending Darwinbox exit alerts, usually a small number). "EXITED" / "how many left / already exited" → use instructor_counts with status=exited. Never answer "upcoming exits" with the exited count.
-- This assistant covers INSTRUCTORS only — no staff/Ops-team/User-account data. If asked about the "Ops team" or other staff, say that's not available here and to check Settings → Users.
+- TRAINING questions: use training_summary for averages/on-track/at-risk counts; training_module_stats for a specific module (React, DSA, Python…); training_at_risk_list for WHO is low/at-risk; training_track_breakdown for tech vs math vs english tabs. Data comes from stored Mongo training stats (same as Training Stats page), not live BigQuery.
+- DARWINBOX / HR profile questions (qualification, DOJ, phone, designation, gender, location): use darwinbox_profile or find_instructor (which includes darwinbox fields). Data is synced hourly from Darwinbox into Mongo.
+- CERTIFICATION questions: use certification_summary for totals/by department; certification_lookup for one person's submissions. Scoped to instructors the caller may see.
+- REQUESTS / TASKS: use pending_requests for pending field-change requests; open_tasks for open tasks assigned to or created by the caller. Never use audit logs — audit data is not available here.
+- This assistant covers INSTRUCTORS and related workflows — no raw staff directory or User-account admin data. If asked about the "Ops team" or other staff, say that's not available here and to check Settings → Users.
 - If the data or person isn't in scope, say so plainly and suggest the owner/source. Never fabricate.
 - If the user is a capability manager, everything is THEIR reportees only — say "your reportees", not "the whole org".
 Keep answers clear and short. Format every reply in Markdown so the UI can render it nicely:
@@ -284,7 +559,7 @@ export async function askAssistant(user: SessionUser, userMessages: { role: stri
   const toolsUsed: string[] = [];
 
   const TOOL_NAMES = new Set<string>(TOOLS.map((t) => t.function.name));
-  for (let step = 0; step < 6; step++) {
+  for (let step = 0; step < 8; step++) {
     const res = await callMistral(messages);
     if (!res.ok) return { ok: false, error: res.error };
     const msg = res.message;

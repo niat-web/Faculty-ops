@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText,
   BarChart3, BookOpen, Award, LogOut, ChevronDown, UserCircle, Settings as SettingsIcon,
-  Database, Menu, X, CheckSquare, FileText,
+  Database, Menu, X, CheckSquare, FileText, GraduationCap,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
@@ -43,6 +43,7 @@ const NAV_SECTIONS: any[] = [
     roles: ["OPS_ADMIN", "SENIOR_MANAGER"],
     items: [
       { to: "/app/users", label: "Users", icon: UserCog, roles: ["OPS_ADMIN"] },
+      { to: "/app/certifications", label: "Certifications", icon: GraduationCap, roles: ["OPS_ADMIN"] },
       { to: "/app/audit", label: "Audit Log", icon: ScrollText, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
       { to: "/app/settings", label: "Settings", icon: SettingsIcon, roles: ["OPS_ADMIN"] },
     ],

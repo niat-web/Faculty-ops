@@ -19,7 +19,7 @@ function routeSkeleton(p: string) {
   if (p.startsWith("/app/instructors/master") || p.startsWith("/app/instructors/exited") || p.startsWith("/app/instructors/moved")) return <GridSkeleton />;
   if (/^\/app\/instructors\/[^/]+$/.test(p)) return <FormSkeleton sections={3} />; // instructor profile
   if (p.startsWith("/app/settings") || p.startsWith("/app/account")) return <FormSkeleton />;
-  if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/tasks") || p.startsWith("/app/audit")) return <GridSkeleton />;
+  if (p.startsWith("/app/contribution") || p.startsWith("/app/mapping") || p.startsWith("/app/requests") || p.startsWith("/app/tasks") || p.startsWith("/app/audit") || p.startsWith("/app/certifications")) return <GridSkeleton />;
   return <PageSkeleton />;
 }
 function RouteFallback() {
@@ -54,6 +54,7 @@ const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const TasksPage = lazy(() => import("./pages/TasksPage"));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
+const CertificationsPage = lazy(() => import("./pages/CertificationsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
@@ -176,6 +177,7 @@ export default function App() {
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="tasks/:id" element={<TaskDetailPage />} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
+                <Route path="certifications" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationsPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}
                 <Route path="data" element={<RequireRole roles={["OPS_ADMIN"]}><DataPage /></RequireRole>} />

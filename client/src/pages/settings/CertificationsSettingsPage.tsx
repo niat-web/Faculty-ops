@@ -5,22 +5,17 @@ import { api } from "../../api";
 import { useToast } from "../../toast";
 import { useConfirm } from "../../confirm";
 import { Skeleton } from "../../components/Skeleton";
-import { SkeletonRows, SkeletonField } from "../../components/scaffold";
-import type { CertSchema } from "../../certForm";
-
-type Cert = { id: string; employeeId: string; createdAt: string; answers: Record<string, string> };
+import { SkeletonField } from "../../components/scaffold";
 
 export default function CertificationsSettingsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [cfg, setCfg] = useState<any>(null);
-  const [items, setItems] = useState<Cert[] | null>(null);
-  const [schema, setSchema] = useState<CertSchema | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function load() {
-    const [s, list] = await Promise.all([api.get("/certifications/settings"), api.get("/certifications")]);
-    setCfg(s); setItems(list.items || []); setSchema(list.schema || s.schema || null);
+    const s = await api.get("/certifications/settings");
+    setCfg(s);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, []);
 
@@ -46,7 +41,7 @@ export default function CertificationsSettingsPage() {
           {/* Opens the drag-and-drop form builder — add/edit sections & fields, no developer needed. */}
           <Link to="/app/settings/certifications/builder" className="btn btn-ghost btn-sm border border-brand-200 text-brand-700 hover:bg-brand-50"><Pencil className="h-4 w-4" /> Edit certifications form</Link>
         </div>
-        <p className="mb-5 text-sm text-slate-500">Share this link to collect certificate details. Files upload to Google Drive; responses are stored and shown on each instructor's profile.</p>
+        <p className="mb-5 text-sm text-slate-500">Share this link to collect certificate details. Files upload to Google Drive; responses are stored and shown on each instructor's profile. View all submissions from the <Link to="/app/certifications" className="font-medium text-brand-600 hover:underline">Certifications</Link> page in the sidebar.</p>
 
         {cfg && !cfg.driveReady && (
           <div className="mb-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200">
@@ -79,47 +74,10 @@ export default function CertificationsSettingsPage() {
           ))}
         </div>
       </div>
-
-      {/* Submissions table — columns follow the current form schema. */}
-      <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">{items === null ? "Loading…" : `${items.length} submission(s)`}</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                {(schema?.fields || []).map((f) => <th key={f.id} className="whitespace-nowrap px-4 py-3">{f.label}</th>)}
-                <th className="whitespace-nowrap px-4 py-3">Submitted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {items === null ? <SkeletonRows rows={8} cols={(schema?.fields.length || 6) + 1} cellClass="px-4 py-2.5" /> : <>
-              {items.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50">
-                  {(schema?.fields || []).map((f) => {
-                    const v = c.answers?.[f.key] || "";
-                    return (
-                      <td key={f.id} className="max-w-[260px] truncate px-4 py-2.5 text-slate-600" title={f.type === "FILE" ? "" : v}>
-                        {f.type === "FILE" ? <CertLink url={v} /> : (v || <span className="text-slate-300">—</span>)}
-                      </td>
-                    );
-                  })}
-                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-400">{new Date(c.createdAt).toLocaleDateString()}</td>
-                </tr>
-              ))}
-              {!items.length && <tr><td colSpan={(schema?.fields.length || 6) + 1} className="px-5 py-10 text-center text-slate-400">No submissions yet.</td></tr>}
-              </>}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
 
-function CertLink({ url }: { url: string }) {
-  if (!url) return <span className="text-slate-300">—</span>;
-  return <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline">View <ExternalLink className="h-3 w-3" /></a>;
-}
 function Toggle({ label, desc, checked, onChange }: { label: string; desc: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between gap-4">
