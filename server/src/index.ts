@@ -60,9 +60,11 @@ async function main() {
   // NOT the whole /api/auth — /auth/me and /auth/google/status are polled/idempotent and must stay unlimited.
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Please try again later." } });
   const assistantLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many assistant requests. Please try again shortly." } });
+  const certPublicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: "Too many requests. Please try again later." } });
   // Block disabled-role sessions on every /api route (lets /auth/* through to recover).
   app.use("/api", enforceRoleAccess);
   app.use(["/api/auth/login", "/api/auth/forgot", "/api/auth/reset"], authLimiter);
+  app.use(["/api/certifications/submit", "/api/certifications/employee-search"], certPublicLimiter);
   app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/instructors", instructorRoutes);

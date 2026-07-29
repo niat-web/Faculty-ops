@@ -71,7 +71,12 @@ export default function LoginPage() {
                   <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">{showPw ? <EyeOff className="h-4 w-4" strokeWidth={1.75} /> : <Eye className="h-4 w-4" strokeWidth={1.75} />}</button>
                 </div>
               </div>
-              {needs2fa && <div><label className="label">Authentication code</label><input className="input tracking-widest" inputMode="numeric" maxLength={6} placeholder="123456" value={token} onChange={(e) => setToken(e.target.value)} required autoFocus /><p className="mt-1 text-xs text-slate-500">Enter the 6-digit code from your authenticator app.</p></div>}
+              {needs2fa && (
+                <>
+                  <div><label className="label">Authentication code</label><input className="input tracking-widest" inputMode="numeric" maxLength={6} placeholder="123456" value={token} onChange={(e) => setToken(e.target.value)} required autoFocus /><p className="mt-1 text-xs text-slate-500">Enter the 6-digit code from your authenticator app.</p></div>
+                  <button type="button" onClick={() => { setNeeds2fa(false); setToken(""); setErr(null); }} className="text-sm font-semibold text-brand-600 hover:underline">Use a different account</button>
+                </>
+              )}
               {err && <p className="text-sm text-red-600">{err}</p>}
               <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Signing in…" : needs2fa ? "Verify & sign in" : "Sign in"}</button>
             </form>

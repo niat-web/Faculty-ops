@@ -16,6 +16,7 @@ import { config } from "../config";
 
 const router = Router();
 router.use(requireUser());
+router.param("id", (req, res, next, id) => (mongoose.isValidObjectId(id) ? next() : res.status(400).json({ error: "Invalid id" })));
 const opsOnly = (req: any, res: any, next: any) => (canManageUsers(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
 
 // List users (paginated + filtered).
@@ -186,24 +187,26 @@ router.post("/invite/bulk", opsOnly, async (req, res) => {
   const scope = req.body?.scope === "all" ? "all" : "pending";
   const filter: any = { active: true, email: { $ne: null }, role: { $ne: Role.OPS_ADMIN } };
   if (scope === "pending") filter.mustSetPassword = true;
-  const users = await User.find(filter).select("email name").lean();
-  if (!users.length) return res.json({ ok: true, count: 0, delivered: 0 });
+  const users = await User.find(filter).select("email name resetTokenExp").lean();
+  if (!users.length) return res.json({ ok: true, count: 0, skipped: 0, delivered: 0 });
 
   const ops: any[] = []; const toSend: { user: any; link: string }[] = [];
   const exp = new Date(Date.now() + 60 * 60 * 1000);
+  let skipped = 0;
   for (const u of users) {
+    if (u.resetTokenExp && new Date(u.resetTokenExp) > new Date()) { skipped++; continue; }
     const { token, hash } = makeResetToken();
     ops.push({ updateOne: { filter: { _id: u._id }, update: { $set: { resetTokenHash: hash, resetTokenExp: exp, mustSetPassword: true } } } });
     toSend.push({ user: u, link: buildSetPasswordLink(config.appUrl, token, u.email) });
   }
-  await User.bulkWrite(ops);
+  if (ops.length) await User.bulkWrite(ops);
   let delivered = 0;
   const BATCH = 25;
   for (let i = 0; i < toSend.length; i += BATCH) {
     const r = await Promise.allSettled(toSend.slice(i, i + BATCH).map(({ user, link }) => sendSetPasswordEmail(user, link)));
     delivered += r.filter((x) => x.status === "fulfilled" && (x as any).value?.delivered).length;
   }
-  res.json({ ok: true, count: users.length, delivered });
+  res.json({ ok: true, count: toSend.length, skipped, delivered });
 });
 
 export default router;

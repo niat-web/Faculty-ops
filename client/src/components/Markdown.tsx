@@ -4,6 +4,12 @@ import { type ReactNode } from "react";
 // the docs use: #/##/### headings, **bold**, `code`, [links](url), - / 1. lists, | tables |, > callouts,
 // ``` fenced code, and --- rules. Authored content stays within this subset. Styled with the app palette.
 
+function safeHref(href: string): string | null {
+  const h = href.trim();
+  if (/^https?:\/\//i.test(h) || (h.startsWith("/") && !h.startsWith("//"))) return h;
+  return null;
+}
+
 function inline(text: string, kb: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   const re = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
@@ -12,7 +18,11 @@ function inline(text: string, kb: string): ReactNode[] {
     if (m.index > last) nodes.push(text.slice(last, m.index));
     if (m[1] !== undefined) nodes.push(<strong key={`${kb}b${i}`} className="font-semibold text-slate-900">{m[1]}</strong>);
     else if (m[2] !== undefined) nodes.push(<code key={`${kb}c${i}`} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-brand-700">{m[2]}</code>);
-    else if (m[3] !== undefined) nodes.push(<a key={`${kb}a${i}`} href={m[4]} target="_blank" rel="noreferrer" className="text-brand-600 underline hover:text-brand-700">{m[3]}</a>);
+    else if (m[3] !== undefined) {
+      const href = safeHref(m[4]);
+      if (href) nodes.push(<a key={`${kb}a${i}`} href={href} target="_blank" rel="noreferrer" className="text-brand-600 underline hover:text-brand-700">{m[3]}</a>);
+      else nodes.push(m[3]);
+    }
     last = re.lastIndex; i++;
   }
   if (last < text.length) nodes.push(text.slice(last));
@@ -38,10 +48,14 @@ export default function Markdown({ source, variant = "docs" }: MarkdownProps) {
 
     // fenced code block
     if (line.trim().startsWith("```")) {
-      const buf: string[] = []; i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) { buf.push(lines[i]); i++; }
-      i++;
-      push(<pre className={`${gapLg} overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100`}><code>{buf.join("\n")}</code></pre>);
+      const buf: string[] = []; const start = i; i++;
+      let closed = false;
+      while (i < lines.length) {
+        if (lines[i].trim().startsWith("```")) { closed = true; i++; break; }
+        buf.push(lines[i]); i++;
+      }
+      if (closed) push(<pre className={`${gapLg} overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100`}><code>{buf.join("\n")}</code></pre>);
+      else push(<p className={`${gap} text-sm leading-relaxed text-slate-700`}>{inline(buf.length ? buf.join("\n") : line.replace(/^```\s?/, ""), `fence${start}`)}</p>);
       continue;
     }
 

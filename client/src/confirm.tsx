@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { backdropClick } from "./lib/backdropClose";
 
@@ -51,6 +51,13 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     resolver.current?.(result);
     resolver.current = undefined;
   }, []);
+
+  useEffect(() => {
+    if (state.kind === "none") return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") finish(state.kind === "confirm" ? false : null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state.kind, finish]);
 
   // Stable value (confirm/prompt are already useCallback'd) so opening/closing a dialog doesn't re-render
   // every useConfirm() consumer.

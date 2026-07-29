@@ -31,7 +31,7 @@ async function request<T = any>(path: string, opts: RequestInit = {}, meta: { si
 
 export const api = {
   get: <T = any>(p: string, opts?: { signal?: AbortSignal; silent?: boolean }) => request<T>(p, opts?.signal ? { signal: opts.signal } : {}, { silent: opts?.silent }),
-  post: <T = any>(p: string, body?: any, opts?: { silent?: boolean }) => request<T>(p, { method: "POST", body: body != null ? JSON.stringify(body) : undefined }, { silent: opts?.silent }),
+  post: <T = any>(p: string, body?: any, opts?: { silent?: boolean; signal?: AbortSignal }) => request<T>(p, { method: "POST", body: body != null ? JSON.stringify(body) : undefined, ...(opts?.signal ? { signal: opts.signal } : {}) }, { silent: opts?.silent }),
   patch: <T = any>(p: string, body?: any) => request<T>(p, { method: "PATCH", body: body != null ? JSON.stringify(body) : undefined }),
   del: <T = any>(p: string) => request<T>(p, { method: "DELETE" }),
   upload: <T = any>(p: string, form: FormData) => request<T>(p, { method: "POST", body: form }),

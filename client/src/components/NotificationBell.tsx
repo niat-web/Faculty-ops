@@ -85,7 +85,7 @@ export default function NotificationBell() {
                   <div className="mt-0.5 text-[11px] text-slate-400">{relTime(n.createdAt)}</div>
                 </button>
                 {/* hover actions: toggle read / delete */}
-                <div className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                <div className="absolute right-2 top-2 flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
                   <button onClick={() => setRead(n, !n.read)} title={n.read ? "Mark as unread" : "Mark as read"} className="rounded-md bg-white p-1 text-slate-400 shadow-sm ring-1 ring-slate-200 hover:text-brand-600">
                     {n.read ? <Mail className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
                   </button>

@@ -21,6 +21,8 @@ export function buildAuthUrl({ state, origin }: { state: string; origin: string 
     access_type: "online",
     prompt: "select_account",
   });
+  const hd = process.env.GOOGLE_HOSTED_DOMAIN?.trim();
+  if (hd) params.set("hd", hd);
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 

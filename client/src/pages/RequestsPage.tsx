@@ -58,12 +58,13 @@ export default function RequestsPage() {
   }
   // When arriving via a unique link, open exactly that request or batch.
   useEffect(() => {
-    if (!focusId || !data) return;
+    if (!focusId || !data || loading) return;
     const r = (data.requests || []).find((x: any) => x.id === focusId);
     if (r) { setActive(r); return; }
     const b = (data.batches || []).find((x: any) => x.id === focusId);
-    if (b) setActiveBatch(b);
-  }, [focusId, data]);
+    if (b) { setActiveBatch(b); return; }
+    setErr(`Request not found — it may have been decided or removed.`);
+  }, [focusId, data, loading]);
 
   const all: any[] = data?.requests || [];
   const batches: any[] = data?.batches || [];

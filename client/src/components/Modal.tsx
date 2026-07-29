@@ -15,8 +15,10 @@ export default function Modal({ title, description, onClose, children, wide = fa
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     panelRef.current?.querySelector<HTMLElement>("button, input, textarea, select, [tabindex]")?.focus();
-    return () => { prev?.focus?.(); };
-  }, []);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); prev?.focus?.(); };
+  }, [onClose]);
 
   return (
     <div

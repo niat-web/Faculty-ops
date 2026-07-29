@@ -22,13 +22,15 @@ type Meta = { columns: Column[]; managers: { id: string; name: string }[]; repor
 type Filters = { reportingManager: string[]; managerId: string[]; department: string[]; designation: string[]; payroll: string[]; region: string[]; campus: string[]; qualification: string[]; gender: string[]; domain: string[]; state: string[]; workspace: string[] };
 const EMPTY: Filters = { reportingManager: [], managerId: [], department: [], designation: [], payroll: [], region: [], campus: [], qualification: [], gender: [], domain: [], state: [], workspace: [] };
 
-// Deep-link filters from the URL (e.g. the Contribution pages link to
-// /app/instructors/master?campus=X / ?managerId=Y). Read once on mount so click-throughs
-// land on the master grid with the filter already applied.
-function filtersFromSearch(): Filters {
-  const p = new URLSearchParams(window.location.search);
+// Deep-link filters from the URL (Contribution, Dashboard lifecycle, Org chart, etc.).
+function filtersFromSearch(sp?: URLSearchParams): Filters {
+  const p = sp || new URLSearchParams(window.location.search);
   const arr = (k: string) => (p.get(k) || "").split(",").map((s) => s.trim()).filter(Boolean);
   return { reportingManager: arr("rmid"), managerId: arr("managerId"), department: arr("department"), designation: arr("designation"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus"), qualification: arr("qualification"), gender: arr("gender"), domain: arr("domain"), state: arr("state"), workspace: arr("workspace") };
+}
+function lifecycleFromSearch(sp?: URLSearchParams): string[] {
+  const p = sp || new URLSearchParams(window.location.search);
+  return (p.get("status") || "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 export default function InstructorMasterPage() {
@@ -66,10 +68,13 @@ export default function InstructorMasterPage() {
 
   const [q, setQ] = useState("");
   const dq = useDebouncedValue(q, 300);
-  const [applied, setApplied] = useState<Filters>(filtersFromSearch);
-  const [draft, setDraft] = useState<Filters>(filtersFromSearch);
+  const [applied, setApplied] = useState<Filters>(() => filtersFromSearch());
+  const [draft, setDraft] = useState<Filters>(() => filtersFromSearch());
   const [drawer, setDrawer] = useState(false);
-  const [scope, setScope] = useState<"active" | "all" | "exited">("active");
+  const [scope, setScope] = useState<"active" | "all" | "exited">(() => {
+    const p = new URLSearchParams(window.location.search);
+    return (p.get("scope") as "active" | "all" | "exited") || (p.get("status") ? "all" : "active");
+  });
   const [counts, setCounts] = useState<{ all: number; active: number; exited: number }>({ all: 0, active: 0, exited: 0 });
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
@@ -124,9 +129,21 @@ export default function InstructorMasterPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [role, setRole] = useState(searchParams.get("role") || "");
   const [contribution, setContribution] = useState(searchParams.get("contribution") || "");
-  useEffect(() => { setRole(searchParams.get("role") || ""); setContribution(searchParams.get("contribution") || ""); setPage(1); }, [searchParams]);
+  const [lifecycleStatus, setLifecycleStatus] = useState<string[]>(() => lifecycleFromSearch(searchParams));
+  useEffect(() => {
+    const f = filtersFromSearch(searchParams);
+    setApplied(f);
+    setDraft(f);
+    setRole(searchParams.get("role") || "");
+    setContribution(searchParams.get("contribution") || "");
+    setLifecycleStatus(lifecycleFromSearch(searchParams));
+    const sc = searchParams.get("scope") as "active" | "all" | "exited" | null;
+    setScope(sc || (searchParams.get("status") ? "all" : "active"));
+    setPage(1);
+  }, [searchParams]);
   function clearRole() { const sp = new URLSearchParams(searchParams); sp.delete("role"); setSearchParams(sp, { replace: true }); }
   function clearContribution() { const sp = new URLSearchParams(searchParams); sp.delete("contribution"); setSearchParams(sp, { replace: true }); }
+  function clearLifecycle() { const sp = new URLSearchParams(searchParams); sp.delete("status"); setSearchParams(sp, { replace: true }); }
   // Reporting-Manager deep-link (Org Chart CM click). Resolved CM → ?rmid=<Employee ID>&rmname=<name>;
   // an id-less (Unassigned) CM → ?rmnameFilter=<name>&rmname=<name> (filter the Master by manager name).
   const rmName = searchParams.get("rmname") || "";
@@ -177,17 +194,17 @@ export default function InstructorMasterPage() {
     // Department quick-filter: only send `depts` once the user has made an explicit choice; until then
     // the server applies its default (all except the 2 support departments).
     if (deptSel) p.set("depts", [...deptSel].join(","));
+    if (lifecycleStatus.length) p.set("status", lifecycleStatus.join(","));
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
     return p;
-  }, [dq, applied, rmNameFilter, scope, role, contribution, sort.sort, sort.dir, deptSel]);
+  }, [dq, applied, rmNameFilter, scope, role, contribution, lifecycleStatus, sort.sort, sort.dir, deptSel]);
 
   // Sticky header during PAGE scroll — pinned smoothly (measure-once + rAF + translate3d), so large
   // pages (500–1000 rows) scroll without the per-frame reflow jank. See useStickyThead.
   useStickyThead(wrapRef, theadRef, [meta, rows.length]);
 
   const [loadingRows, setLoadingRows] = useState(true);
-  useEffect(() => { setRows([]); }, [query]);
   useEffect(() => {
     const ac = new AbortController();
     const p = new URLSearchParams(query);
@@ -320,6 +337,12 @@ export default function InstructorMasterPage() {
           <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
             Contribution: {contribution}
             <button onClick={clearContribution} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear contribution filter"><X className="h-3 w-3" /></button>
+          </span>
+        )}
+        {lifecycleStatus.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-3 py-1 text-xs font-medium text-brand-700">
+            Status: {lifecycleStatus.map((s) => LIFECYCLE_LABEL[s] || s).join(", ")}
+            <button onClick={clearLifecycle} className="rounded-full p-0.5 hover:bg-brand-200" title="Clear lifecycle filter"><X className="h-3 w-3" /></button>
           </span>
         )}
         {rmFilterActive && (

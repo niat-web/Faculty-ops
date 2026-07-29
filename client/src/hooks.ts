@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { api } from "./api";
 
 // Pin a table's <thead> to the top while the PAGE (<main>) scrolls vertically and the table scrolls
@@ -59,32 +59,43 @@ export function clearGetCache() { _cache.clear(); }
 export function useCachedGet<T = any>(path: string | null) {
   const [data, setData] = useState<T | undefined>(() => (path ? _cache.get(path) : undefined));
   const [error, setError] = useState<string | null>(null);
+  const [staleError, setStaleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => !(path && _cache.has(path)));
+  const reqGen = useRef(0);
 
-  const fetchInto = useCallback((p: string, signal?: AbortSignal) => {
+  const fetchInto = useCallback((p: string, signal?: AbortSignal, gen?: number) => {
     return api.get<T>(p, signal ? { signal } : undefined)
-      .then((r) => { _cache.set(p, r); setData(r); setError(null); })
-      .catch((e) => { if (!isAbort(e)) setError(e.message || "Failed to load"); })
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (gen != null && gen !== reqGen.current) return;
+        _cache.set(p, r); setData(r); setError(null); setStaleError(null);
+      })
+      .catch((e) => {
+        if (isAbort(e) || (gen != null && gen !== reqGen.current)) return;
+        const msg = e.message || "Failed to load";
+        if (_cache.has(p)) setStaleError(msg);
+        else setError(msg);
+      })
+      .finally(() => { if (gen == null || gen === reqGen.current) setLoading(false); });
   }, []);
 
   useEffect(() => {
     if (!path) return;
-    setError(null); // clear stale error when navigating to a cached route
+    const gen = ++reqGen.current;
+    setError(null);
+    setStaleError(null);
     const cached = _cache.get(path);
     if (cached !== undefined) { setData(cached); setLoading(false); } else setLoading(true);
     const ac = new AbortController();
-    fetchInto(path, ac.signal); // revalidate in the background
+    fetchInto(path, ac.signal, gen);
     return () => ac.abort();
   }, [path, fetchInto]);
 
-  // Optimistic local update that also writes through to the cache.
   const update = useCallback((updater: T | ((prev: T) => T)) => {
     setData((prev: any) => { const next = typeof updater === "function" ? (updater as any)(prev) : updater; if (path) _cache.set(path, next); return next; });
   }, [path]);
-  const reload = useCallback(() => { if (path) return fetchInto(path); }, [path, fetchInto]);
+  const reload = useCallback(() => { if (path) { setLoading(true); return fetchInto(path, undefined, ++reqGen.current); } }, [path, fetchInto]);
 
-  return { data, setData: update, loading, error, reload };
+  return { data, setData: update, loading, error, staleError, reload };
 }
 
 // Debounce a rapidly-changing value (e.g. a search box) so effects fire less often.

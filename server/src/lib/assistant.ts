@@ -7,6 +7,7 @@
 import { config } from "../config";
 import { MoveHistory, ExitAlert } from "../models";
 import type { SessionUser } from "./rbac";
+import { resolveCmScopeId, cmRowInScope } from "./cmScope";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Only NON-sensitive value keys are ever surfaced (never encrypted SENSITIVE fields).
@@ -44,17 +45,15 @@ const norm = (s: any) => clean(s).toLowerCase();
 export async function loadScopedContext(user: SessionUser): Promise<Ctx> {
   const { loadLiveMasterRows, isDefaultUnchecked } = await import("./masterLive");
   const { getMasterDepartments } = await import("./settings");
-  const { cmDarwinboxEmployeeId } = await import("./staffRoles");
   const [live, deptCfg] = await Promise.all([loadLiveMasterRows(false), getMasterDepartments()]);
   const rows: any[] = live.ok ? live.rows : [];
 
   const hidden = new Set(deptCfg.hidden.map(norm));
   const deptExcluded = (dept: any) => { const d = clean(dept); if (!d) return false; return deptCfg.configured ? hidden.has(norm(d)) : isDefaultUnchecked(d); };
 
-  // Capability Manager scoping — mirror the Master exactly (reporting_manager_employee_id === CM's DB id).
-  let cmScopeId: string | null | undefined; // undefined = not a CM (no scoping)
-  if (user.role === "CAPABILITY_MANAGER") cmScopeId = await cmDarwinboxEmployeeId(user);
-  const inScope = (r: any) => cmScopeId === undefined ? true : (!!cmScopeId && norm(r.reporting_manager_employee_id) === norm(cmScopeId));
+  let cmScopeId: string | null | undefined;
+  if (user.role === "CAPABILITY_MANAGER") cmScopeId = await resolveCmScopeId(user);
+  const inScope = (r: any) => cmRowInScope(r, cmScopeId, user.id);
 
   const instructors: ScopedInst[] = rows
     .filter((r) => inScope(r) && !deptExcluded(r.department))
@@ -187,11 +186,13 @@ export async function runTool(name: string, args: any, ctx: Ctx): Promise<any> {
       return { series: out, scope: ctx.scopeLabel };
     }
     case "upcoming_exits": {
-      // Pending exit alerts, scoped like the dashboard banner: Ops/SM see all PENDING; a CM sees only
-      // their reportees' alerts (managerId).
+      // Pending exit alerts — scoped to the caller's instructors (Darwinbox + app assignment for CMs).
       const filter: any = { status: "PENDING" };
-      if (ctx.user.role === "CAPABILITY_MANAGER") filter.managerId = ctx.user.id;
-      const rows = await ExitAlert.find(filter).sort({ exitDate: 1 }).limit(100).lean();
+      let rows = await ExitAlert.find(filter).sort({ exitDate: 1 }).limit(100).lean();
+      if (ctx.user.role === "CAPABILITY_MANAGER") {
+        const empIds = new Set(ctx.instructors.map((i) => norm(i.employeeId)));
+        rows = (rows as any[]).filter((a) => empIds.has(norm(a.employeeId)) || String(a.managerId) === ctx.user.id);
+      }
       // Count PEOPLE, not alert records: one person can have >1 pending alert (e.g. a changed exit date).
       // Keep the earliest (most imminent) exit per person — rows are sorted by exitDate ascending.
       const byEmp = new Map<string, any>();
@@ -270,7 +271,15 @@ export async function askAssistant(user: SessionUser, userMessages: { role: stri
   const ctx = await loadScopedContext(user);
 
   // Keep only the last ~8 turns of user/assistant text (bound tokens).
-  const history = userMessages.filter((m) => m.role === "user" || m.role === "assistant").slice(-8).map((m) => ({ role: m.role, content: String(m.content || "").slice(0, 2000) }));
+  const history = userMessages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .slice(-8)
+    .map((m) => ({
+      role: m.role,
+      content: m.role === "assistant"
+        ? String(m.content || "").slice(0, 2000).replace(/<function[=([]/gi, "")
+        : String(m.content || "").slice(0, 2000),
+    }));
   const messages: Msg[] = [{ role: "system", content: SYSTEM(ctx) }, ...history];
   const toolsUsed: string[] = [];
 

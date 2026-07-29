@@ -36,7 +36,7 @@ function ProfileSkeleton() {
           <div className="card space-y-4 p-6">
             <Skeleton width="35%" height="16px" />
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="grid grid-cols-[200px_1fr] items-center gap-3 py-1"><Skeleton width="60%" height="14px" /><Skeleton width="80%" height="30px" borderRadius="8px" /></div>
+              <div key={i} className="grid grid-cols-1 items-center gap-1 py-1 sm:grid-cols-[200px_1fr] sm:gap-3"><Skeleton width="60%" height="14px" /><Skeleton width="80%" height="30px" borderRadius="8px" /></div>
             ))}
           </div>
         </div>
@@ -172,7 +172,7 @@ export default function InstructorProfilePage() {
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
               <dl className="divide-y divide-slate-100">
                 {(p.byModule?.[active] || []).map((f: any) => (
-                  <div key={f.key} className="group grid grid-cols-[200px_1fr] items-center gap-3 py-2">
+                  <div key={f.key} className="group grid grid-cols-1 items-start gap-1 py-2 sm:grid-cols-[200px_1fr] sm:items-center sm:gap-3">
                     <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <div className="min-w-0 flex-1">
@@ -238,7 +238,7 @@ export default function InstructorProfilePage() {
 export function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
 
 function Field({ label, value }: { label: string; value: any }) {
-  return <div className="grid grid-cols-[200px_1fr] items-center gap-3 py-2"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
+  return <div className="grid grid-cols-1 items-start gap-1 py-2 sm:grid-cols-[200px_1fr] sm:items-center sm:gap-3"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
 }
 
 export function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {

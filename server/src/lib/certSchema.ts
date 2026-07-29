@@ -113,3 +113,17 @@ export function normalizeSchema(raw: any): CertSchema {
   }
   return { sections, fields };
 }
+
+const clean = (v: any) => String(v ?? "").trim();
+
+/** Server-side validation for cert form submit — required fields + choice options. */
+export function validateCertSubmit(schema: CertSchema, answers: Record<string, string>, fileKeys: Set<string>): string | null {
+  for (const field of schema.fields) {
+    const val = field.type === "FILE" ? (fileKeys.has(field.key) || answers[field.key] ? "1" : "") : clean(answers[field.key]);
+    if (field.required && !val) return `${field.label} is required.`;
+    if (val && HAS_OPTIONS.has(field.type) && field.options?.length && !field.options.includes(val)) {
+      return `${field.label}: pick a valid option.`;
+    }
+  }
+  return null;
+}

@@ -102,6 +102,7 @@ function PageBtn({ n, active, onClick }: { n: number; active: boolean; onClick: 
           : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
       }`}
       aria-current={active ? "page" : undefined}
+      aria-label={`Page ${n}`}
     >
       {n}
     </button>

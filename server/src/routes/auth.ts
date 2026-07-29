@@ -46,6 +46,8 @@ router.get("/google/callback", async (req, res) => {
     email = String(info.email || "").toLowerCase();
   } catch { return fail("google_failed"); }
   if (!email) return fail("google_failed");
+  const hostedDomain = process.env.GOOGLE_HOSTED_DOMAIN?.trim().toLowerCase();
+  if (hostedDomain && !email.endsWith(`@${hostedDomain}`)) return fail("google_noaccount");
 
   // Access is admin-managed: only sign in if a matching, active user exists.
   const user = await User.findOne({ email });
@@ -96,13 +98,19 @@ router.post("/login", async (req, res) => {
     if (!token) return res.status(200).json({ twoFactorRequired: true });
     if (await isLocked(otpKey)) return res.status(429).json({ error: "Too many code attempts. Try again later.", twoFactorRequired: true });
     const counter = verifyTokenCounter(maybeDecrypt(user.twoFactorSecret), token);
-    // Reject invalid codes AND already-used counters (replay protection).
     if (counter === null || counter <= (user.twoFactorLastCounter || 0)) {
       await recordFailure(otpKey);
       return res.status(401).json({ error: "Invalid authentication code.", twoFactorRequired: true });
     }
-    user.twoFactorLastCounter = counter;
-    await user.save();
+    const updated = await User.findOneAndUpdate(
+      { _id: user._id, $or: [{ twoFactorLastCounter: { $lt: counter } }, { twoFactorLastCounter: null }] },
+      { $set: { twoFactorLastCounter: counter } },
+      { new: true },
+    );
+    if (!updated) {
+      await recordFailure(otpKey);
+      return res.status(401).json({ error: "Invalid authentication code.", twoFactorRequired: true });
+    }
     await clearFailures(otpKey);
   }
 

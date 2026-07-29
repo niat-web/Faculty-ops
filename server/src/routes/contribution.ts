@@ -6,6 +6,7 @@ import { writeAudit } from "../lib/services";
 import { requireUser } from "../middleware";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
 import { clean } from "../lib/darwinboxSync";
+import { filterMasterRowsForUser } from "../lib/cmScope";
 
 const router = Router();
 router.use(requireUser());
@@ -16,10 +17,12 @@ const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // exited instructors are ex
 // The EXACT active Instructor-Master population: the SAME live Darwinbox rows the Master grid shows on
 // its "Active" tab (instructor departments, default support-depts excluded, not exited). Reading from
 // this shared source guarantees every contribution rollup's count matches the Master exactly.
-async function activeMasterRows(): Promise<{ ok: boolean; error?: string; rows: any[] }> {
+async function activeMasterRows(user?: { id: string; role: string; email?: string; name?: string; managerId?: string | null }): Promise<{ ok: boolean; error?: string; rows: any[] }> {
   const live = await loadLiveMasterRows();
   if (!live.ok) return { ok: false, error: live.error, rows: [] };
-  return { ok: true, rows: live.rows.filter((r) => !r.exited && !isDefaultUnchecked(r.department)) };
+  let rows = live.rows.filter((r) => !r.exited && !isDefaultUnchecked(r.department));
+  if (user) rows = await filterMasterRowsForUser(user as any, rows as any) as typeof rows;
+  return { ok: true, rows };
 }
 
 // The dynamic "Contribution" field (resolved by label; key is a safe slug like "contribution").
@@ -32,7 +35,7 @@ async function contribField(): Promise<{ key: string; label: string } | null> {
 // Blanks are shown too (their own row), so every active instructor is accounted for.
 router.get("/", staffGuard, async (req, res) => {
   const field = await contribField();
-  const src = await activeMasterRows();
+  const src = await activeMasterRows(req.user!);
   if (!src.ok) return res.status(502).json({ field, items: [], total: 0, error: src.error });
   const key = field?.key || "contribution";
   const map = new Map<string, number>();
@@ -45,7 +48,7 @@ router.get("/", staffGuard, async (req, res) => {
 
 // Campus-wise instructor counts over the active Master population, split by payroll (University vs Nxtwave).
 router.get("/campuswise", staffGuard, async (req, res) => {
-  const src = await activeMasterRows();
+  const src = await activeMasterRows(req.user!);
   if (!src.ok) return res.status(502).json({ items: [], totals: { total: 0, university: 0, nxtwave: 0 }, error: src.error });
   const m = new Map<string, { total: number; university: number; nxtwave: number }>();
   for (const r of src.rows) {
@@ -68,7 +71,7 @@ router.get("/campuswise", staffGuard, async (req, res) => {
 // e.g. "Name (NWxxxx)"), so it lists every unique reporting manager in Darwinbox with their reportee count,
 // over the same instructor population the Master shows. Not the app's currentManagerId.
 router.get("/managers", staffGuard, async (req, res) => {
-  const src = await activeMasterRows();
+  const src = await activeMasterRows(req.user!);
   if (!src.ok) return res.status(502).json({ items: [], grandTotal: 0, error: src.error });
   const m = new Map<string, number>();
   for (const r of src.rows) { const raw = clean(r.reporting_manager); m.set(raw, (m.get(raw) || 0) + 1); }

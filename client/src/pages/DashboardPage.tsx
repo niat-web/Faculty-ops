@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useAuth, LIFECYCLE_LABEL, ROLE_LABEL } from "../auth";
 import { useCachedGet } from "../hooks";
+import StaleDataBanner from "../components/StaleDataBanner";
 import { GreetingHeader, TrendArea } from "../components/charts";
 import NotificationBell from "../components/NotificationBell";
 import ExitAlertBanner from "../components/ExitAlertBanner";
@@ -47,15 +48,14 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { data: d, error: err } = useCachedGet<any>("/dashboard"); // instant on revisit, revalidates in background
+  const { data: d, error: err, staleError, reload } = useCachedGet<any>("/dashboard");
   if (err && !d) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!d) return <DashboardSkeleton />;
 
   const first = (user!.name || "").split(" ")[0];
-  // The AI assistant (bottom-right) is rendered ONLY on the Dashboard, and only for Ops/SM/CM
-  // (DashboardAssistant hides itself for instructors). Every answer is role-scoped server-side.
   return (
     <>
+      {staleError && <div className="mb-4"><StaleDataBanner message={staleError} onRetry={() => reload?.()} /></div>}
       {d.role === "OPS_ADMIN" && <AdminDash d={d} first={first} />}
       {d.role === "SENIOR_MANAGER" && <SeniorDash d={d} first={first} />}
       {d.role === "CAPABILITY_MANAGER" && <CapabilityDash d={d} first={first} />}

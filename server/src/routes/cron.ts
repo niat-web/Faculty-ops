@@ -6,10 +6,14 @@ import { config } from "../config";
 
 const router = Router();
 
-// Gate: header x-cron-secret must match CRON_SECRET. Production requires CRON_SECRET at boot; dev may omit it.
+// Gate: header x-cron-secret must match CRON_SECRET. Production requires CRON_SECRET at boot.
+// In dev, cron is allowed only from localhost unless CRON_SECRET is set.
 router.use((req, res, next) => {
   if (!config.cronSecret) {
     if (config.isProd) return res.status(503).json({ error: "Cron not configured" });
+    const ip = String(req.ip || req.socket?.remoteAddress || "");
+    const local = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1" || ip.endsWith("127.0.0.1");
+    if (!local) return res.status(401).json({ error: "Unauthorized" });
     return next();
   }
   if (req.headers["x-cron-secret"] !== config.cronSecret) return res.status(401).json({ error: "Unauthorized" });

@@ -8,7 +8,8 @@ import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
-import { isOpsDept, isInstructorDept, seniorManagerIdSet, cmDarwinboxEmployeeId } from "../lib/staffRoles";
+import { isOpsDept, isInstructorDept, seniorManagerIdSet } from "../lib/staffRoles";
+import { resolveCmScopeId, cmRowInScope } from "../lib/cmScope";
 import { getMasterDepartments, getMasterPayrollVisibility } from "../lib/settings";
 import { norm } from "../lib/darwinboxSync";
 import { requireUser } from "../middleware";
@@ -119,6 +120,7 @@ router.get("/", guard, async (req, res) => {
   const domains = listParam(req.query.domain);
   const states = listParam(req.query.state);
   const workspaces = listParam(req.query.workspace);
+  const statuses = listParam(req.query.status); // lifecycle drill-down from Dashboard (ONBOARDING, IN_TRAINING, …)
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
@@ -161,12 +163,9 @@ router.get("/", guard, async (req, res) => {
     return true;
   };
 
-  // RBAC scope: a Capability Manager sees ONLY the instructors who report to them in Darwinbox
-  // (reporting_manager_employee_id === their own Employee ID). Ops Admin & Senior Manager see everyone.
-  // If we can't resolve the CM's Darwinbox id (email not in Darwinbox), they see no rows (fail closed).
-  let cmScopeId: string | null | undefined; // undefined = not a CM (no scoping)
-  if (req.user!.role === Role.CAPABILITY_MANAGER) cmScopeId = await cmDarwinboxEmployeeId(req.user!);
-  const inScopeForUser = (r: any) => cmScopeId === undefined ? true : (!!cmScopeId && norm(r.reporting_manager_employee_id) === norm(cmScopeId));
+  // RBAC scope: CM sees Darwinbox reportees + app-assigned reportees. Ops/SM see everyone.
+  const cmScopeId = await resolveCmScopeId(req.user!);
+  const inScopeForUser = (r: any) => cmRowInScope(r, cmScopeId, req.user!.id);
 
   // In-memory filters (data is from Darwinbox, not a Mongo query).
   const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
@@ -186,6 +185,7 @@ router.get("/", guard, async (req, res) => {
     if (domains.length && !has(domains, r.domain)) return false;
     if (states.length && !has(states, r.emp_state)) return false;
     if (workspaces.length && !has(workspaces, r.workspace)) return false;
+    if (statuses.length && !has(statuses, r.lifecycleStatus || r.status)) return false;
     if (q) {
       const hay = `${r.name} ${r.employeeId} ${r.email} ${r.uid}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -198,7 +198,9 @@ router.get("/", guard, async (req, res) => {
   const cExited = filteredAll.filter((r) => r.exited).length;
   const counts = { all: filteredAll.length, active: filteredAll.length - cExited, exited: cExited };
 
-  let rows = filteredAll.filter((r) => (scope === "active" ? !r.exited : scope === "exited" ? r.exited : true));
+  let rows = statuses.length
+    ? filteredAll.filter((r) => has(statuses, r.lifecycleStatus || r.status))
+    : filteredAll.filter((r) => (scope === "active" ? !r.exited : scope === "exited" ? r.exited : true));
 
   // Sort (default: Employee ID). Core + value keys sort on the row field directly.
   const sortKey = String(req.query.sort || "").trim() || "employeeId";
@@ -247,9 +249,8 @@ router.get("/moved", guard, async (req, res) => {
   if (!live.ok) return res.status(502).json({ error: live.error, items: [] });
 
   // CM scoping (same rule as the main grid): a CM sees only their own reportees.
-  let cmScopeId: string | null | undefined;
-  if (req.user!.role === Role.CAPABILITY_MANAGER) cmScopeId = await cmDarwinboxEmployeeId(req.user!);
-  const inScope = (r: any) => cmScopeId === undefined ? true : (!!cmScopeId && norm(r.reporting_manager_employee_id) === norm(cmScopeId));
+  const cmScopeId = await resolveCmScopeId(req.user!);
+  const inScope = (r: any) => cmRowInScope(r, cmScopeId, req.user!.id);
 
   // (Admin-removed people are already excluded by loadLiveMasterRows.)
   const q = String(req.query.q || "").trim().toLowerCase();

@@ -132,19 +132,26 @@ router.post("/batch/:id/decide", async (req, res) => {
   if (b.status !== "PENDING") return res.status(409).json({ error: "Already decided" });
 
   if (decision === "APPROVE") {
-    // Apply every item. Each applyFieldChange re-reads the real oldValue + writes its own (masked) audit row.
-    // Sensitive items are stored encrypted (Bug 1.4) — decrypt the real value to apply; applyFieldChange re-encrypts.
+    const applied: any[] = [];
     const failed: string[] = [];
     for (const it of b.items) {
       try {
         const realNew = it.sensitive ? (maybeDecrypt(it.newValue) ?? "") : it.newValue;
         await applyFieldChange({ actor: u, instructorId: String(it.instructorId), fieldKey: it.fieldKey, fieldLabel: it.fieldLabel, newValue: realNew, reason: b.reason || "Batch edit" });
+        applied.push(it);
       } catch (e: any) {
         console.error("[batch] apply failed:", it.fieldKey, e?.message);
         failed.push(it.fieldKey);
+        // Roll back any changes already applied in this batch (all-or-nothing).
+        for (const prev of applied) {
+          try {
+            const rollback = prev.sensitive ? (maybeDecrypt(prev.oldValue) ?? "") : prev.oldValue;
+            await applyFieldChange({ actor: u, instructorId: String(prev.instructorId), fieldKey: prev.fieldKey, fieldLabel: prev.fieldLabel, newValue: rollback, reason: "Batch approval rolled back" });
+          } catch (rb: any) { console.error("[batch] rollback failed:", prev.fieldKey, rb?.message); }
+        }
+        return res.status(409).json({ error: "Some changes could not be applied — nothing was kept.", failed });
       }
     }
-    if (failed.length) return res.status(409).json({ error: "Some changes could not be applied.", failed });
     b.status = "APPROVED"; b.decisionComment = comment; b.decidedAt = new Date(); await b.save();
     await notify(String(b.requesterId), { type: "EDIT_REQUEST_APPROVED", title: "Your batch change request was approved", body: `${b.items.length} change(s) applied${comment ? " — " + comment : ""}`, link: "/app/requests" });
   } else if (decision === "REJECT") {

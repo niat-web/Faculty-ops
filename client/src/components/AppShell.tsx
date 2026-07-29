@@ -180,7 +180,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         {/* Popover opens to the RIGHT of the sidebar (Veytrix-style), not stacked inside it */}
         {menuOpen && (
-          <div className="absolute bottom-0 left-[calc(100%+8px)] z-[60] w-52 overflow-hidden rounded-lg border border-slate-600 bg-slate-800 py-1 shadow-xl">
+          <div className="absolute bottom-0 left-0 z-[60] w-52 overflow-hidden rounded-lg border border-slate-600 bg-slate-800 py-1 shadow-xl max-sm:left-1/2 max-sm:-translate-x-1/2 sm:left-[calc(100%+8px)]">
             <div className="border-b border-slate-700 px-3 py-2">
               <div className="truncate text-sm font-semibold text-white">{user.name}</div>
               <div className="truncate text-[11px] text-slate-400">{user.email}</div>

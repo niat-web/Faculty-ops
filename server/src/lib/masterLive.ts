@@ -85,7 +85,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
   // Every mapped value key we surface (Darwinbox-owned + manual), so the row carries all grid columns.
   const allValueKeys = new Set<string>([...DARWINBOX_VALUE_KEYS, ...manualValueKeys]);
 
-  const docs = await Instructor.find({}).select("employeeId _id uid name email campus status exit values").lean();
+  const docs = await Instructor.find({}).select("employeeId _id uid name email campus status exit values currentManagerId").lean();
 
   // Canonical name→id resolution for the reporting-manager column, built from EVERY instructor so a
   // bare/abbreviated manager name still resolves (matches the Org-chart CM click-through by rmid).
@@ -140,8 +140,10 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.exit_date = row.exit_date || normDate(mv("exit_date")) || clean(d.exit?.lastWorkingDay);
     // Canonical Reporting Manager Employee ID (stored → "(NWxxxx)" in the name → name→id lookup).
     row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || nameToIdResolve(row.reporting_manager);
+    row.lifecycleStatus = String(d.status || "");
+    row.currentManagerId = d.currentManagerId ? String(d.currentManagerId) : "";
     row.status = exited ? "EXITED" : "ACTIVE";
-    row.lifecycle = lifecycleLabel(outcome, exited, String(d.status || ""));
+    row.lifecycle = lifecycleLabel(outcome, exited, row.lifecycleStatus);
     // Training % quick-view: stored primary % (values.primary_pct), refreshed hourly by the
     // BigQuery → Mongo training persist (lib/trainingSync.ts). No BigQuery call on the grid.
     const pctRaw = mv("primary_pct");

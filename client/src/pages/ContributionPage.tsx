@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
 import { useCachedGet } from "../hooks";
+import StaleDataBanner from "../components/StaleDataBanner";
 import { SkeletonRows } from "../components/scaffold";
 import Modal from "../components/Modal";
 import RowActionsMenu from "../components/RowActionsMenu";
@@ -12,7 +13,7 @@ import RowActionsMenu from "../components/RowActionsMenu";
 export default function ContributionPage() {
   const toast = useToast();
   const confirm = useConfirm();
-  const { data, loading, reload } = useCachedGet<any>("/contribution"); // cached + revalidated; reload() after edits
+  const { data, loading, error, staleError, reload } = useCachedGet<any>("/contribution");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<any>(null);
 
@@ -28,11 +29,12 @@ export default function ContributionPage() {
     try { const r = await api.post("/contribution/delete", { value: it.value }); toast.success(`Cleared from ${r.changed} instructor(s).`); reload(); } catch (e: any) { toast.error(e.message); }
   }
 
-  // The "no Contribution field" notice only applies once data has actually loaded (not during the fetch).
+  if (error && !data) return <div className="card p-6 text-sm text-rose-600">{error}</div>;
   if (data && !data.field) return <div className="card p-6 text-sm text-slate-500">No <b>Contribution</b> field is defined in Dynamic Fields yet. Add a field labelled "Contribution" to use this page.</div>;
 
   return (
     <div className="space-y-5">
+      {staleError && <StaleDataBanner message={staleError} onRetry={() => reload?.()} />}
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold"><Award className="h-6 w-6 text-brand-600" /> Contribution</h1>
         <p className="text-sm text-slate-500">Each unique contribution and how many instructors have it. Editing or deleting applies across your instructors.</p>

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import multer from "multer";
 import Papa from "papaparse";
 import { Instructor, User, AuditLog, LoginEvent, EditRequest, FieldDefinition, SeniorManager } from "../models";
@@ -10,12 +11,14 @@ import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
 import { sendInstructorMail, listInstructorMails } from "../lib/instructorMail";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
 import { uploadBuffer, downloadStream, deleteFile } from "../lib/storage";
+import { validateUploadBuffer } from "../lib/fileMagic";
 import { loadLiveMasterRows } from "../lib/masterLive";
 import { isOpsDept, isInstructorDept } from "../lib/staffRoles";
 import { requireUser } from "../middleware";
 
 const router = Router();
 router.use(requireUser());
+router.param("id", (req, res, next, id) => (mongoose.isValidObjectId(id) ? next() : res.status(400).json({ error: "Invalid id" })));
 const editGuard = (req: any, res: any, next: any) => (canEditDirectly(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
 // Per-instructor detail edits: Ops/SM (anyone) or a Capability Manager — but a CM is limited to
 // their OWN reportees via canAccessInstructor (route must carry an :id param).
@@ -806,6 +809,8 @@ router.delete("/:id/notes/:noteId", async (req, res) => {
 router.post("/:id/documents", detailGuard, uploadFile, async (req, res) => {
   const file = (req as any).file;
   if (!file) return res.status(400).json({ error: "No file uploaded" });
+  const issue = validateUploadBuffer(file.buffer, file.mimetype || "");
+  if (issue) return res.status(400).json({ error: issue });
   const inst: any = await Instructor.findById(req.params.id);
   if (!inst) return res.status(404).json({ error: "Not found" });
   const name = String(req.body?.name || file.originalname || "document").trim();

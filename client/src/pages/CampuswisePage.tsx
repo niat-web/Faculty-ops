@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Building2 } from "lucide-react";
 import { useCachedGet } from "../hooks";
+import StaleDataBanner from "../components/StaleDataBanner";
 import { SkeletonRows } from "../components/scaffold";
 
 export default function CampuswisePage() {
-  const { data, loading } = useCachedGet<any>("/contribution/campuswise"); // cached for instant revisits
+  const { data, loading, error, staleError, reload } = useCachedGet<any>("/contribution/campuswise");
   const [q, setQ] = useState("");
 
   const items: any[] = data?.items || [];
@@ -17,6 +18,8 @@ export default function CampuswisePage() {
 
   return (
     <div className="space-y-5">
+      {error && !data && <div className="card p-6 text-sm text-rose-600">{error}</div>}
+      {staleError && <StaleDataBanner message={staleError} onRetry={() => reload?.()} />}
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold"><Building2 className="h-6 w-6 text-brand-600" /> Campuswise Instructors</h1>
         <p className="text-sm text-slate-500">Instructors per campus, split by who runs their payroll.</p>

@@ -85,7 +85,6 @@ router.post("/submit", formGate, uploadAny, async (req, res) => {
         const { link } = await uploadCertificate(f.buffer, f.originalname || field.key, f.mimetype || "application/octet-stream");
         answers[field.key] = link;
       } catch (e: any) {
-        // Never lose the response — save the text; surface the upload failure once.
         warning = `Your details were saved, but a file upload failed: ${e?.message || "Drive error"}.`;
       }
     } else {
@@ -93,6 +92,10 @@ router.post("/submit", formGate, uploadAny, async (req, res) => {
       if (v) answers[field.key] = v;
     }
   }
+
+  const { validateCertSubmit } = await import("../lib/certSchema");
+  const verr = validateCertSubmit(schema, answers, new Set(fileByKey.keys()));
+  if (verr) return res.status(400).json({ error: verr });
 
   const legacy: Record<string, any> = {};
   for (const [k, v] of Object.entries(answers)) if (LEGACY_KEYS.has(k)) legacy[k] = v;

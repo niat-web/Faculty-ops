@@ -15,7 +15,10 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { api.get("/settings").then((r) => { setOverview(r); setEmailNotif(r.emailNotifications); setName(r.name); }).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get("/settings").then((r) => { setOverview(r); setEmailNotif(r.emailNotifications); setName(r.name); })
+      .catch(() => setMsg({ ok: false, text: "Could not load settings — refresh the page." }));
+  }, []);
 
   async function save() {
     if (password && password !== confirm) { setMsg({ ok: false, text: "Passwords do not match." }); return; }

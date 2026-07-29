@@ -82,6 +82,10 @@ async function runOnce() {
 const darwinboxConfigured = () => Boolean(config.darwinbox.endpoint && config.darwinbox.username && config.darwinbox.password && config.darwinbox.apiKey && config.darwinbox.datasetKey);
 
 export function startDarwinboxAutoSync() {
+  if (process.env.DISABLE_IN_PROCESS_SYNC === "1") {
+    console.log("[darwinbox-sync] in-process auto-sync disabled — use external /api/cron/* on multi-instance deploys");
+    return;
+  }
   const hours = config.darwinbox.syncIntervalHours;
   if (!hours || hours <= 0) { console.log("[darwinbox-sync] auto-sync disabled (DARWINBOX_SYNC_INTERVAL_HOURS=0)"); return; }
   if (!darwinboxConfigured()) { console.log("[darwinbox-sync] auto-sync off (Darwinbox not configured)"); return; }
