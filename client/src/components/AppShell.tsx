@@ -176,13 +176,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <div className="shrink-0 border-t border-slate-700/80 px-2 py-2">
-        <NavLink
-          to="/app/docs"
-          className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}
+        <a
+          href={`/docs?role=${encodeURIComponent(user.role)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="nav-link"
         >
           <FileText className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
           <span className="flex-1">Documentation</span>
-        </NavLink>
+        </a>
       </div>
 
       <div ref={menuRef} className="relative shrink-0 border-t border-slate-700/80 p-3">

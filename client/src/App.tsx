@@ -136,8 +136,10 @@ export default function App() {
       {/* Public Certificates form — opens only for the exact UUID link; access also gated server-side. */}
       <Route path="/certifications/:token" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
       <Route path="/certifications" element={<Suspense fallback={<Loading full />}><CertificationFormPage /></Suspense>} />
-      {/* Public documentation — standalone page, no app shell, no login required. */}
+      {/* Public documentation — standalone page, no login. ?role= filters by role. */}
       <Route path="/docs" element={<Suspense fallback={<Loading full />}><DocsPage /></Suspense>} />
+      {/* Legacy in-app docs URL → open public docs (role picked up if still logged in via query from sidebar). */}
+      <Route path="/app/docs" element={<Navigate to="/docs" replace />} />
       <Route path="/print/instructors/:id" element={<Protected><Suspense fallback={<Loading full />}><PrintProfilePage /></Suspense></Protected>} />
       <Route
         path="/app/*"
@@ -173,7 +175,6 @@ export default function App() {
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="tasks/:id" element={<TaskDetailPage />} />
-                <Route path="docs" element={<DocsPage embedded />} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}
