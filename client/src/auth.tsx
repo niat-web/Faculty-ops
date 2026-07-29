@@ -65,3 +65,10 @@ export const LIFECYCLE_LABEL: Record<string, string> = {
   ONBOARDING: "Onboarding", IN_TRAINING: "In Training", CONFIRMED: "Confirmed", TRANSFER: "Transfer",
   EXIT_IN_PROGRESS: "Exit in Progress", EXITED: "Exited", REHIRED: "Rehired",
 };
+
+/** Human-readable lifecycle label; tolerates "IN TRAINING" / mixed-case API values. */
+export function lifecycleLabel(status?: string | null) {
+  if (!status) return "—";
+  const normalized = status.trim().replace(/\s+/g, "_").toUpperCase();
+  return LIFECYCLE_LABEL[normalized] || LIFECYCLE_LABEL[status] || status.replace(/_/g, " ");
+}

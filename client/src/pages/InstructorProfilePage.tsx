@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, RefreshCw, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle } from "lucide-react";
 import { api, API_BASE } from "../api";
-import { useAuth, LIFECYCLE_LABEL } from "../auth";
+import { useAuth, LIFECYCLE_LABEL, lifecycleLabel } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import Modal from "../components/Modal";
@@ -22,7 +22,7 @@ function HealthChip({ value }: { value: any }) {
 function ProfileSkeleton() {
   return (
     <div className="space-y-5">
-      <Link to="/app/instructors" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> All instructors</Link>
+      <Link to="/app/instructors/master" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4 shrink-0" aria-hidden /><span>All instructors</span></Link>
       <div className="card flex flex-wrap items-center gap-4 p-6">
         <Skeleton width="64px" height="64px" borderRadius="16px" />
         <div className="flex-1 space-y-2"><Skeleton width="200px" height="24px" /><Skeleton width="280px" height="12px" /></div>
@@ -36,7 +36,7 @@ function ProfileSkeleton() {
           <div className="card space-y-4 p-6">
             <Skeleton width="35%" height="16px" />
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="grid grid-cols-1 items-center gap-1 py-1 sm:grid-cols-[200px_1fr] sm:gap-3"><Skeleton width="60%" height="14px" /><Skeleton width="80%" height="30px" borderRadius="8px" /></div>
+              <div key={i} className="grid grid-cols-1 items-center gap-x-6 gap-y-1 py-1 sm:grid-cols-[11rem_minmax(0,28rem)]"><Skeleton width="60%" height="14px" /><Skeleton width="80%" height="30px" borderRadius="8px" /></div>
             ))}
           </div>
         </div>
@@ -53,10 +53,12 @@ const VIS_CHIP: Record<string, string> = { PUBLIC: "chip-public", NECESSARY: "ch
 // Shared sizing so the value cell stays EXACTLY the same size whether it is being
 // displayed, hovered, or edited — clicking a value must never shift the layout.
 // Every state has a 1px border (transparent when not editing) + identical padding + font.
-const CELL_BASE = "w-full rounded-lg border px-3 py-1.5 text-sm leading-5";
-const CELL_EDIT = `${CELL_BASE} border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
-const CELL_VIEW = `${CELL_BASE} block cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
+const CELL_BASE = "rounded-lg border px-3 py-1.5 text-sm leading-5";
+const CELL_EDIT = `${CELL_BASE} w-full max-w-lg border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
+const CELL_VIEW = `${CELL_BASE} block w-full max-w-lg cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
 const CELL_STATIC = `${CELL_BASE} border-transparent text-slate-800`;
+const FIELD_ROW = "group grid grid-cols-1 items-start gap-x-6 gap-y-1 py-2.5 sm:grid-cols-[11rem_minmax(0,28rem)] sm:items-center";
+const EDIT_BTN = "shrink-0 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100";
 const EMPTY = <span className="text-slate-400">—</span>;
 
 export default function InstructorProfilePage() {
@@ -143,36 +145,38 @@ export default function InstructorProfilePage() {
 
   return (
     <div className="space-y-5">
-      <Link to="/app/instructors" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4" /> All instructors</Link>
+      <Link to="/app/instructors/master" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4 shrink-0" aria-hidden /><span>All instructors</span></Link>
 
-      <div className="card flex flex-wrap items-center gap-4 p-6">
+      <div className="card flex flex-wrap items-center gap-4 p-6 select-none">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{(inst.name || "?").charAt(0)}</div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{inst.name}</h1>
           <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="chip chip-status text-sm">{LIFECYCLE_LABEL[inst.status] || inst.status}</span>
+          <span className="chip chip-status text-sm">{lifecycleLabel(inst.status)}</span>
           <a href={`/print/instructors/${id}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm"><Printer className="h-4 w-4" /> Report card</a>
-          {canEdit && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm"><RefreshCw className="h-4 w-4" /> Change status</button>}
+          {canEdit && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm"><GitBranch className="h-4 w-4" /> Change status</button>}
           {canEdit && inst.status === "EXITED" && <button onClick={rehire} className="btn btn-success btn-sm">Re-hire</button>}
           {isOps && <button onClick={remove} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /></button>}
         </div>
       </div>
 
       <div className="flex flex-col gap-5 lg:flex-row">
-        <nav className="shrink-0 space-y-1 lg:w-56">
-          {tabs.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`nav-link w-full text-left ${active === t ? "nav-link-active" : ""}`}>{label(t)}</button>
-          ))}
+        <nav className="shrink-0 select-none lg:w-56" aria-label="Profile sections">
+          <div className="space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 lg:sticky lg:top-4">
+            {tabs.map((t) => (
+              <button key={t} type="button" onClick={() => setTab(t)} className={`profile-tab ${active === t ? "profile-tab-active" : ""}`}>{label(t)}</button>
+            ))}
+          </div>
         </nav>
         <div className="min-w-0 flex-1 space-y-5">
           {moduleTabs.includes(active) && (
-            <div className="card p-6">
+            <div className="card p-6 select-text">
               <h2 className="mb-4 font-semibold">{label(active)}</h2>
-              <dl className="divide-y divide-slate-100">
+              <dl className="max-w-3xl divide-y divide-slate-100">
                 {(p.byModule?.[active] || []).map((f: any) => (
-                  <div key={f.key} className="group grid grid-cols-1 items-start gap-1 py-2 sm:grid-cols-[200px_1fr] sm:items-center sm:gap-3">
+                  <div key={f.key} className={FIELD_ROW}>
                     <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <div className="min-w-0 flex-1">
@@ -201,7 +205,7 @@ export default function InstructorProfilePage() {
                       )}
                       </div>
                       {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
-                        <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                        <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className={EDIT_BTN}><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                       )}
                     </dd>
                   </div>
@@ -215,7 +219,7 @@ export default function InstructorProfilePage() {
               <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
               <ul className="space-y-3">
                 {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
-                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
+                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{lifecycleLabel(l.status)}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
                 )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
               </ul>
             </div>
@@ -238,7 +242,7 @@ export default function InstructorProfilePage() {
 export function fmt(v: any) { if (v === true) return "Yes"; if (v === false) return "No"; return v; }
 
 function Field({ label, value }: { label: string; value: any }) {
-  return <div className="grid grid-cols-1 items-start gap-1 py-2 sm:grid-cols-[200px_1fr] sm:items-center sm:gap-3"><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
+  return <div className={FIELD_ROW}><dt className="text-sm font-medium text-slate-600">{label}</dt><dd className={CELL_STATIC}>{value || EMPTY}</dd></div>;
 }
 
 export function EditFieldModal({ field, instructorId, mode, onClose, onDone }: any) {
@@ -359,7 +363,7 @@ export function ExitTab({ exit, instructorId, canEdit, onChange }: any) {
             <div className="sm:col-span-2 flex justify-end"><button disabled={busy} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">Save exit details</button></div>
           </div>
         ) : (
-          <dl className="divide-y divide-slate-100"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
+          <dl className="max-w-3xl divide-y divide-slate-100"><Field label="Last working day" value={f.lastWorkingDay} /><Field label="Type of exit" value={f.typeOfExit} /><Field label="Reason" value={f.reason} /><Field label="Detailed reason" value={f.detailedReason} /></dl>
         )}
       </div>
       <div className="card p-6">
@@ -576,7 +580,7 @@ export function HistoryTab({ instructorId }: { instructorId: string }) {
       </div>
       {h.lifecycle?.length > 0 && (
         <div className="card p-6"><h2 className="mb-3 font-semibold">Lifecycle history</h2>
-          <ul className="space-y-2 text-sm">{h.lifecycle.map((l: any, i: number) => <li key={i} className="flex justify-between"><span className="text-slate-700">{LIFECYCLE_LABEL[l.status] || l.status}{l.note ? ` — ${l.note}` : ""}</span><span className="text-xs text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</span></li>)}</ul>
+          <ul className="space-y-2 text-sm">{h.lifecycle.map((l: any, i: number) => <li key={i} className="flex justify-between"><span className="text-slate-700">{lifecycleLabel(l.status)}{l.note ? ` — ${l.note}` : ""}</span><span className="text-xs text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</span></li>)}</ul>
         </div>
       )}
       {h.fieldChanges?.length > 0 && (

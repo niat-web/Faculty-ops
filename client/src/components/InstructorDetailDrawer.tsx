@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { isAbort } from "../hooks";
-import { X, Pencil, Trash2, RefreshCw, Printer, ExternalLink, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { X, Pencil, Trash2, GitBranch, Printer, ExternalLink, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { api } from "../api";
-import { useAuth, LIFECYCLE_LABEL } from "../auth";
+import { useAuth, lifecycleLabel } from "../auth";
 import { useToast } from "../toast";
 import { useConfirm, usePrompt } from "../confirm";
 import { useBatchEdit } from "../batchEdit";
@@ -14,10 +14,12 @@ import {
   DocumentsTab, AuditTab, MailsTab, HistoryTab,
 } from "../pages/InstructorProfilePage";
 
-const CELL_BASE = "w-full rounded-lg border px-3 py-1.5 text-sm leading-5";
-const CELL_EDIT = `${CELL_BASE} border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
-const CELL_VIEW = `${CELL_BASE} block cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
+const CELL_BASE = "rounded-lg border px-3 py-1.5 text-sm leading-5";
+const CELL_EDIT = `${CELL_BASE} w-full max-w-lg border-slate-300 bg-white text-slate-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100`;
+const CELL_VIEW = `${CELL_BASE} block w-full max-w-lg cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
 const CELL_STATIC = `${CELL_BASE} border-transparent text-slate-800`;
+const FIELD_ROW = "group grid grid-cols-1 items-start gap-x-6 gap-y-1 py-2.5 sm:grid-cols-[11rem_minmax(0,28rem)] sm:items-center";
+const EDIT_BTN = "shrink-0 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100";
 const EMPTY = <span className="text-slate-400">—</span>;
 
 /**
@@ -210,10 +212,10 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
                 <button onClick={() => onNavigate?.(navIds[(navIdx + 1) % navIds.length])} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Next selected"><ChevronRight className="h-4 w-4" /></button>
               </div>
             )}
-            <span className="chip chip-status text-xs">{LIFECYCLE_LABEL[inst.status] || inst.status}</span>
+            <span className="chip chip-status text-xs">{lifecycleLabel(inst.status)}</span>
             {!batchMode && <a href={`/print/instructors/${instructorId}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="Report card"><Printer className="h-4 w-4" /></a>}
             {!batchMode && <a href={`/app/instructors/${instructorId}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="Open full page"><ExternalLink className="h-4 w-4" /></a>}
-            {canEdit && !batchMode && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm" title="Change status"><RefreshCw className="h-4 w-4" /></button>}
+            {canEdit && !batchMode && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm" title="Change status"><GitBranch className="h-4 w-4" /></button>}
             {canEdit && !batchMode && inst.status === "EXITED" && <button onClick={rehire} className="btn btn-success btn-sm">Re-hire</button>}
             {isOps && !batchMode && <button onClick={remove} className="btn btn-danger btn-sm" title="Delete"><Trash2 className="h-4 w-4" /></button>}
           </>
@@ -241,13 +243,13 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
         {moduleSections.map((m: string) => (
           <section key={m} ref={setRef(m)} className="card p-6">
             <h3 className="mb-4 font-semibold text-slate-800">{label(m)}</h3>
-            <dl className="divide-y divide-slate-100">
+            <dl className="max-w-3xl divide-y divide-slate-100">
               {(p.byModule?.[m] || []).map((f: any) => {
                 const buf = buffered(f.key);
                 // In batch mode the displayed value reflects the buffered edit (if any).
                 const shown = buf ? buf.newValue : f.value;
                 return (
-                <div key={f.key} className="group grid grid-cols-[140px_1fr] items-center gap-3 py-2">
+                <div key={f.key} className={FIELD_ROW}>
                   <dt className="text-sm font-medium text-slate-600">{f.label}{buf && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">edited</span>}</dt>
                   <dd className="flex min-w-0 items-center gap-2">
                     <div className="min-w-0 flex-1">
@@ -276,7 +278,7 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
                       )}
                     </div>
                     {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
-                      <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className="shrink-0 opacity-0 transition focus-visible:opacity-100 group-hover:opacity-100"><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                      <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className={EDIT_BTN}><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
                     )}
                   </dd>
                 </div>
@@ -292,7 +294,7 @@ function DrawerBody({ p, instructorId, user, isOps, canEdit, canEditFields, canR
           <h3 className="mb-4 font-semibold text-slate-800">Lifecycle & Status</h3>
           <ul className="space-y-3">
             {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
-              <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
+              <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{lifecycleLabel(l.status)}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
             )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
           </ul>
         </section>

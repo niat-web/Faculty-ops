@@ -91,6 +91,15 @@ table { font-variant-numeric: tabular-nums; }
   .nav-sublink:hover { @apply text-white/90; }
   .nav-sublink-active { @apply text-white; }
 
+  /* ── Profile / stats section tabs (light background) ── */
+  .profile-tab {
+    @apply w-full rounded-lg border-l-[3px] border-transparent px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900;
+  }
+  .profile-tab:hover { @apply bg-slate-50; }
+  .profile-tab-active {
+    @apply border-brand-500 bg-slate-100 font-semibold text-slate-900;
+  }
+
   /* ── Table shell (flat enterprise) ── */
   .table-shell { @apply border-y border-slate-200 bg-white; }
   .table-shell-header { @apply border-b border-gray-200 px-4 py-3; }

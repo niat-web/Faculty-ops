@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import { api } from "../api";
-import { LIFECYCLE_LABEL } from "../auth";
+import { lifecycleLabel } from "../auth";
 import { useToast } from "../toast";
 import Modal from "../components/Modal";
 import { Skeleton } from "../components/Skeleton";
@@ -68,14 +68,16 @@ export default function MyStatsPage() {
           <h2 className="text-xl font-bold">{inst.name}</h2>
           <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
         </div>
-        <span className="chip chip-status text-sm">{LIFECYCLE_LABEL[inst.status] || inst.status}</span>
+        <span className="chip chip-status text-sm">{lifecycleLabel(inst.status)}</span>
       </div>
 
       <div className="flex flex-col gap-5 lg:flex-row">
-        <nav className="shrink-0 space-y-1 lg:w-56">
-          {tabs.map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`nav-link w-full text-left ${active === t ? "nav-link-active" : ""}`}>{label(t)}</button>
-          ))}
+        <nav className="shrink-0 select-none lg:w-56" aria-label="Profile sections">
+          <div className="space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 lg:sticky lg:top-4">
+            {tabs.map((t) => (
+              <button key={t} type="button" onClick={() => setTab(t)} className={`profile-tab ${active === t ? "profile-tab-active" : ""}`}>{label(t)}</button>
+            ))}
+          </div>
         </nav>
 
         <div className="min-w-0 flex-1 space-y-5">
@@ -89,7 +91,7 @@ export default function MyStatsPage() {
                     <dd className="flex items-center gap-2 text-sm text-slate-800">
                       <span>{fmt(f.value) || <span className="text-slate-300">—</span>}</span>
                       {f.type !== "FILE" && f.selfEditable !== false && (
-                        <button onClick={() => setEditField(f)} title="Edit" className="opacity-0 transition group-hover:opacity-100"><Pencil className="h-3.5 w-3.5 text-slate-400 hover:text-brand-600" /></button>
+                        <button onClick={() => setEditField(f)} title="Edit" aria-label={`Edit ${f.label}`} className="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100"><Pencil className="h-3.5 w-3.5 text-slate-400 hover:text-brand-600" /></button>
                       )}
                     </dd>
                   </div>
@@ -106,7 +108,7 @@ export default function MyStatsPage() {
               <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
               <ul className="space-y-3">
                 {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
-                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{LIFECYCLE_LABEL[l.status] || l.status}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
+                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{lifecycleLabel(l.status)}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
                 )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
               </ul>
             </div>
