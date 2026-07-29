@@ -40,6 +40,7 @@ const TYPE_EMAIL_KEY: Record<string, string> = {
   SCHEMA_CHANGED: "SCHEMA_CHANGED",
   TASK_ASSIGNED: "TASK_ASSIGNED",
   TASK_COMPLETED: "TASK_COMPLETED",
+  TASK_REMINDER: "TASK_REMINDER",
 };
 
 export async function notify(userId: string, { type, title, body, link, email = true, emailKey }: { type: string; title: string; body?: string; link?: string; email?: boolean; emailKey?: string }) {
@@ -53,10 +54,43 @@ export async function notify(userId: string, { type, title, body, link, email = 
     const u = await User.findById(userId).select("email name emailNotifications").lean();
     if (u?.email && u.emailNotifications !== false) {
       const url = (await getGeneral()).appUrl + (link || "");
-      sendEmail({ to: u.email, subject: title, html: `<p>Hi ${escapeHtml(u.name || "")},</p><p>${escapeHtml(body || title)}</p><p><a href="${url}">Open in CRM</a></p>`, text: `${body || title}\n${url}` })
-        .catch((e) => console.error("[notify] email failed:", e?.message));
+      const htmlBody = (body || title).split("\n").map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+      sendEmail({
+        to: u.email,
+        subject: title,
+        html: `<p>Hi ${escapeHtml(u.name || "")},</p>${htmlBody}<p><a href="${url}">Open in FacultyOps</a></p>`,
+        text: `${body || title}\n\nOpen: ${url}`,
+      }).catch((e) => console.error("[notify] email failed:", e?.message));
     }
   }
+}
+
+/** Rich assignment email + in-app notification for a newly created task. */
+export async function notifyTaskAssigned(
+  userId: string,
+  task: { id: string; title: string; dueAt: Date | string; priority?: string; assignerName: string; reminderIntervalMs?: number; createdAt?: Date | string },
+) {
+  const { reminderLabel, fmtTaskDue } = await import("./taskReminders");
+  const due = fmtTaskDue(task.dueAt);
+  const assignedAt = fmtTaskDue(task.createdAt || new Date());
+  const pri = (task.priority || "MEDIUM").toLowerCase();
+  const rem = task.reminderIntervalMs ? reminderLabel(task.reminderIntervalMs) : "";
+  const lines = [
+    task.title,
+    `Assigned at: ${assignedAt}`,
+    `Due: ${due}`,
+    `Priority: ${pri}`,
+    `Assigned by: ${task.assignerName}`,
+    ...(rem ? [`Reminders: ${rem}`] : []),
+  ];
+  await notify(userId, {
+    type: "TASK_ASSIGNED",
+    title: "New task assigned to you",
+    body: lines.join("\n"),
+    link: `/app/tasks/${task.id}`,
+    emailKey: "TASK_ASSIGNED",
+    email: true,
+  });
 }
 
 export async function applyFieldChange({ actor, instructorId, fieldKey, fieldLabel, oldValue, newValue, reason, proofPath, sensitive, action = "FIELD_EDIT" }: {

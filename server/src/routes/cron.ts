@@ -2,6 +2,7 @@ import { Router } from "express";
 import { EditRequest, Instructor, User, AuditLog, LoginEvent } from "../models";
 import { Role } from "../enums";
 import { notify } from "../lib/services";
+import { processTaskReminders } from "../lib/taskReminderJob";
 import { config } from "../config";
 
 const router = Router();
@@ -37,6 +38,9 @@ router.post("/reminders", async (_req, res) => {
   for (const inst of exiting as any[]) {
     if (inst.currentManagerId) { await notify(String(inst.currentManagerId), { type: "REMINDER", title: `${inst.name} exits on ${inst.exit.lastWorkingDay}`, body: "Complete the offboarding checklist.", link: "/app/instructors" }); sent++; }
   }
+
+  sent += await processTaskReminders();
+
   res.json({ ok: true, sent });
 });
 

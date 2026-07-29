@@ -248,7 +248,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       )}
 
       {/* Desktop sidebar */}
-      <div className="fixed inset-y-0 left-0 z-30 hidden md:block">{sidebar}</div>
+      <div className="fixed top-0 left-0 z-30 hidden h-screen md:block">{sidebar}</div>
 
       {/* Main content */}
       <main

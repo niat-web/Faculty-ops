@@ -51,6 +51,7 @@ export const EMAIL_EVENTS = [
   { key: "INSTRUCTOR_REPORTING_DAY", role: "INSTRUCTOR", label: "Reporting day (deployed)", desc: "Sent to the instructor when their reporting day is set / they are deployed." },
   { key: "TASK_ASSIGNED", role: "ALL", label: "Task assigned", desc: "Sent when someone assigns a task to you." },
   { key: "TASK_COMPLETED", role: "ALL", label: "Task completed", desc: "Sent to the task creator when an assignee marks it done." },
+  { key: "TASK_REMINDER", role: "ALL", label: "Task reminder", desc: "Recurring reminder for open tasks (based on the interval chosen when assigning)." },
 ] as const;
 export type EmailEventKey = (typeof EMAIL_EVENTS)[number]["key"];
 const EMAIL_KEYS = new Set(EMAIL_EVENTS.map((e) => e.key));
@@ -111,6 +112,7 @@ export const NOTIFY_EVENTS = [
   { key: "REMINDER", role: "ALL", label: "Reminders & weekly digest", desc: "Pending-request nudges, exit deadlines and the weekly summary." },
   { key: "TASK_ASSIGNED", role: "ALL", label: "Task assigned", desc: "Someone assigned you a new task." },
   { key: "TASK_COMPLETED", role: "ALL", label: "Task completed", desc: "An assignee marked your task as done." },
+  { key: "TASK_REMINDER", role: "ALL", label: "Task reminder", desc: "Recurring reminder for an open task." },
 ] as const;
 export type NotifyEventKey = (typeof NOTIFY_EVENTS)[number]["key"];
 const NOTIFY_KEYS = new Set(NOTIFY_EVENTS.map((e) => e.key));

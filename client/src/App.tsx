@@ -52,6 +52,7 @@ const FieldsPage = lazy(() => import("./pages/FieldsPage"));
 const OrgPage = lazy(() => import("./pages/OrgPage"));
 const RequestsPage = lazy(() => import("./pages/RequestsPage"));
 const TasksPage = lazy(() => import("./pages/TasksPage"));
+const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -171,6 +172,7 @@ export default function App() {
                 <Route path="requests" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="tasks" element={<TasksPage />} />
+                <Route path="tasks/:id" element={<TaskDetailPage />} />
                 <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}

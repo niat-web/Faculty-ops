@@ -280,11 +280,22 @@ LoginEventSchema.index({ userId: 1, at: -1 });
 
 // ---------------------------------------------------------------------------
 // Task — assignable work items (Ops → staff/instructors; CM → instructors when enabled).
+const TaskCommentSchema = new Schema(
+  {
+    body: { type: String, required: true, trim: true },
+    authorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    authorName: String,
+    authorRole: String,
+  },
+  { timestamps: { createdAt: true, updatedAt: false } }
+);
+
 const TaskSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
     body: { type: String, default: "" },
     status: { type: String, default: "OPEN" }, // OPEN | DONE | CANCELLED
+    priority: { type: String, default: "MEDIUM" }, // LOW | MEDIUM | HIGH
     dueAt: { type: Date, required: true },
     assignerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     assignerName: String,
@@ -294,11 +305,21 @@ const TaskSchema = new Schema(
     assigneeRole: String,
     instructorId: { type: Schema.Types.ObjectId, ref: "Instructor", default: null },
     completedAt: { type: Date, default: null },
+    reminderIntervalMs: { type: Number, default: 0 }, // 0 = off; else repeat interval in ms
+    lastReminderAt: { type: Date, default: null },
+    deadlineAt: { type: Date, default: null },
+    labels: { type: [String], default: [] },
+    attachments: {
+      type: [{ name: String, url: String, mime: String }],
+      default: [],
+    },
+    comments: { type: [TaskCommentSchema], default: [] },
   },
   { timestamps: true }
 );
 TaskSchema.index({ assigneeId: 1, status: 1, dueAt: 1 });
 TaskSchema.index({ assignerId: 1, createdAt: -1 });
+TaskSchema.index({ status: 1, reminderIntervalMs: 1, lastReminderAt: 1 });
 
 // ---------------------------------------------------------------------------
 // AppSetting — single global document holding admin-configurable system settings.
