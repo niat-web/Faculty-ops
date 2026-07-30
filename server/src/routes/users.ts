@@ -18,6 +18,9 @@ const router = Router();
 router.use(requireUser());
 router.param("id", (req, res, next, id) => (mongoose.isValidObjectId(id) ? next() : res.status(400).json({ error: "Invalid id" })));
 const opsOnly = (req: any, res: any, next: any) => (canManageUsers(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
+// Users page manages staff login accounts only — not instructor self-service accounts.
+const STAFF_ROLES = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
+const isStaffRole = (r: string) => STAFF_ROLES.includes(r as typeof STAFF_ROLES[number]);
 
 // List users (paginated + filtered).
 router.get("/", opsOnly, async (req, res) => {
@@ -37,11 +40,12 @@ router.get("/", opsOnly, async (req, res) => {
   const removedEmails = await removedEmailList();
   if (removedEmails.length) query.email = { $nin: removedEmails };
   // Roles quick-filter (checkbox dropdown, comma-separated) — takes precedence over the single `role`.
-  // Present-but-empty (all unchecked) → $in [] → no rows. Absent → fall back to the single `role`.
+  // Present-but-empty (all unchecked) → $in [] → no rows. Absent → all staff roles.
   if (req.query.roles !== undefined) {
-    const roles = String(req.query.roles).split(",").map((s) => s.trim()).filter(Boolean);
+    const roles = String(req.query.roles).split(",").map((s) => s.trim()).filter(isStaffRole);
     query.role = { $in: roles };
-  } else if (role) query.role = role;
+  } else if (role && isStaffRole(role)) query.role = role;
+  else query.role = { $in: STAFF_ROLES };
   // Cast to ObjectId — the aggregation's $match does NOT auto-cast like countDocuments/find does,
   // so a raw string would count rows but return none (mismatch). (Bug)
   if (managerId) query.managerId = mongoose.isValidObjectId(managerId) ? new mongoose.Types.ObjectId(managerId) : managerId;
@@ -57,9 +61,8 @@ router.get("/", opsOnly, async (req, res) => {
   else if (live === "offline") and.push({ $or: [{ lastSeenAt: null }, { lastSeenAt: { $exists: false } }, { lastSeenAt: { $lt: liveCutoff } }] });
   if (and.length) query.$and = and;
 
-  // Custom role ordering for the table: Ops Admin → Senior Manager → Capability Manager → Instructor.
-  // Done in the DB (not after fetch) so it stays correct across pagination.
-  const ROLE_ORDER = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER, Role.INSTRUCTOR];
+  // Custom role ordering for the table: Ops Admin → Senior Manager → Capability Manager.
+  const ROLE_ORDER = STAFF_ROLES;
   // 3-state column sort (overrides the default role-rank ordering when set).
   const SORTABLE = new Set(["name", "email", "role", "createdAt", "lastLoginAt", "lastSeenAt"]);
   const sortKey = String(req.query.sort || ""); const sortDir = String(req.query.dir || "");
@@ -110,6 +113,7 @@ router.post("/", opsOnly, async (req, res) => {
   if (!name || !email) return res.status(400).json({ error: "Name and email are required" });
   if (password) { const sec = await getSecurity(); const i = passwordIssue(password, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity }); if (i) return res.status(400).json({ error: i }); }
   if (!Object.values(Role).includes(role as any)) return res.status(400).json({ error: "Bad role" });
+  if (!isStaffRole(role)) return res.status(400).json({ error: "Only Ops Admin, Senior Manager, and Capability Manager accounts can be created here." });
   if (role === Role.CAPABILITY_MANAGER && !managerId) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager" });
   if (await User.findOne({ email })) return res.status(409).json({ error: "Email already in use" });
 
@@ -127,6 +131,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
   const { name, email, role, managerId, active, newPassword } = req.body || {};
   const target = await User.findById(req.params.id);
   if (!target) return res.status(404).json({ error: "User not found" });
+  if (!isStaffRole(target.role)) return res.status(404).json({ error: "User not found" });
   const isSelf = String(target._id) === req.user!.id;
 
   if (typeof name === "string" && name.trim()) target.name = name.trim();
@@ -142,6 +147,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
   if (typeof active === "boolean") { if (isSelf && !active) return res.status(400).json({ error: "You can't deactivate your own account." }); target.active = active; }
   if (role) {
     if (!Object.values(Role).includes(role)) return res.status(400).json({ error: "Bad role" });
+    if (!isStaffRole(role)) return res.status(400).json({ error: "Only Ops Admin, Senior Manager, and Capability Manager roles are allowed." });
     if (isSelf && role !== Role.OPS_ADMIN) return res.status(400).json({ error: "You can't change your own role." });
     target.role = role;
     if (role === Role.CAPABILITY_MANAGER) { const mgr = managerId || (target.managerId ? String(target.managerId) : null); if (!mgr) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager." }); target.managerId = mgr; }
@@ -158,6 +164,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
 router.delete("/:id", opsOnly, async (req, res) => {
   const target = await User.findById(req.params.id);
   if (!target) return res.status(404).json({ error: "User not found" });
+  if (!isStaffRole(target.role)) return res.status(404).json({ error: "User not found" });
   if (String(target._id) === req.user!.id) return res.status(400).json({ error: "You can't delete your own account." });
   if (target.role === Role.CAPABILITY_MANAGER) { const n = await Instructor.countDocuments({ currentManagerId: target._id }); if (n > 0) return res.status(409).json({ error: `Reassign this manager's ${n} reportee(s) first (Assignments).` }); }
   if (target.role === Role.SENIOR_MANAGER) {
@@ -177,6 +184,7 @@ router.delete("/:id", opsOnly, async (req, res) => {
 router.post("/:id/invite", opsOnly, async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
+  if (!isStaffRole(user.role)) return res.status(404).json({ error: "User not found" });
   if (!user.email) return res.status(400).json({ error: "User has no email address" });
   const { link, delivered } = await inviteUser(user, config.appUrl);
   res.json({ ok: true, link, delivered, email: user.email });
@@ -185,7 +193,7 @@ router.post("/:id/invite", opsOnly, async (req, res) => {
 // Bulk set-password invite.
 router.post("/invite/bulk", opsOnly, async (req, res) => {
   const scope = req.body?.scope === "all" ? "all" : "pending";
-  const filter: any = { active: true, email: { $ne: null }, role: { $ne: Role.OPS_ADMIN } };
+  const filter: any = { active: true, email: { $ne: null }, role: { $in: STAFF_ROLES, $ne: Role.OPS_ADMIN } };
   if (scope === "pending") filter.mustSetPassword = true;
   const users = await User.find(filter).select("email name resetTokenExp").lean();
   if (!users.length) return res.json({ ok: true, count: 0, skipped: 0, delivered: 0 });

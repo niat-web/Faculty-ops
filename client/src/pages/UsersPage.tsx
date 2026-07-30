@@ -12,7 +12,7 @@ import { useSort, SortHeader } from "../components/SortHeader";
 import RowActionsMenu from "../components/RowActionsMenu";
 import { SkeletonRows } from "../components/scaffold";
 
-const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"];
+const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 type Filters = { role: string; managerId: string; status: string; live: string };
 const EMPTY_FILTERS: Filters = { role: "", managerId: "", status: "", live: "" };
 
@@ -261,7 +261,7 @@ function UserModal({ user, seniors, onClose, onSaved }: { user: any; seniors: an
   const isNew = !user.id;
   const [name, setName] = useState(user.name || "");
   const [email, setEmail] = useState(user.email || "");
-  const [role, setRole] = useState(user.role || "INSTRUCTOR");
+  const [role, setRole] = useState(user.role || "CAPABILITY_MANAGER");
   const [managerId, setManagerId] = useState(user.managerId || "");
   const [active, setActive] = useState(user.active ?? true);
   const [password, setPassword] = useState("");
