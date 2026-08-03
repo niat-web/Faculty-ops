@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X } from "lucide-react";
+import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X, ChevronDown, UserMinus, UserCheck } from "lucide-react";
 import { api } from "../api";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort, useStickyThead, usePageClamp } from "../hooks";
@@ -37,6 +37,7 @@ function fmtRelative(iso: string | null): string {
 }
 
 export default function UsersPage() {
+  const { user: me } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
   const [q, setQ] = useState("");
@@ -53,6 +54,9 @@ export default function UsersPage() {
   const [invite, setInvite] = useState<{ link: string; email: string; delivered: boolean } | null>(null);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [inviteMenuOpen, setInviteMenuOpen] = useState(false);
+  const [inviteSelectMode, setInviteSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const sort = useSort("", "", () => setPage(1));
   // Roles quick-filter (checkbox dropdown next to the heading, like the Master's "Departments" filter).
@@ -95,10 +99,49 @@ export default function UsersPage() {
   async function sendInvite(u: any) {
     try { const r = await api.post(`/users/${u.id}/invite`); setInvite({ link: r.link, email: r.email, delivered: r.delivered }); } catch (e: any) { toast.error(e.message); }
   }
+  async function setActive(u: any, active: boolean) {
+    const verb = active ? "Activate" : "Deactivate";
+    if (!(await confirm({
+      title: `${verb} user?`,
+      message: active ? `Activate ${u.name}? They will be able to sign in again.` : `Deactivate ${u.name}? They will no longer be able to sign in.`,
+      confirmText: verb,
+      danger: !active,
+    }))) return;
+    try {
+      await api.patch(`/users/${u.id}`, { active });
+      toast.success(active ? "User activated." : "User deactivated.");
+      load();
+    } catch (e: any) { toast.error(e.message); }
+  }
   async function bulkInvite(scope: "pending" | "all") {
     if (!(await confirm({ title: "Send invites?", message: `Send set-password invites to ${scope === "all" ? "all active users" : "users who haven't set a password"}?`, confirmText: "Send", danger: false }))) return;
     setBusy(true);
     try { const r = await api.post(`/users/invite/bulk`, { scope }); setMsg({ text: `Invited ${r.count} user(s), ${r.delivered} email(s) delivered.`, ok: true }); } catch (e: any) { setMsg({ text: e.message, ok: false }); } finally { setBusy(false); }
+  }
+  function exitInviteSelect() { setInviteSelectMode(false); setSelectedIds(new Set()); }
+  const pageIds = data?.users?.map((u: any) => u.id as string) ?? [];
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  function toggleSelect(id: string) {
+    setSelectedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAllOnPage() {
+    setSelectedIds((s) => {
+      const n = new Set(s);
+      if (allOnPage) pageIds.forEach((id) => n.delete(id));
+      else pageIds.forEach((id) => n.add(id));
+      return n;
+    });
+  }
+  async function inviteSelected() {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    if (!(await confirm({ title: "Send invites?", message: `Send set-password invites to ${ids.length} selected user(s)?`, confirmText: "Send", danger: false }))) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/users/invite/bulk`, { userIds: ids });
+      setMsg({ text: `Invited ${r.count} user(s), ${r.delivered} email(s) delivered.`, ok: true });
+      exitInviteSelect();
+    } catch (e: any) { setMsg({ text: e.message, ok: false }); } finally { setBusy(false); }
   }
 
   const pages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
@@ -146,11 +189,35 @@ export default function UsersPage() {
             {activeCount > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeCount}</span>}
           </button>
           {activeCount > 0 && <button onClick={clearAll} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
-          <button disabled={busy} onClick={() => bulkInvite("pending")} className="btn btn-ghost btn-sm"><Mail className="h-4 w-4" /> Invite pending</button>
+          {inviteSelectMode ? (
+            <>
+              <button disabled={busy || selectedIds.size === 0} onClick={inviteSelected} className="btn btn-primary btn-sm"><Mail className="h-4 w-4" /> Send invite{selectedIds.size ? ` (${selectedIds.size})` : ""}</button>
+              <button disabled={busy} onClick={exitInviteSelect} className="btn btn-ghost btn-sm">Cancel</button>
+            </>
+          ) : (
+            <span className="relative">
+              <button disabled={busy} onClick={() => setInviteMenuOpen((o) => !o)} className="btn btn-ghost btn-sm"><Mail className="h-4 w-4" /> Invite pending <ChevronDown className={`h-3.5 w-3.5 transition ${inviteMenuOpen ? "rotate-180" : ""}`} /></button>
+              {inviteMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setInviteMenuOpen(false)} />
+                  <div className="absolute right-0 top-full z-40 mt-1 w-52 rounded-xl border border-slate-200 bg-white py-1 shadow-soft">
+                    <button onClick={() => { setInviteMenuOpen(false); bulkInvite("pending"); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Invite to all</button>
+                    <button onClick={() => { setInviteMenuOpen(false); setInviteSelectMode(true); setSelectedIds(new Set()); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Invite specific</button>
+                  </div>
+                </>
+              )}
+            </span>
+          )}
           <button onClick={() => setEditing({})} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" /> Add user</button>
         </div>
       </div>
 
+      {inviteSelectMode && (
+        <div className="card flex flex-wrap items-center justify-between gap-2 border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-800">
+          <span>Select users from the table, then send set-password invites.</span>
+          <span className="font-medium">{selectedIds.size} selected</span>
+        </div>
+      )}
       {msg && <div className={`card px-4 py-2 text-sm ${msg.ok ? "border-brand-200 bg-brand-50 text-brand-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{msg.text}</div>}
       {err && <div className="card flex items-center justify-between p-4 text-sm text-rose-600"><span>{err}</span><button onClick={load} className="btn btn-ghost btn-sm">Retry</button></div>}
 
@@ -159,6 +226,11 @@ export default function UsersPage() {
           <table className="data-grid-table whitespace-nowrap">
             <thead ref={theadRef} className="relative z-20 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400 [&_th]:bg-slate-50">
               <tr>
+                {inviteSelectMode && (
+                  <th className="w-10 px-3 py-3">
+                    <input type="checkbox" checked={allOnPage} onChange={toggleAllOnPage} className="h-4 w-4 cursor-pointer rounded border-slate-300" aria-label="Select all on page" />
+                  </th>
+                )}
                 <SortHeader label="Name" k="name" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <SortHeader label="Email" k="email" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
                 <SortHeader label="Role" k="role" state={sort} onToggle={sort.toggle} className="px-5 py-3" />
@@ -171,9 +243,14 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {!data && <SkeletonRows rows={12} cols={9} />}
+              {!data && <SkeletonRows rows={12} cols={inviteSelectMode ? 10 : 9} />}
               {data?.users.map((u: any) => (
                 <tr key={u.id} className="group hover:bg-slate-50">
+                  {inviteSelectMode && (
+                    <td className="px-3 py-3">
+                      <input type="checkbox" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} className="h-4 w-4 cursor-pointer rounded border-slate-300" aria-label={`Select ${u.name}`} />
+                    </td>
+                  )}
                   <td className="px-5 py-3 font-medium cell-trunc" title={u.name}>{u.name}</td>
                   <td className="px-5 py-3 text-slate-500 cell-trunc" title={u.email}>{u.email}</td>
                   <td className="px-5 py-3"><span className="chip chip-gray">{ROLE_LABEL[u.role]}</span></td>
@@ -191,13 +268,16 @@ export default function UsersPage() {
                       <RowActionsMenu actions={[
                         { label: "Send invite", icon: Mail, onClick: () => sendInvite(u) },
                         { label: "Edit", icon: Pencil, onClick: () => setEditing(u) },
+                        u.active
+                          ? { label: "Deactivate", icon: UserMinus, danger: true, disabled: me?.id === u.id, title: me?.id === u.id ? "You can't deactivate your own account" : undefined, onClick: () => setActive(u, false) }
+                          : { label: "Activate", icon: UserCheck, danger: false, onClick: () => setActive(u, true) },
                         { label: "Delete", icon: Trash2, danger: true, onClick: () => remove(u) },
                       ]} />
                     </div>
                   </td>
                 </tr>
               ))}
-              {data && !data.users.length && <tr><td colSpan={9} className="px-5 py-10 text-center text-slate-400">No users match.</td></tr>}
+              {data && !data.users.length && <tr><td colSpan={inviteSelectMode ? 10 : 9} className="px-5 py-10 text-center text-slate-400">No users match.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -278,12 +358,13 @@ function UserModal({ user, seniors, superAdminExists, onClose, onSaved }: { user
 
   async function save() {
     setBusy(true); setErr(null);
+    const mgr = role === "CAPABILITY_MANAGER" ? (managerId || null) : null;
     try {
       if (isNew) {
-        const r = await api.post(`/users`, { name, email, role, managerId: managerId || null, password: password || undefined });
+        const r = await api.post(`/users`, { name, email, role, managerId: mgr, password: password || undefined });
         onSaved(r);
       } else {
-        await api.patch(`/users/${user.id}`, { name, email, role, managerId: managerId || null, active, newPassword: password || undefined });
+        await api.patch(`/users/${user.id}`, { name, email, role, managerId: mgr, active, newPassword: password || undefined });
         onSaved(null);
       }
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -296,7 +377,7 @@ function UserModal({ user, seniors, superAdminExists, onClose, onSaved }: { user
         <div><label className="label">Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div><label className="label">Email</label><input className="input" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div><label className="label">Role</label>
-          <select className="input" value={role} onChange={(e) => { setRole(e.target.value); if (e.target.value !== "CAPABILITY_MANAGER") setManagerId(""); }}>{roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+          <select className="input" value={role} onChange={(e) => { const v = e.target.value; setRole(v); if (v !== "CAPABILITY_MANAGER") setManagerId(""); }}>{roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
         </div>
         {role === "CAPABILITY_MANAGER" && (
           <div><label className="label">Reports to (Senior Manager)</label>

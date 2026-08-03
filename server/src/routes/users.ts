@@ -134,7 +134,10 @@ router.post("/", opsOnly, async (req, res) => {
   if (await User.findOne({ email })) return res.status(409).json({ error: "Email already in use" });
 
   const passwordHash = password ? await hashPassword(password) : bcrypt.hashSync("pending-" + crypto.randomBytes(16).toString("hex"), 10);
-  const created = await User.create({ name, email, role, passwordHash, mustSetPassword: !password, managerId: role === Role.CAPABILITY_MANAGER ? managerId : null });
+  const created = await User.create({
+    name, email, role, passwordHash, mustSetPassword: !password,
+    managerId: role === Role.CAPABILITY_MANAGER ? managerId : null,
+  });
   await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "USER_CREATE", fieldName: "User", newValue: `${name} (${role})`, reason: "User created" });
 
   let invite: { link: string; delivered: boolean; email: string } | null = null;
@@ -169,9 +172,13 @@ router.patch("/:id", opsOnly, async (req, res) => {
     if (isSelf && role !== target.role && !isSuperAdmin({ role: req.user!.role } as any)) return res.status(400).json({ error: "You can't change your own role." });
     if (isSelf && role === Role.SUPER_ADMIN && target.role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "You can't promote yourself to Super Admin here." });
     target.role = role;
-    if (role === Role.CAPABILITY_MANAGER) { const mgr = managerId || (target.managerId ? String(target.managerId) : null); if (!mgr) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager." }); target.managerId = mgr; }
-    else target.managerId = null;
+    if (role === Role.CAPABILITY_MANAGER) {
+      const mgr = managerId || (target.managerId ? String(target.managerId) : null);
+      if (!mgr) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager." });
+      target.managerId = mgr;
+    } else target.managerId = null;
   } else if (managerId !== undefined && target.role === Role.CAPABILITY_MANAGER) target.managerId = managerId || null;
+  else if (managerId !== undefined && target.role !== Role.CAPABILITY_MANAGER) target.managerId = null;
   if (newPassword) { const sec = await getSecurity(); const i = passwordIssue(newPassword, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity }); if (i) return res.status(400).json({ error: i }); target.passwordHash = await hashPassword(newPassword); target.mustSetPassword = false; target.resetTokenHash = null; target.resetTokenExp = null; target.passwordChangedAt = new Date(); }
 
   await target.save();
@@ -210,11 +217,18 @@ router.post("/:id/invite", opsOnly, async (req, res) => {
   res.json({ ok: true, link, delivered, email: user.email });
 });
 
-// Bulk set-password invite.
+// Bulk set-password invite (all pending, all active, or a specific list of user ids).
 router.post("/invite/bulk", opsOnly, async (req, res) => {
-  const scope = req.body?.scope === "all" ? "all" : "pending";
+  const userIds = Array.isArray(req.body?.userIds)
+    ? req.body.userIds.filter((id: unknown) => typeof id === "string" && id.trim())
+    : [];
   const filter: any = { active: true, email: { $ne: null }, role: { $in: STAFF_ROLES, $ne: Role.OPS_ADMIN } };
-  if (scope === "pending") filter.mustSetPassword = true;
+  if (userIds.length) {
+    filter._id = { $in: userIds };
+  } else {
+    const scope = req.body?.scope === "all" ? "all" : "pending";
+    if (scope === "pending") filter.mustSetPassword = true;
+  }
   const users = await User.find(filter).select("email name resetTokenExp").lean();
   if (!users.length) return res.json({ ok: true, count: 0, skipped: 0, delivered: 0 });
 
