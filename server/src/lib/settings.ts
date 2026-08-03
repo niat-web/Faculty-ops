@@ -6,7 +6,7 @@ import { config } from "../config";
 
 const KEY = "global";
 export const ROLE_DISABLED_MSG = "Access for your role has been disabled by an administrator. Please contact your admin.";
-export const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"] as const;
+export const ROLES = ["SUPER_ADMIN", "OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER", "INSTRUCTOR"] as const;
 export type AppRole = (typeof ROLES)[number];
 
 let cache: any = null;
@@ -19,6 +19,8 @@ export async function getSettings() {
   if (!doc) doc = await AppSetting.create({ key: KEY });
   cache = doc.toObject();
   cacheAt = Date.now();
+  const { syncRolePermissionCache } = await import("./rolePermissions");
+  syncRolePermissionCache(cache.rolePermissions);
   return cache;
 }
 
@@ -32,7 +34,7 @@ export async function getRoleAccess(): Promise<Record<string, boolean>> {
 }
 
 export async function isRoleEnabled(role: string): Promise<boolean> {
-  if (role === "OPS_ADMIN") return true; // Ops Admin can never be locked out (prevents total lockout).
+  if (role === "SUPER_ADMIN" || role === "OPS_ADMIN") return true; // never lock out top admins
   const ra = await getRoleAccess();
   return ra[role] !== false;
 }
@@ -87,7 +89,30 @@ export async function setRoleAccess(role: AppRole, enabled: boolean) {
   );
   cache = doc.toObject();
   cacheAt = Date.now();
+  const { syncRolePermissionCache } = await import("./rolePermissions");
+  syncRolePermissionCache(cache.rolePermissions);
   return getRoleAccess();
+}
+
+export async function getRolePermissionsStored() {
+  const s = await getSettings();
+  return s.rolePermissions || {};
+}
+
+export async function setRolePermission(role: string, perm: string, enabled: boolean) {
+  const { CONFIGURABLE_ROLES, PERM_KEYS } = await import("./rolePermissions");
+  if (!(CONFIGURABLE_ROLES as readonly string[]).includes(role)) throw new Error("Unknown role");
+  if (!(PERM_KEYS as readonly string[]).includes(perm)) throw new Error("Unknown permission");
+  const doc = await AppSetting.findOneAndUpdate(
+    { key: KEY },
+    { $set: { [`rolePermissions.${role}.${perm}`]: enabled } },
+    { new: true, upsert: true }
+  );
+  cache = doc.toObject();
+  cacheAt = Date.now();
+  const { syncRolePermissionCache, mergedRolePermissions } = await import("./rolePermissions");
+  syncRolePermissionCache(cache.rolePermissions);
+  return mergedRolePermissions();
 }
 
 // Persist a patch onto the global doc + refresh the cache (shared by general/security/data writers).

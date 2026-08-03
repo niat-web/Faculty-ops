@@ -10,7 +10,7 @@ import { filterMasterRowsForUser } from "../lib/cmScope";
 
 const router = Router();
 router.use(requireUser());
-const STAFF = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
+const STAFF = [Role.SUPER_ADMIN, Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const staffGuard = (req: any, res: any, next: any) => (STAFF.includes(req.user.role) ? next() : res.status(403).json({ error: "Forbidden" }));
 const EXIT_STATES = ["EXITED", "EXIT_IN_PROGRESS"]; // exited instructors are excluded from all contribution rollups
 

@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export const useAuth = () => useContext(Ctx);
 
 export const ROLE_LABEL: Record<string, string> = {
-  OPS_ADMIN: "Ops Admin", SENIOR_MANAGER: "Senior Manager", CAPABILITY_MANAGER: "Capability Manager", INSTRUCTOR: "Instructor",
+  SUPER_ADMIN: "Super Admin", OPS_ADMIN: "Ops Admin", SENIOR_MANAGER: "Senior Manager", CAPABILITY_MANAGER: "Capability Manager", INSTRUCTOR: "Instructor",
 };
 export const LIFECYCLE_LABEL: Record<string, string> = {
   ONBOARDING: "Onboarding", IN_TRAINING: "In Training", CONFIRMED: "Confirmed", TRANSFER: "Transfer",

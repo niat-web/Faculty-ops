@@ -62,7 +62,13 @@ router.get("/google/callback", async (req, res) => {
 router.get("/me", async (req, res) => {
   if (!req.user) return res.status(401).json({ user: null });
   const enabled = await isRoleEnabled(req.user.role);
-  res.json({ user: req.user, blocked: !enabled, message: enabled ? undefined : ROLE_DISABLED_MSG });
+  const { permissionsForRole } = await import("../lib/rolePermissions");
+  res.json({
+    user: req.user,
+    permissions: permissionsForRole(req.user.role),
+    blocked: !enabled,
+    message: enabled ? undefined : ROLE_DISABLED_MSG,
+  });
 });
 
 // Email + password login (with lockout + optional TOTP 2FA).

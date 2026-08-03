@@ -2,7 +2,7 @@ import { Router } from "express";
 import Papa from "papaparse";
 import { Instructor, User, AuditLog, Notification, EditRequest } from "../models";
 import { Role } from "../enums";
-import { canViewAudit } from "../lib/rbac";
+import { canViewAudit, canManageSettings } from "../lib/rbac";
 import { dashboardData } from "../lib/analytics";
 import { escapeRegex } from "../lib/text";
 import { requireUser } from "../middleware";
@@ -336,30 +336,52 @@ router.delete("/notifications/:id", async (req, res) => {
 
 // --- Account Access (Ops only): enable/disable portal access for whole roles ---
 router.get("/settings/role-access", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { canManageSettings } = await import("../lib/rbac");
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getRoleAccess } = await import("../lib/settings");
   res.json({ roleAccess: await getRoleAccess() });
 });
 router.patch("/settings/role-access", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { canManageSettings } = await import("../lib/rbac");
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { role, enabled } = req.body || {};
   const { ROLES, setRoleAccess } = await import("../lib/settings");
   if (!(ROLES as readonly string[]).includes(role)) return res.status(400).json({ error: "Unknown role" });
-  if (role === "OPS_ADMIN" && enabled === false) return res.status(400).json({ error: "Ops Admin access can't be disabled." });
+  if ((role === "OPS_ADMIN" || role === "SUPER_ADMIN") && enabled === false) return res.status(400).json({ error: "Super Admin and Ops Admin access can't be disabled." });
   const roleAccess = await setRoleAccess(role, !!enabled);
   const { writeAudit } = await import("../lib/services");
   await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "ROLE_ACCESS_CHANGE", fieldName: role, newValue: enabled ? "enabled" : "disabled", reason: "Account Access setting" });
   res.json({ roleAccess });
 });
 
+// --- Role permissions (Super Admin only): toggle edit/delete/settings per staff role ---
+router.get("/settings/role-permissions", async (req, res) => {
+  if (req.user!.role !== Role.SUPER_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { PERM_META, CONFIGURABLE_ROLES, mergedRolePermissions } = await import("../lib/rolePermissions");
+  res.json({ permissions: mergedRolePermissions(), meta: PERM_META, roles: CONFIGURABLE_ROLES });
+});
+router.patch("/settings/role-permissions", async (req, res) => {
+  if (req.user!.role !== Role.SUPER_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  const { role, permission, enabled } = req.body || {};
+  const { setRolePermission } = await import("../lib/settings");
+  try {
+    const permissions = await setRolePermission(String(role), String(permission), !!enabled);
+    const { writeAudit } = await import("../lib/services");
+    await writeAudit({ actorId: req.user!.id, actorName: req.user!.name, actorRole: req.user!.role, action: "ROLE_ACCESS_CHANGE", fieldName: `${role}.${permission}`, newValue: enabled ? "enabled" : "disabled", reason: "Role permission" });
+    res.json({ permissions });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || "Update failed." });
+  }
+});
+
 // Email control center (Ops only) — per-event on/off, grouped by recipient role.
 router.get("/settings/emails", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { EMAIL_EVENTS, getEmailSettings } = await import("../lib/settings");
   res.json({ events: EMAIL_EVENTS, settings: await getEmailSettings() });
 });
 router.patch("/settings/emails", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { key, enabled } = req.body || {};
   const { EMAIL_EVENTS, setEmailSetting } = await import("../lib/settings");
   if (!EMAIL_EVENTS.some((e) => e.key === key)) return res.status(400).json({ error: "Unknown email event" });
@@ -371,12 +393,12 @@ router.patch("/settings/emails", async (req, res) => {
 
 // ── In-app notification control center (Ops only) — per-event on/off ──
 router.get("/settings/notifications", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { NOTIFY_EVENTS, getNotifySettings } = await import("../lib/settings");
   res.json({ events: NOTIFY_EVENTS, settings: await getNotifySettings() });
 });
 router.patch("/settings/notifications", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { key, enabled } = req.body || {};
   const { NOTIFY_EVENTS, setNotifySetting } = await import("../lib/settings");
   if (!NOTIFY_EVENTS.some((e) => e.key === key)) return res.status(400).json({ error: "Unknown notification event" });
@@ -388,7 +410,7 @@ router.patch("/settings/notifications", async (req, res) => {
 
 // ── General / branding (Ops only) ──
 router.get("/settings/general", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getGeneral } = await import("../lib/settings");
   const { config } = await import("../config");
   // Read-only integration status (derived from the server environment, not editable here).
@@ -401,7 +423,7 @@ router.get("/settings/general", async (req, res) => {
   res.json({ general: await getGeneral(), integrations });
 });
 router.patch("/settings/general", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const b = req.body || {};
   const patch: Record<string, any> = {};
   if (typeof b.appName === "string") patch.appName = b.appName.trim().slice(0, 60);
@@ -420,12 +442,12 @@ router.patch("/settings/general", async (req, res) => {
 
 // ── Security policy (Ops only) ──
 router.get("/settings/security", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getSecurity } = await import("../lib/settings");
   res.json({ security: await getSecurity() });
 });
 router.patch("/settings/security", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { setSecurity } = await import("../lib/settings");
   const security = await setSecurity(req.body || {});
   const { writeAudit } = await import("../lib/services");
@@ -435,7 +457,7 @@ router.patch("/settings/security", async (req, res) => {
 
 // ── Data & retention (Ops only) ──
 router.get("/settings/data", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getData } = await import("../lib/settings");
   const { LoginEvent } = await import("../models");
   const [data, audit, notifications, logins] = await Promise.all([
@@ -447,7 +469,7 @@ router.get("/settings/data", async (req, res) => {
   res.json({ data, counts: { audit, notifications, logins } });
 });
 router.patch("/settings/data", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { setData } = await import("../lib/settings");
   const data = await setData(req.body || {});
   const { writeAudit } = await import("../lib/services");
@@ -456,7 +478,7 @@ router.patch("/settings/data", async (req, res) => {
 });
 // Manual prune NOW (Ops only) — same logic as the secret-gated cron, but session-authenticated.
 router.post("/settings/data/prune", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getData } = await import("../lib/settings");
   const days = (await getData()).retentionDays;
   if (!days || days <= 0) return res.json({ ok: true, prunedAudit: 0, prunedLogins: 0, note: "Retention is set to keep forever — nothing pruned." });
@@ -473,14 +495,14 @@ router.post("/settings/data/prune", async (req, res) => {
 
 // ── Exit alerts (Ops only): how many days before a last-working-day to raise an alert ──
 router.get("/settings/exit-alerts", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getExitAlerts, getUniversities } = await import("../lib/settings");
   const { ExitAlert } = await import("../models");
   const [exitAlerts, universities, pending] = await Promise.all([getExitAlerts(), getUniversities(), ExitAlert.countDocuments({ status: "PENDING" })]);
   res.json({ exitAlerts, universities, counts: { pending } });
 });
 router.patch("/settings/exit-alerts", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { setExitAlerts, setUniversities, getExitAlerts, getUniversities } = await import("../lib/settings");
   const b = req.body || {};
   const exitAlerts = b.leadDays != null ? await setExitAlerts(b) : await getExitAlerts();
@@ -494,7 +516,7 @@ router.patch("/settings/exit-alerts", async (req, res) => {
 // default in the Instructor-Master Departments menu. Departments come from the live Master set (Mongo
 // mirror of Darwinbox). `hidden` = the exact names the admin has chosen to hide by default.
 router.get("/settings/master-departments", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getMasterDepartments } = await import("../lib/settings");
   const { loadLiveMasterRows, isDefaultUnchecked } = await import("../lib/masterLive");
   const [cfg, live] = await Promise.all([getMasterDepartments(), loadLiveMasterRows(false)]);
@@ -506,7 +528,7 @@ router.get("/settings/master-departments", async (req, res) => {
   res.json({ departments: items, configured: cfg.configured });
 });
 router.patch("/settings/master-departments", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const hidden = Array.isArray(req.body?.hidden) ? req.body.hidden : [];
   const { setMasterHiddenDepartments } = await import("../lib/settings");
   const cfg = await setMasterHiddenDepartments(hidden);
@@ -517,19 +539,19 @@ router.patch("/settings/master-departments", async (req, res) => {
 
 // ── Senior Managers (Ops only): admin-curated list, picked from Darwinbox ──
 router.get("/settings/senior-managers", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { SeniorManager } = await import("../models");
   const list = await SeniorManager.find().sort({ name: 1 }).lean();
   res.json({ items: (list as any[]).map((s) => ({ employeeId: s.employeeId, name: s.name || "", email: s.email || "", department: s.department || "", designation: s.designation || "" })) });
 });
 // Search the full Darwinbox directory for the picker.
 router.get("/settings/senior-managers/search", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { searchDarwinbox } = await import("../lib/staffRoles");
   res.json({ items: await searchDarwinbox(String(req.query.q || ""), 25) });
 });
 router.post("/settings/senior-managers", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const employeeId = String(req.body?.employeeId || "").trim();
   if (!employeeId) return res.status(400).json({ error: "Employee ID is required." });
   const { findDarwinboxEmployee, ensureStaffUser } = await import("../lib/staffRoles");
@@ -548,7 +570,7 @@ router.post("/settings/senior-managers", async (req, res) => {
   res.json({ ok: true, userAccount: userResult });
 });
 router.delete("/settings/senior-managers/:employeeId", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { SeniorManager } = await import("../models");
   await SeniorManager.deleteOne({ employeeId: String(req.params.employeeId || "").trim() });
   res.json({ ok: true });
@@ -556,12 +578,12 @@ router.delete("/settings/senior-managers/:employeeId", async (req, res) => {
 
 // ── Ops Admins (Ops only): the Darwinbox "Delivery Support" department → pending user accounts ──
 router.get("/settings/ops-admins", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getOpsAdminPeople } = await import("../lib/staffRoles");
   res.json({ items: await getOpsAdminPeople() });
 });
 router.post("/settings/ops-admins/sync", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { syncOpsAdminUsers } = await import("../lib/staffRoles");
   res.json({ ok: true, ...(await syncOpsAdminUsers()) });
 });
@@ -602,12 +624,12 @@ router.patch("/settings/profile", async (req, res) => {
 
 // ── Task assignment controls (Ops only) ──
 router.get("/settings/tasks", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { getTasksSettings } = await import("../lib/settings");
   res.json({ tasks: await getTasksSettings() });
 });
 router.patch("/settings/tasks", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageSettings(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { setTasksSettings } = await import("../lib/settings");
   const b = req.body || {};
   const patch: Record<string, boolean> = {};

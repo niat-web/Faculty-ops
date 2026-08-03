@@ -328,11 +328,14 @@ const AppSettingSchema = new Schema(
   {
     key: { type: String, required: true, unique: true, default: "global" },
     roleAccess: {
+      SUPER_ADMIN: { type: Boolean, default: true },
       OPS_ADMIN: { type: Boolean, default: true },
       SENIOR_MANAGER: { type: Boolean, default: true },
       CAPABILITY_MANAGER: { type: Boolean, default: true },
       INSTRUCTOR: { type: Boolean, default: true },
     },
+    // Super Admin–controlled per-role action permissions (missing key = use defaults in rolePermissions.ts).
+    rolePermissions: { type: Schema.Types.Mixed, default: {} },
     // Per-event email toggles (admin-controlled at /app/settings/emails). Missing key = enabled.
     emailSettings: { type: Schema.Types.Mixed, default: {} },
     // Per-event IN-APP notification toggles (/app/settings/notifications). Missing key = enabled.

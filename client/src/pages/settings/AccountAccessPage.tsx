@@ -7,6 +7,7 @@ import { Skeleton } from "../../components/Skeleton";
 
 // Order + helper text for each role row.
 const ROLE_ROWS: { key: string; desc: string }[] = [
+  { key: "SUPER_ADMIN", desc: "Top-level owner with full access and role-permission controls." },
   { key: "OPS_ADMIN", desc: "Full system administrators. Access can never be disabled." },
   { key: "SENIOR_MANAGER", desc: "Org-wide managers who approve requests and manage the schema." },
   { key: "CAPABILITY_MANAGER", desc: "Manage their own assigned instructors." },
@@ -21,7 +22,7 @@ export default function AccountAccessPage() {
   useEffect(() => { api.get("/settings/role-access").then((r) => setAccess(r.roleAccess)).catch((e) => toast.error(e.message)); }, []);
 
   async function toggle(role: string, enabled: boolean) {
-    if (role === "OPS_ADMIN") return; // locked
+    if (role === "SUPER_ADMIN" || role === "OPS_ADMIN") return; // locked
     const prev = access![role];
     setAccess((a) => ({ ...(a as any), [role]: enabled }));
     setBusy(role);
@@ -47,7 +48,7 @@ export default function AccountAccessPage() {
         <div className="divide-y divide-slate-100">
           {ROLE_ROWS.map(({ key, desc }) => {
             const on = access ? access[key] !== false : false;
-            const locked = key === "OPS_ADMIN";
+            const locked = key === "SUPER_ADMIN" || key === "OPS_ADMIN";
             return (
               <div key={key} className="flex items-center justify-between gap-4 py-4">
                 <div className="min-w-0">

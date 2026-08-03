@@ -1,6 +1,7 @@
 // Single source of truth for enum-like values (ported 1:1 from the Next app).
 
 export const Role = {
+  SUPER_ADMIN: "SUPER_ADMIN",
   OPS_ADMIN: "OPS_ADMIN",
   SENIOR_MANAGER: "SENIOR_MANAGER",
   CAPABILITY_MANAGER: "CAPABILITY_MANAGER",
@@ -9,6 +10,7 @@ export const Role = {
 export type RoleType = (typeof Role)[keyof typeof Role];
 
 export const ROLE_LABEL: Record<string, string> = {
+  SUPER_ADMIN: "Super Admin",
   OPS_ADMIN: "Ops Admin",
   SENIOR_MANAGER: "Senior Manager",
   CAPABILITY_MANAGER: "Capability Manager",
@@ -55,7 +57,7 @@ export const NotificationType = {
 } as const;
 
 const VIS_TIER: Record<string, number> = { PUBLIC: 0, NECESSARY: 1, SENSITIVE: 2 };
-const ROLE_VIS_TIER: Record<string, number> = { OPS_ADMIN: 2, SENIOR_MANAGER: 2, CAPABILITY_MANAGER: 1, INSTRUCTOR: 1 };
+const ROLE_VIS_TIER: Record<string, number> = { SUPER_ADMIN: 2, OPS_ADMIN: 2, SENIOR_MANAGER: 2, CAPABILITY_MANAGER: 1, INSTRUCTOR: 1 };
 export function roleCanSeeVisibility(role: string, visibility: string) {
   return (ROLE_VIS_TIER[role] ?? 0) >= (VIS_TIER[visibility] ?? 99);
 }

@@ -6,7 +6,7 @@ import { User, Instructor } from "../models";
 import { Role } from "../enums";
 import { hashPassword, passwordIssue } from "../lib/auth";
 import { getSecurity } from "../lib/settings";
-import { canManageUsers } from "../lib/rbac";
+import { canManageUsers, isSuperAdmin, isOpsLevel } from "../lib/rbac";
 import { writeAudit } from "../lib/services";
 import { inviteUser, buildSetPasswordLink, sendSetPasswordEmail } from "../lib/invites";
 import { makeResetToken } from "../lib/crypto";
@@ -21,6 +21,19 @@ const opsOnly = (req: any, res: any, next: any) => (canManageUsers(req.user) ? n
 // Users page manages staff login accounts only — not instructor self-service accounts.
 const STAFF_ROLES = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const isStaffRole = (r: string) => STAFF_ROLES.includes(r as typeof STAFF_ROLES[number]);
+
+async function assertSuperAdminAssignment(requesterRole: string, role: string, excludeUserId?: string) {
+  if (role !== Role.SUPER_ADMIN) return null;
+  const q: any = { role: Role.SUPER_ADMIN };
+  if (excludeUserId) q._id = { $ne: excludeUserId };
+  const existing = await User.findOne(q).select("_id").lean();
+  if (existing) return "Only one Super Admin account is allowed.";
+  if (requesterRole !== Role.SUPER_ADMIN) {
+    const any = await User.countDocuments({ role: Role.SUPER_ADMIN });
+    if (any > 0) return "Only the Super Admin can assign the Super Admin role.";
+  }
+  return null;
+}
 
 // List users (paginated + filtered).
 router.get("/", opsOnly, async (req, res) => {
@@ -87,6 +100,7 @@ router.get("/", opsOnly, async (req, res) => {
 
   res.json({
     total, page, per: PER,
+    superAdminExists: !!(await User.findOne({ role: Role.SUPER_ADMIN }).select("_id").lean()),
     seniors: seniors.map((s: any) => ({ id: String(s._id), name: s.name })),
     managers: managers.map((m: any) => ({ id: String(m._id), name: m.name, role: m.role })),
     users: users.map((u: any) => ({
@@ -113,7 +127,9 @@ router.post("/", opsOnly, async (req, res) => {
   if (!name || !email) return res.status(400).json({ error: "Name and email are required" });
   if (password) { const sec = await getSecurity(); const i = passwordIssue(password, { minLength: sec.passwordMinLength, requireComplexity: sec.requireComplexity }); if (i) return res.status(400).json({ error: i }); }
   if (!Object.values(Role).includes(role as any)) return res.status(400).json({ error: "Bad role" });
-  if (!isStaffRole(role)) return res.status(400).json({ error: "Only Ops Admin, Senior Manager, and Capability Manager accounts can be created here." });
+  const saErr = await assertSuperAdminAssignment(req.user!.role, role);
+  if (saErr) return res.status(saErr.includes("Only one") ? 409 : 403).json({ error: saErr });
+  if (!isStaffRole(role) && role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "Only staff roles can be created here." });
   if (role === Role.CAPABILITY_MANAGER && !managerId) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager" });
   if (await User.findOne({ email })) return res.status(409).json({ error: "Email already in use" });
 
@@ -147,8 +163,11 @@ router.patch("/:id", opsOnly, async (req, res) => {
   if (typeof active === "boolean") { if (isSelf && !active) return res.status(400).json({ error: "You can't deactivate your own account." }); target.active = active; }
   if (role) {
     if (!Object.values(Role).includes(role)) return res.status(400).json({ error: "Bad role" });
-    if (!isStaffRole(role)) return res.status(400).json({ error: "Only Ops Admin, Senior Manager, and Capability Manager roles are allowed." });
-    if (isSelf && role !== Role.OPS_ADMIN) return res.status(400).json({ error: "You can't change your own role." });
+    const saErr = await assertSuperAdminAssignment(req.user!.role, role, String(target._id));
+    if (saErr) return res.status(saErr.includes("Only one") ? 409 : 403).json({ error: saErr });
+    if (!isStaffRole(role) && role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "Invalid role for this user." });
+    if (isSelf && role !== target.role && !isSuperAdmin({ role: req.user!.role } as any)) return res.status(400).json({ error: "You can't change your own role." });
+    if (isSelf && role === Role.SUPER_ADMIN && target.role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "You can't promote yourself to Super Admin here." });
     target.role = role;
     if (role === Role.CAPABILITY_MANAGER) { const mgr = managerId || (target.managerId ? String(target.managerId) : null); if (!mgr) return res.status(400).json({ error: "Capability Managers must report to a Senior Manager." }); target.managerId = mgr; }
     else target.managerId = null;
@@ -164,6 +183,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
 router.delete("/:id", opsOnly, async (req, res) => {
   const target = await User.findById(req.params.id);
   if (!target) return res.status(404).json({ error: "User not found" });
+  if (target.role === Role.SUPER_ADMIN) return res.status(400).json({ error: "The Super Admin account cannot be deleted." });
   if (!isStaffRole(target.role)) return res.status(404).json({ error: "User not found" });
   if (String(target._id) === req.user!.id) return res.status(400).json({ error: "You can't delete your own account." });
   if (target.role === Role.CAPABILITY_MANAGER) { const n = await Instructor.countDocuments({ currentManagerId: target._id }); if (n > 0) return res.status(409).json({ error: `Reassign this manager's ${n} reportee(s) first (Assignments).` }); }

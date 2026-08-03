@@ -1,7 +1,7 @@
 import { Instructor, EditRequest, User, AuditLog, TrainingColumn } from "../models";
 import { Role, LIFECYCLE_LABEL } from "../enums";
 import type { SessionUser } from "./rbac";
-import { instructorScopeFilter } from "./rbac";
+import { instructorScopeFilter, isOpsLevel, isOrgWide } from "./rbac";
 import { maybeDecrypt } from "./crypto";
 import { tabForInstructor } from "./training";
 import { computeSummary, type TrainingSummary } from "./trainingScore";
@@ -126,7 +126,7 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   // pending — role-specific
   let pending = 0;
   if (user.role === Role.SENIOR_MANAGER) pending = await EditRequest.countDocuments({ approverId: user.id, status: "PENDING" });
-  else if (user.role === Role.OPS_ADMIN) pending = await EditRequest.countDocuments({ status: "PENDING" });
+  else if (isOpsLevel(user)) pending = await EditRequest.countDocuments({ status: "PENDING" });
   else if (user.role === Role.CAPABILITY_MANAGER) pending = await EditRequest.countDocuments({ requesterId: user.id, status: "PENDING" });
 
   const kpis: any = { total, active, campuses, avgTraining, exited, exiting, pending };
@@ -134,7 +134,7 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   const payload: any = { role: user.role, kpis, charts };
 
   // ── Ops/SM: manager workload + (Ops) recent activity ──
-  if (user.role === Role.OPS_ADMIN || user.role === Role.SENIOR_MANAGER) {
+  if (isOrgWide(user)) {
     const wlMap: Record<string, number> = {};
     for (const d of docs) { const m = d.currentManagerId ? String(d.currentManagerId) : null; if (m) wlMap[m] = (wlMap[m] || 0) + 1; }
     const mgrIds = Object.keys(wlMap);
@@ -148,7 +148,7 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
     // Recently added instructors (docs already sorted createdAt desc) for the "Recently added" widget.
     payload.recentJoiners = docs.slice(0, 5).map((d) => ({ id: String(d._id), name: d.name, campus: d.campus || null, status: d.status, createdAt: d.createdAt }));
   }
-  if (user.role === Role.OPS_ADMIN) {
+  if (isOpsLevel(user)) {
     const recent = await AuditLog.find().sort({ createdAt: -1 }).limit(6).lean();
     payload.recent = recent.map((a: any) => ({ id: String(a._id), actorName: a.actorName, action: a.action, fieldName: a.fieldName, instructorName: a.instructorName, createdAt: a.createdAt }));
   }

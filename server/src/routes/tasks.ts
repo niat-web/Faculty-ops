@@ -7,6 +7,7 @@ import { requireUser } from "../middleware";
 import { getTasksSettings } from "../lib/settings";
 import { canAccessInstructor, instructorScopeFilter } from "../lib/rbac";
 import { canAssignTasks, canDeleteTask, canMarkDone, canViewTask } from "../lib/taskScope";
+import { isOpsLevel } from "../lib/rbac";
 import { notify, writeAudit, notifyTaskAssigned } from "../lib/services";
 import { normalizeReminderMs, reminderLabel, TASK_REMINDER_OPTIONS } from "../lib/taskReminders";
 import { escapeRegex } from "../lib/text";
@@ -73,10 +74,10 @@ router.get("/meta", async (req, res) => {
   const canAssign = await canAssignTasks(u);
   res.json({
     canAssign,
-    isOps: u.role === Role.OPS_ADMIN,
+    isOps: isOpsLevel(u),
     cmCanAssignToInstructors: settings.cmCanAssignToInstructors,
     seniorManagerCanAssign: settings.seniorManagerCanAssign,
-    assignRoles: u.role === Role.OPS_ADMIN ? [Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER, Role.INSTRUCTOR] : [],
+    assignRoles: isOpsLevel(u) ? [Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER, Role.INSTRUCTOR] : [],
     reminderOptions: TASK_REMINDER_OPTIONS,
   });
 });
@@ -90,7 +91,7 @@ router.get("/assign-options", async (req, res) => {
   const u = req.user!;
   if (!(await canAssignTasks(u))) return res.status(403).json({ error: "Forbidden" });
 
-  if (u.role === Role.OPS_ADMIN) {
+  if (isOpsLevel(u)) {
     const role = String(req.query.role || "").trim();
     const q = String(req.query.q || "").trim();
     const filter: any = { active: true };
@@ -134,7 +135,7 @@ router.get("/", async (req, res) => {
   const qText = String(req.query.q || "").trim();
   let filter: Record<string, any> = {};
 
-  if (u.role === Role.OPS_ADMIN && view === "all") {
+  if (isOpsLevel(u) && view === "all") {
     filter = {};
   } else if (view === "assigned") {
     filter = { assignerId: u.id };
@@ -205,7 +206,7 @@ router.post("/", taskUpload.single("attachment"), async (req, res) => {
   const targetType = String(b.targetType || "USER");
   const assignees: Assignee[] = [];
 
-  if (u.role === Role.OPS_ADMIN) {
+  if (isOpsLevel(u)) {
     if (targetType === "ROLE") {
       const role = String(b.role || "");
       if (!([Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER, Role.INSTRUCTOR] as string[]).includes(role)) {
@@ -350,7 +351,7 @@ router.patch("/:id", async (req, res) => {
     return res.json({ task: mapTask(task.toObject()) });
   }
 
-  if (u.role === Role.OPS_ADMIN || String(task.assignerId) === u.id) {
+  if (isOpsLevel(u) || String(task.assignerId) === u.id) {
     if (req.body?.title != null) task.title = String(req.body.title).trim().slice(0, 500);
     if (req.body?.body != null) task.body = String(req.body.body).slice(0, 2000);
     if (req.body?.dueAt) {

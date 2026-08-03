@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X } from "lucide-react";
 import { api } from "../api";
-import { ROLE_LABEL } from "../auth";
+import { useAuth, ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort, useStickyThead, usePageClamp } from "../hooks";
 import { useToast } from "../toast";
 import { useConfirm } from "../confirm";
@@ -204,7 +204,7 @@ export default function UsersPage() {
         {data && <Pagination page={page} pages={pages} per={per} total={data.total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />}
       </div>
 
-      {editing && <UserModal user={editing} seniors={data?.seniors || []} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
+      {editing && <UserModal user={editing} seniors={data?.seniors || []} superAdminExists={!!data?.superAdminExists} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
       {invite && (
         <Modal title="Set-password invite" onClose={() => setInvite(null)}>
           <p className="text-sm text-slate-600">{invite.delivered ? `An email was sent to ${invite.email}.` : `Could not email automatically — share this link with the user:`}</p>
@@ -257,7 +257,8 @@ export default function UsersPage() {
   );
 }
 
-function UserModal({ user, seniors, onClose, onSaved }: { user: any; seniors: any[]; onClose: () => void; onSaved: (inv: any) => void }) {
+function UserModal({ user, seniors, superAdminExists, onClose, onSaved }: { user: any; seniors: any[]; superAdminExists: boolean; onClose: () => void; onSaved: (inv: any) => void }) {
+  const { user: me } = useAuth();
   const isNew = !user.id;
   const [name, setName] = useState(user.name || "");
   const [email, setEmail] = useState(user.email || "");
@@ -267,6 +268,13 @@ function UserModal({ user, seniors, onClose, onSaved }: { user: any; seniors: an
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const roleOptions = [...ROLES];
+  if ((me?.role === "SUPER_ADMIN" || !superAdminExists) && !roleOptions.includes("SUPER_ADMIN")) roleOptions.unshift("SUPER_ADMIN");
+  if (superAdminExists && user.role !== "SUPER_ADMIN" && me?.role !== "SUPER_ADMIN") {
+    const i = roleOptions.indexOf("SUPER_ADMIN");
+    if (i >= 0) roleOptions.splice(i, 1);
+  }
 
   async function save() {
     setBusy(true); setErr(null);
@@ -288,7 +296,7 @@ function UserModal({ user, seniors, onClose, onSaved }: { user: any; seniors: an
         <div><label className="label">Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
         <div><label className="label">Email</label><input className="input" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
         <div><label className="label">Role</label>
-          <select className="input" value={role} onChange={(e) => { setRole(e.target.value); if (e.target.value !== "CAPABILITY_MANAGER") setManagerId(""); }}>{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+          <select className="input" value={role} onChange={(e) => { setRole(e.target.value); if (e.target.value !== "CAPABILITY_MANAGER") setManagerId(""); }}>{roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
         </div>
         {role === "CAPABILITY_MANAGER" && (
           <div><label className="label">Reports to (Senior Manager)</label>

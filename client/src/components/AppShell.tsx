@@ -9,7 +9,8 @@ import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
 import { Wordmark } from "./Logo";
 
-const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
+const STAFF = ["SUPER_ADMIN", "OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
+const ADMIN = ["SUPER_ADMIN", "OPS_ADMIN"];
 const SIDEBAR_W = 240;
 
 const NAV_SECTIONS: any[] = [
@@ -27,25 +28,25 @@ const NAV_SECTIONS: any[] = [
         { to: "/app/instructors/master", label: "Instructor Master" },
         { to: "/app/instructors/exited", label: "Instructor Exited" },
         { to: "/app/instructors/moved", label: "Instructor Moved" },
-        { to: "/app/instructors/roles", label: "Roles", roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
+        { to: "/app/instructors/roles", label: "Roles", roles: [...ADMIN, "SENIOR_MANAGER"] },
       ] },
       { to: "/app/training", label: "Training Stats", icon: BookOpen, roles: STAFF },
-      { label: "Contribution", icon: Award, roles: ["OPS_ADMIN", "SENIOR_MANAGER"], children: [
+      { label: "Contribution", icon: Award, roles: [...ADMIN, "SENIOR_MANAGER"], children: [
         { to: "/app/contribution/distribution", label: "Contribution Distribution" },
         { to: "/app/contribution/campuswise", label: "Campuswise Instructors" },
         { to: "/app/contribution/managers", label: "Capability Manager Distribution" },
       ] },
-      { to: "/app/org", label: "Org Chart", icon: GitBranch, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
+      { to: "/app/org", label: "Org Chart", icon: GitBranch, roles: [...ADMIN, "SENIOR_MANAGER"] },
       { to: "/app/requests", label: "Requests", icon: GitPullRequest, roles: STAFF, badge: true },
     ],
   },
   {
-    roles: ["OPS_ADMIN", "SENIOR_MANAGER"],
+    roles: [...ADMIN, "SENIOR_MANAGER"],
     items: [
-      { to: "/app/users", label: "Users", icon: UserCog, roles: ["OPS_ADMIN"] },
-      { to: "/app/certifications", label: "Certifications", icon: GraduationCap, roles: ["OPS_ADMIN"] },
-      { to: "/app/audit", label: "Audit Log", icon: ScrollText, roles: ["OPS_ADMIN", "SENIOR_MANAGER"] },
-      { to: "/app/settings", label: "Settings", icon: SettingsIcon, roles: ["OPS_ADMIN"] },
+      { to: "/app/users", label: "Users", icon: UserCog, roles: ADMIN },
+      { to: "/app/certifications", label: "Certifications", icon: GraduationCap, roles: ADMIN },
+      { to: "/app/audit", label: "Audit Log", icon: ScrollText, roles: [...ADMIN, "SENIOR_MANAGER"] },
+      { to: "/app/settings", label: "Settings", icon: SettingsIcon, roles: ADMIN },
     ],
   },
 ];

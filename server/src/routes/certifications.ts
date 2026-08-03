@@ -3,6 +3,7 @@ import multer from "multer";
 import { Certification } from "../models";
 import { Role } from "../enums";
 import { requireUser } from "../middleware";
+import { canManageCertifications } from "../lib/rbac";
 import { uploadCertificate, driveConfigured } from "../lib/drive";
 import { validateUploadBuffer } from "../lib/fileMagic";
 
@@ -38,7 +39,7 @@ async function formGate(req: any, res: any, next: any) {
   if (cfg.requireLogin && !req.user) return res.status(401).json({ error: "Please sign in to fill this form." });
   next();
 }
-const opsOnly = (req: any, res: any, next: any) => (req.user?.role === Role.OPS_ADMIN ? next() : res.status(403).json({ error: "Forbidden" }));
+const opsOnly = (req: any, res: any, next: any) => (canManageCertifications(req.user) ? next() : res.status(403).json({ error: "Forbidden" }));
 const staffOnly = (req: any, res: any, next: any) => ([Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER].includes(req.user?.role) ? next() : res.status(403).json({ error: "Forbidden" }));
 
 // ── Public ──────────────────────────────────────────────────────────

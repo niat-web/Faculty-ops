@@ -1,5 +1,6 @@
 import { Role } from "../enums";
 import type { SessionUser } from "./rbac";
+import { isOpsLevel } from "./rbac";
 
 /** Build Mongo filters for listing edit requests. Returns null when the role may not list any. */
 export function requestsListScope(user: SessionUser, status?: string): { q: Record<string, any>; bq: Record<string, any> } | null {
@@ -22,6 +23,6 @@ export function requestsListScope(user: SessionUser, status?: string): { q: Reco
 }
 
 export function canCommentOnRequest(user: SessionUser, request: { requesterId?: any; approverId?: any }) {
-  if (user.role === Role.OPS_ADMIN) return true;
+  if (isOpsLevel(user)) return true;
   return String(request.requesterId) === user.id || String(request.approverId) === user.id;
 }

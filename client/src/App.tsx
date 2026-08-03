@@ -121,7 +121,8 @@ function RedirectToMaster() {
 }
 
 // Route-level role gate — matches the sidebar's visibility so direct-URL navigation can't reach pages a role shouldn't see.
-const STAFF = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
+const STAFF = ["SUPER_ADMIN", "OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
+const ADMIN = ["SUPER_ADMIN", "OPS_ADMIN"];
 function RequireRole({ roles, children }: { roles: string[]; children: JSX.Element }) {
   const { user } = useAuth();
   if (!user || !roles.includes(user.role)) return <Navigate to="/app" replace />;
@@ -160,7 +161,7 @@ export default function App() {
                 <Route path="instructors/master" element={<RequireRole roles={STAFF}><InstructorMasterPage /></RequireRole>} />
                 <Route path="instructors/exited" element={<RequireRole roles={STAFF}><InstructorExitedPage /></RequireRole>} />
                 <Route path="instructors/moved" element={<RequireRole roles={STAFF}><InstructorMovedPage /></RequireRole>} />
-                <Route path="instructors/roles" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />
+                <Route path="instructors/roles" element={<RequireRole roles={[...ADMIN, "SENIOR_MANAGER"]}><RolesPage /></RequireRole>} />
                 <Route path="instructors/:id" element={<InstructorProfilePage />} />
                 <Route path="training" element={<Navigate to="/app/training/tech-stats" replace />} />
                 <Route path="training/:slug" element={<RequireRole roles={STAFF}><TrainingPage /></RequireRole>} />
@@ -168,26 +169,26 @@ export default function App() {
                 <Route path="contribution/distribution" element={<RequireRole roles={STAFF}><ContributionPage /></RequireRole>} />
                 <Route path="contribution/campuswise" element={<RequireRole roles={STAFF}><CampuswisePage /></RequireRole>} />
                 <Route path="contribution/managers" element={<RequireRole roles={STAFF}><ManagerDistributionPage /></RequireRole>} />
-                <Route path="users" element={<RequireRole roles={["OPS_ADMIN"]}><UsersPage /></RequireRole>} />
+                <Route path="users" element={<RequireRole roles={ADMIN}><UsersPage /></RequireRole>} />
                 <Route path="fields" element={<Navigate to="/app/settings" replace />} />
                 {/* Assignments page removed — the Capability Managers list now lives in Capability Manager Distribution. */}
                 <Route path="mapping" element={<Navigate to="/app/contribution/managers" replace />} />
-                <Route path="org" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><OrgPage /></RequireRole>} />
+                <Route path="org" element={<RequireRole roles={[...ADMIN, "SENIOR_MANAGER"]}><OrgPage /></RequireRole>} />
                 <Route path="requests" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="requests/:id" element={<RequireRole roles={STAFF}><RequestsPage /></RequireRole>} />
                 <Route path="tasks" element={<TasksPage />} />
                 <Route path="tasks/:id" element={<TaskDetailPage />} />
-                <Route path="audit" element={<RequireRole roles={["OPS_ADMIN", "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
-                <Route path="certifications/new" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationAdminFormPage /></RequireRole>} />
-                <Route path="certifications/:id/edit" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationAdminFormPage /></RequireRole>} />
-                <Route path="certifications" element={<RequireRole roles={["OPS_ADMIN"]}><CertificationsPage /></RequireRole>} />
+                <Route path="audit" element={<RequireRole roles={[...ADMIN, "SENIOR_MANAGER"]}><AuditPage /></RequireRole>} />
+                <Route path="certifications/new" element={<RequireRole roles={ADMIN}><CertificationAdminFormPage /></RequireRole>} />
+                <Route path="certifications/:id/edit" element={<RequireRole roles={ADMIN}><CertificationAdminFormPage /></RequireRole>} />
+                <Route path="certifications" element={<RequireRole roles={ADMIN}><CertificationsPage /></RequireRole>} />
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}
-                <Route path="data" element={<RequireRole roles={["OPS_ADMIN"]}><DataPage /></RequireRole>} />
+                <Route path="data" element={<RequireRole roles={ADMIN}><DataPage /></RequireRole>} />
                 {/* Personal account settings (all users) — moved from /app/settings */}
                 <Route path="account" element={<SettingsPage />} />
                 {/* Admin Settings (Ops only) — tabbed, each tab an in-app sub-route */}
-                <Route path="settings" element={<RequireRole roles={["OPS_ADMIN"]}><SettingsLayout /></RequireRole>}>
+                <Route path="settings" element={<RequireRole roles={ADMIN}><SettingsLayout /></RequireRole>}>
                   <Route index element={<FieldsPage />} />
                   <Route path="communications" element={<CommunicationsSettingsPage />} />
                   <Route path="system" element={<SystemSettingsPage />} />
@@ -204,9 +205,9 @@ export default function App() {
                   <Route path="exit-alerts" element={<Navigate to="/app/settings/operations" replace />} />
                   <Route path="certifications" element={<Navigate to="/app/settings/operations" replace />} />
                 </Route>
-                <Route path="settings/fields/training/:track" element={<RequireRole roles={["OPS_ADMIN"]}><TrainingColumnsPage /></RequireRole>} />
-                <Route path="settings/fields/master" element={<RequireRole roles={["OPS_ADMIN"]}><MasterColumnsPage /></RequireRole>} />
-                <Route path="settings/certifications/builder" element={<RequireRole roles={["OPS_ADMIN"]}><CertFormBuilderPage /></RequireRole>} />
+                <Route path="settings/fields/training/:track" element={<RequireRole roles={ADMIN}><TrainingColumnsPage /></RequireRole>} />
+                <Route path="settings/fields/master" element={<RequireRole roles={ADMIN}><MasterColumnsPage /></RequireRole>} />
+                <Route path="settings/certifications/builder" element={<RequireRole roles={ADMIN}><CertFormBuilderPage /></RequireRole>} />
                 <Route path="*" element={<Navigate to="/app" replace />} />
               </Routes>
               </Suspense>

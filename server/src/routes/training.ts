@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Instructor, User, FieldDefinition, TrainingColumn } from "../models";
 import { Role } from "../enums";
-import { instructorScopeFilter, canAccessInstructor } from "../lib/rbac";
+import { instructorScopeFilter, canAccessInstructor, isOpsLevel } from "../lib/rbac";
 import { COURSE_ID_BY_TRAINING_LABEL, tabForInstructor, TRACK_META, seedTrainingColumns, STATUS_OPTIONS } from "../lib/training";
 import { computeSummary, summaryStored, COMPUTED_KEYS } from "../lib/trainingScore";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
@@ -12,9 +12,13 @@ import { isDarwinboxOwnedKey } from "../lib/masterLive";
 
 const router = Router();
 router.use(requireUser());
-const STAFF = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
+const STAFF = [Role.SUPER_ADMIN, Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const staffGuard = (req: any, res: any, next: any) => (STAFF.includes(req.user.role) ? next() : res.status(403).json({ error: "Forbidden" }));
-const opsGuard = (req: any, res: any, next: any) => (req.user.role === Role.OPS_ADMIN ? next() : res.status(403).json({ error: "Only the Super Admin can manage training columns" }));
+const opsGuard = (req: any, res: any, next: any) => {
+  const { canManageSchema, isOpsLevel } = require("../lib/rbac");
+  if (isOpsLevel(req.user) && canManageSchema(req.user)) return next();
+  return res.status(403).json({ error: "Forbidden" });
+};
 const MANUAL_MODULE_KEYS = new Set(["Frontend Projects", "Backend Projects"]);
 const MULTI_KEYS = new Set(["sem1", "sem2"]); // accept several options (newline/comma-joined)
 // Predicted-Completion cells are computed BUT accept a manual override date (see POST handler + GET merge).

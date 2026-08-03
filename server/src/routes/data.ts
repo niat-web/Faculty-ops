@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { Role } from "../enums";
 import { requireUser } from "../middleware";
+import { canViewData } from "../lib/rbac";
 import { config } from "../config";
 import { fetchBigQueryRows, streamBigQueryCsv, bigQueryFacets } from "../lib/bigqueryTraining";
 import { fetchDarwinboxRows, streamDarwinboxCsv, darwinboxFacets } from "../lib/darwinbox";
@@ -9,7 +9,8 @@ import { buildDarwinboxSyncPlan, applyDarwinboxSync } from "../lib/darwinboxSync
 // Raw external data browser (Data page) — Ops Admin only: it exposes source-system
 // records without the app's field-level visibility filtering.
 const router = Router();
-router.use(requireUser([Role.OPS_ADMIN]));
+router.use(requireUser());
+router.use((req, res, next) => (canViewData(req.user!) ? next() : res.status(403).json({ error: "Forbidden" })));
 
 function paging(req: any) {
   const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 50));

@@ -15,7 +15,7 @@ const RESOLUTIONS = {
 } as const;
 type Resolution = keyof typeof RESOLUTIONS;
 
-const canSeeAll = (role: string) => role === Role.OPS_ADMIN || role === Role.SENIOR_MANAGER;
+const canSeeAll = (role: string) => role === Role.SUPER_ADMIN || role === Role.OPS_ADMIN || role === Role.SENIOR_MANAGER;
 
 function serialize(a: any) {
   return {

@@ -4,7 +4,7 @@ import multer from "multer";
 import Papa from "papaparse";
 import { Instructor, User, AuditLog, LoginEvent, EditRequest, FieldDefinition, SeniorManager } from "../models";
 import { Role, LifecycleStatus, LIFECYCLE_LABEL } from "../enums";
-import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canEditDetails, canDeleteInstructor } from "../lib/rbac";
+import { instructorScopeFilter, canAccessInstructor, canEditDirectly, canEditDetails, canDeleteInstructor, isOpsLevel, isOrgWide } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
 import { getProfileForViewer } from "../lib/profile";
 import { writeAudit, applyFieldChange, validateValue } from "../lib/services";
@@ -351,7 +351,7 @@ router.post("/:id/cell", editGuard, async (req, res) => {
 
   if (kind === "core") {
     if (key === "employeeId") {
-      if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Only an Ops Admin can change the Employee ID." });
+      if (!isOpsLevel(req.user!)) return res.status(403).json({ error: "Only an Ops Admin can change the Employee ID." });
       const v = val.trim();
       if (!v) return res.status(400).json({ error: "Employee ID can't be empty." });
       const dup = await Instructor.findOne({ employeeId: v, _id: { $ne: inst._id } }).select("_id").lean();
@@ -469,7 +469,7 @@ router.get("/export.csv", async (req, res) => {
 
 // CSV import (Ops Admin) — upsert by employeeId. Accepts { rows: [...] } parsed client-side.
 router.post("/import", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!isOpsLevel(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rows.length) return res.status(400).json({ error: "No rows to import" });
   const MAX_ROWS = 5000;
@@ -597,7 +597,7 @@ router.get("/:id", async (req, res) => {
 // Create an instructor (Ops Admin). Accepts core fields + an optional `values` map (all master columns)
 // + uid, so the Add-instructor drawer can capture every detail at once.
 router.post("/", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!isOpsLevel(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const { employeeId, name, campus = null, managerId = null, status = "ONBOARDING", uid = null } = req.body || {};
   const email = normEmail(req.body?.email);
   if (!String(employeeId || "").trim() || !String(name || "").trim()) return res.status(400).json({ error: "Employee ID and name are required" });
@@ -629,7 +629,7 @@ router.post("/", async (req, res) => {
 
 // Edit an instructor's core fields (Ops Admin) — name/email/campus directly, status + manager with history.
 router.patch("/:id", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN) return res.status(403).json({ error: "Forbidden" });
+  if (!isOpsLevel(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const inst: any = await Instructor.findById(req.params.id);
   if (!inst) return res.status(404).json({ error: "Not found" });
   const { name, email, campus, status, managerId } = req.body || {};
@@ -823,7 +823,7 @@ router.post("/:id/documents", detailGuard, uploadFile, async (req, res) => {
 
 router.get("/:id/documents/:docId", async (req, res) => {
   if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
-  if (req.user!.role !== Role.OPS_ADMIN && req.user!.role !== Role.SENIOR_MANAGER) return res.status(403).json({ error: "Forbidden" });
+  if (!isOrgWide(req.user!)) return res.status(403).json({ error: "Forbidden" });
   const inst: any = await Instructor.findById(req.params.id).lean();
   const doc = inst?.documents?.find((d: any) => String(d._id) === req.params.docId);
   if (!doc) return res.status(404).json({ error: "Not found" });
@@ -845,7 +845,7 @@ router.delete("/:id/documents/:docId", detailGuard, async (req, res) => {
 
 // Per-instructor audit trail (Ops/SM) — full entries with proof links.
 router.get("/:id/audit", async (req, res) => {
-  if (req.user!.role !== Role.OPS_ADMIN && req.user!.role !== Role.SENIOR_MANAGER) return res.status(403).json({ error: "Forbidden" });
+  if (!isOrgWide(req.user!)) return res.status(403).json({ error: "Forbidden" });
   if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
   const rows = await AuditLog.find({ instructorId: req.params.id }).sort({ createdAt: -1 }).limit(200).lean();
   res.json({ entries: rows.map((a: any) => ({ id: String(a._id), action: a.action, actorName: a.actorName, actorRole: a.actorRole, fieldName: a.fieldName, oldValue: a.oldValue, newValue: a.newValue, reason: a.reason, proofPath: a.proofPath || null, createdAt: a.createdAt })) });
@@ -856,7 +856,7 @@ router.get("/:id/history", async (req, res) => {
   if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
   const inst: any = await Instructor.findById(req.params.id).lean();
   if (!inst) return res.status(404).json({ error: "Not found" });
-  const privileged = req.user!.role === Role.OPS_ADMIN || req.user!.role === Role.SENIOR_MANAGER;
+  const privileged = isOrgWide(req.user!);
 
   // resolve manager names for the assignment timeline
   const mgrIds = [...new Set((inst.assignments || []).map((a: any) => a.managerId).filter(Boolean).map(String))];

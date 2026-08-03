@@ -6,7 +6,7 @@ import { askAssistant } from "../lib/assistant";
 // Dashboard AI assistant — Ops Admin / Senior Manager / Capability Manager only. All data access is
 // role-scoped inside askAssistant (a CM only ever sees their reportees). Read-only.
 const router = Router();
-router.use(requireUser([Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER]));
+router.use(requireUser([Role.SUPER_ADMIN, Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER]));
 
 router.post("/chat", async (req, res) => {
   const messages = Array.isArray(req.body?.messages) ? req.body.messages : [];
