@@ -21,6 +21,8 @@ const opsOnly = (req: any, res: any, next: any) => (canManageUsers(req.user) ? n
 // Users page manages staff login accounts only — not instructor self-service accounts.
 const STAFF_ROLES = [Role.OPS_ADMIN, Role.SENIOR_MANAGER, Role.CAPABILITY_MANAGER];
 const isStaffRole = (r: string) => STAFF_ROLES.includes(r as typeof STAFF_ROLES[number]);
+const USERS_PAGE_ROLES = [...STAFF_ROLES, Role.SUPER_ADMIN];
+const isUsersPageRole = (r: string) => isStaffRole(r) || r === Role.SUPER_ADMIN;
 
 async function assertSuperAdminAssignment(requesterRole: string, role: string, excludeUserId?: string) {
   if (role !== Role.SUPER_ADMIN) return null;
@@ -57,8 +59,8 @@ router.get("/", opsOnly, async (req, res) => {
   if (req.query.roles !== undefined) {
     const roles = String(req.query.roles).split(",").map((s) => s.trim()).filter(isStaffRole);
     query.role = { $in: roles };
-  } else if (role && isStaffRole(role)) query.role = role;
-  else query.role = { $in: STAFF_ROLES };
+  }   else if (role && isStaffRole(role)) query.role = role;
+  else query.role = { $in: USERS_PAGE_ROLES };
   // Cast to ObjectId — the aggregation's $match does NOT auto-cast like countDocuments/find does,
   // so a raw string would count rows but return none (mismatch). (Bug)
   if (managerId) query.managerId = mongoose.isValidObjectId(managerId) ? new mongoose.Types.ObjectId(managerId) : managerId;
@@ -74,8 +76,8 @@ router.get("/", opsOnly, async (req, res) => {
   else if (live === "offline") and.push({ $or: [{ lastSeenAt: null }, { lastSeenAt: { $exists: false } }, { lastSeenAt: { $lt: liveCutoff } }] });
   if (and.length) query.$and = and;
 
-  // Custom role ordering for the table: Ops Admin → Senior Manager → Capability Manager.
-  const ROLE_ORDER = STAFF_ROLES;
+  // Custom role ordering for the table: Super Admin → Ops Admin → Senior Manager → Capability Manager.
+  const ROLE_ORDER = USERS_PAGE_ROLES;
   // 3-state column sort (overrides the default role-rank ordering when set).
   const SORTABLE = new Set(["name", "email", "role", "createdAt", "lastLoginAt", "lastSeenAt"]);
   const sortKey = String(req.query.sort || ""); const sortDir = String(req.query.dir || "");
@@ -150,7 +152,7 @@ router.patch("/:id", opsOnly, async (req, res) => {
   const { name, email, role, managerId, active, newPassword } = req.body || {};
   const target = await User.findById(req.params.id);
   if (!target) return res.status(404).json({ error: "User not found" });
-  if (!isStaffRole(target.role)) return res.status(404).json({ error: "User not found" });
+  if (!isUsersPageRole(target.role)) return res.status(404).json({ error: "User not found" });
   const isSelf = String(target._id) === req.user!.id;
 
   if (typeof name === "string" && name.trim()) target.name = name.trim();
@@ -171,6 +173,10 @@ router.patch("/:id", opsOnly, async (req, res) => {
     if (!isStaffRole(role) && role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "Invalid role for this user." });
     if (isSelf && role !== target.role && !isSuperAdmin({ role: req.user!.role } as any)) return res.status(400).json({ error: "You can't change your own role." });
     if (isSelf && role === Role.SUPER_ADMIN && target.role !== Role.SUPER_ADMIN) return res.status(400).json({ error: "You can't promote yourself to Super Admin here." });
+    if (role !== Role.OPS_ADMIN && target.role === Role.OPS_ADMIN) {
+      const n = await User.countDocuments({ role: Role.OPS_ADMIN });
+      if (n <= 1) return res.status(409).json({ error: "Can't change the role of the last Ops Admin." });
+    }
     target.role = role;
     if (role === Role.CAPABILITY_MANAGER) {
       const mgr = managerId || (target.managerId ? String(target.managerId) : null);

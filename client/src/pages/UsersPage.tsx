@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X, ChevronDown, UserMinus, UserCheck } from "lucide-react";
+import { Search, Plus, Mail, Pencil, Trash2, Copy, SlidersHorizontal, X, ChevronDown, UserMinus, UserCheck, UserCog } from "lucide-react";
 import { api } from "../api";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { useDebouncedValue, isAbort, useStickyThead, usePageClamp } from "../hooks";
@@ -13,8 +13,19 @@ import RowActionsMenu from "../components/RowActionsMenu";
 import { SkeletonRows } from "../components/scaffold";
 
 const ROLES = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
+const ALL_ROLES = ["SUPER_ADMIN", "OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 type Filters = { role: string; managerId: string; status: string; live: string };
 const EMPTY_FILTERS: Filters = { role: "", managerId: "", status: "", live: "" };
+
+function assignableRoles(currentRole: string, actor: { id?: string; role?: string } | null, targetId: string, superAdminExists: boolean): string[] {
+  let opts = ALL_ROLES.filter((r) => r !== currentRole);
+  if (superAdminExists && currentRole !== "SUPER_ADMIN" && actor?.role !== "SUPER_ADMIN") opts = opts.filter((r) => r !== "SUPER_ADMIN");
+  if (actor?.id === targetId) {
+    if (actor?.role !== "SUPER_ADMIN") return [];
+    opts = opts.filter((r) => r !== "SUPER_ADMIN");
+  }
+  return opts;
+}
 
 // Absolute date+time, e.g. "21 Jun 2026, 5:54 PM".
 function fmtDateTime(iso: string | null): string {
@@ -57,6 +68,7 @@ export default function UsersPage() {
   const [inviteMenuOpen, setInviteMenuOpen] = useState(false);
   const [inviteSelectMode, setInviteSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [roleChange, setRoleChange] = useState<any>(null);
 
   const sort = useSort("", "", () => setPage(1));
   // Roles quick-filter (checkbox dropdown next to the heading, like the Master's "Departments" filter).
@@ -268,6 +280,9 @@ export default function UsersPage() {
                       <RowActionsMenu actions={[
                         { label: "Send invite", icon: Mail, onClick: () => sendInvite(u) },
                         { label: "Edit", icon: Pencil, onClick: () => setEditing(u) },
+                        ...(assignableRoles(u.role, me, u.id, !!data?.superAdminExists).length
+                          ? [{ label: "Change role", icon: UserCog, onClick: () => setRoleChange(u) }]
+                          : []),
                         u.active
                           ? { label: "Deactivate", icon: UserMinus, danger: true, disabled: me?.id === u.id, title: me?.id === u.id ? "You can't deactivate your own account" : undefined, onClick: () => setActive(u, false) }
                           : { label: "Activate", icon: UserCheck, danger: false, onClick: () => setActive(u, true) },
@@ -285,6 +300,15 @@ export default function UsersPage() {
       </div>
 
       {editing && <UserModal user={editing} seniors={data?.seniors || []} superAdminExists={!!data?.superAdminExists} onClose={() => setEditing(null)} onSaved={(inv: any) => { setEditing(null); load(); if (inv?.inviteLink) setInvite({ link: inv.inviteLink, email: inv.email, delivered: inv.emailed }); }} />}
+      {roleChange && (
+        <ChangeRoleModal
+          user={roleChange}
+          seniors={data?.seniors || []}
+          superAdminExists={!!data?.superAdminExists}
+          onClose={() => setRoleChange(null)}
+          onSaved={() => { setRoleChange(null); load(); toast.success("Role updated."); }}
+        />
+      )}
       {invite && (
         <Modal title="Set-password invite" onClose={() => setInvite(null)}>
           <p className="text-sm text-slate-600">{invite.delivered ? `An email was sent to ${invite.email}.` : `Could not email automatically — share this link with the user:`}</p>
@@ -334,6 +358,55 @@ export default function UsersPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function ChangeRoleModal({ user, seniors, superAdminExists, onClose, onSaved }: { user: any; seniors: any[]; superAdminExists: boolean; onClose: () => void; onSaved: () => void }) {
+  const { user: me } = useAuth();
+  const options = assignableRoles(user.role, me, user.id, superAdminExists);
+  const [role, setRole] = useState(options[0] || "");
+  const [managerId, setManagerId] = useState(user.managerId || "");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (!role || role === user.role) return;
+    setBusy(true); setErr(null);
+    const mgr = role === "CAPABILITY_MANAGER" ? (managerId || null) : null;
+    try {
+      await api.patch(`/users/${user.id}`, { role, managerId: mgr });
+      onSaved();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title="Change role" onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Change role for <b>{user.name}</b> ({user.email}).</p>
+        <div>
+          <label className="label">Current role</label>
+          <div><span className="chip chip-gray">{ROLE_LABEL[user.role] || user.role}</span></div>
+        </div>
+        <div>
+          <label className="label">New role</label>
+          <select className="input" value={role} onChange={(e) => { const v = e.target.value; setRole(v); if (v !== "CAPABILITY_MANAGER") setManagerId(""); }}>
+            {options.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] || r}</option>)}
+          </select>
+        </div>
+        {role === "CAPABILITY_MANAGER" && (
+          <div>
+            <label className="label">Reports to (Senior Manager)</label>
+            <ScrollSelect value={managerId} placeholder="— select —" onChange={setManagerId}
+              options={[{ value: "", label: "— select —" }, ...seniors.map((s: any) => ({ value: s.id, label: s.name }))]} />
+          </div>
+        )}
+        {err && <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
+          <button disabled={busy || !role || role === user.role || (role === "CAPABILITY_MANAGER" && !managerId)} onClick={save} className="btn btn-primary btn-sm disabled:opacity-50">{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
