@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Instructor, User, FieldDefinition, TrainingColumn } from "../models";
 import { Role } from "../enums";
-import { instructorScopeFilter, canAccessInstructor, isOpsLevel } from "../lib/rbac";
+import { instructorScopeFilter, canAccessInstructor, isOpsLevel, isOrgWide } from "../lib/rbac";
 import { COURSE_ID_BY_TRAINING_LABEL, tabForInstructor, TRACK_META, seedTrainingColumns, STATUS_OPTIONS } from "../lib/training";
 import { computeSummary, summaryStored, COMPUTED_KEYS } from "../lib/trainingScore";
 import { maybeDecrypt, encrypt } from "../lib/crypto";
@@ -86,7 +86,16 @@ router.get("/", staffGuard, async (req, res) => {
     if (!d) return false; // unknown department → don't hide
     return deptCfg.configured ? hiddenDeptSet.has(normEmp(d)) : isDefaultUnchecked(d);
   };
-  const allDocs = await Instructor.find(instructorScopeFilter(req.user!)).select("employeeId name email uid currentManagerId values moduleStatus").lean();
+  // "TeachOS Only" tab: for a CM, only their own TeachOS-mapped reportees (a real, recognized CM
+  // resolution — grants actual visibility). For an org-wide viewer (Ops/SM), every instructor
+  // TeachOS lists AT ALL (teachos_matched) — a broader coverage view, mirrors /dashboard and Master.
+  const mappingSource = req.query.mappingSource === "teachos" ? "teachos" : "all";
+  let trainingScope: Record<string, any> = instructorScopeFilter(req.user!);
+  if (mappingSource === "teachos") {
+    if (req.user!.role === Role.CAPABILITY_MANAGER) trainingScope = { "values.teachos_manager_user_id": req.user!.id };
+    else if (isOrgWide(req.user!)) trainingScope = { "values.teachos_matched": "1" };
+  }
+  const allDocs = await Instructor.find(trainingScope).select("employeeId name email uid currentManagerId values moduleStatus").lean();
   const docs = (allDocs as any[]).filter((d) =>
     !(removedSet.size && removedSet.has(normEmp(d.employeeId))) &&
     !deptExcluded(d.values?.department)

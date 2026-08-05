@@ -2,13 +2,13 @@ import { Router } from "express";
 import Papa from "papaparse";
 import { Instructor, User, FieldDefinition, MasterColumn, MoveHistory } from "../models";
 import { Role } from "../enums";
-import { instructorScopeFilter, canAccessInstructor, canEditDetails } from "../lib/rbac";
+import { instructorScopeFilter, canAccessInstructor, canEditDetails, isOrgWide } from "../lib/rbac";
 import { escapeRegex } from "../lib/text";
 import { maybeDecrypt } from "../lib/crypto";
 import { applyFieldChange, writeAudit, validateValue } from "../lib/services";
 import { ensureMasterFields, seedMasterColumns, getActiveMasterColumns, keyFromLabel } from "../lib/master";
 import { loadLiveMasterRows, isDefaultUnchecked } from "../lib/masterLive";
-import { isOpsDept, isInstructorDept, seniorManagerIdSet } from "../lib/staffRoles";
+import { isOpsDept, isInstructorDept, seniorManagerIdSet, cmDarwinboxEmployeeId } from "../lib/staffRoles";
 import { resolveCmScopeId, cmRowInScope } from "../lib/cmScope";
 import { getMasterDepartments, getMasterPayrollVisibility } from "../lib/settings";
 import { norm } from "../lib/darwinboxSync";
@@ -122,6 +122,8 @@ router.get("/", guard, async (req, res) => {
   const workspaces = listParam(req.query.workspace);
   const statuses = listParam(req.query.status); // lifecycle drill-down from Dashboard (ONBOARDING, IN_TRAINING, …)
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
+  const mappingSource = req.query.mappingSource === "teachos" ? "teachos" : "all"; // "Total" vs "TeachOS Only" tab
+  const viewAsManagerId = String(req.query.viewAsManagerId || "").trim(); // Ops/SM audit: view as this Capability Manager
   const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
   const reqPer = parseInt(String(req.query.per || ""), 10);
   const PER = [50, 100, 200, 500, 1000].includes(reqPer) ? reqPer : 50;
@@ -163,9 +165,26 @@ router.get("/", guard, async (req, res) => {
     return true;
   };
 
-  // RBAC scope: CM sees Darwinbox reportees + app-assigned reportees. Ops/SM see everyone.
-  const cmScopeId = await resolveCmScopeId(req.user!);
-  const inScopeForUser = (r: any) => cmRowInScope(r, cmScopeId, req.user!.id);
+  // RBAC scope: CM sees Darwinbox reportees + app-assigned reportees + TeachOS-mapped reportees.
+  // Ops/SM see everyone, UNLESS they've picked "View as Capability Manager" (audit mode) — that
+  // REPLACES the org-wide "see everything" with the exact same union logic a real CM login gets,
+  // parameterized on the chosen manager instead of the session. A CM cannot view-as another CM
+  // (viewAsManagerId is only honored for isOrgWide roles) — falls through to their own scope.
+  let cmScopeId: string | null | undefined;
+  let scopeUserId: string | undefined = req.user!.id;
+  if (viewAsManagerId && isOrgWide(req.user!)) {
+    const viewAsUser: any = await User.findOne({ _id: viewAsManagerId, role: Role.CAPABILITY_MANAGER, active: true }).select("email").lean();
+    cmScopeId = viewAsUser ? await cmDarwinboxEmployeeId({ email: viewAsUser.email }) : null; // invalid/inactive id → fail closed
+    scopeUserId = viewAsManagerId;
+  } else {
+    cmScopeId = await resolveCmScopeId(req.user!);
+  }
+  // A plain Ops/SM/SuperAdmin viewer (no "View as" pick) with "TeachOS Only" selected gets an
+  // org-wide coverage view — EVERY instructor TeachOS lists at all (teachos_matched), not just the
+  // narrower subset that resolved to a recognized Capability Manager — rather than cmRowInScope's
+  // normal "org-wide sees everything" behavior (which ignores mode entirely).
+  const orgWideTeachosCoverage = isOrgWide(req.user!) && !viewAsManagerId && mappingSource === "teachos";
+  const inScopeForUser = (r: any) => orgWideTeachosCoverage ? !!r.teachos_matched : cmRowInScope(r, cmScopeId, scopeUserId, mappingSource);
 
   // In-memory filters (data is from Darwinbox, not a Mongo query).
   const has = (arr: string[], v: any) => arr.some((x) => norm(x) === norm(v));
@@ -213,7 +232,7 @@ router.get("/", guard, async (req, res) => {
   // hourly BigQuery → Mongo persist (lib/trainingSync.ts). No BigQuery call on a Master page load.
   res.json({
     total, page, per: PER, pages: Math.max(1, Math.ceil(total / PER)),
-    counts, instructors, darwinboxKeys: live.darwinboxKeys, fetchedAt: live.fetchedAt,
+    counts, instructors, darwinboxKeys: live.darwinboxKeys, teachosKeys: live.teachosKeys, fetchedAt: live.fetchedAt,
     departments: live.departments,
     defaultUnchecked: live.departments.filter(isDeptDefaultUnchecked),
   });

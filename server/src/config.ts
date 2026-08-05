@@ -30,6 +30,15 @@ export const config = {
     model: process.env.MISTRAL_MODEL || "ministral-3b-2512",
     baseUrl: (process.env.MISTRAL_BASE_URL || "https://api.mistral.ai/v1").replace(/\/$/, ""),
   },
+  // TeachOS instructor/manager data — temporary stopgap sourced from a Google Sheet (a Hex/BigQuery
+  // export) ahead of a future direct Hex/BigQuery connection. Its own dedicated service-account
+  // credentials (a DIFFERENT GCP project than the BigQuery-training one above) — the sheet is
+  // shared with that service account's client_email.
+  teachosSheet: {
+    credentials: process.env.TEACHOS_GOOGLE_CREDENTIALS || "",
+    spreadsheetId: process.env.TEACHOS_SHEET_ID || "",
+    range: process.env.TEACHOS_SHEET_RANGE || "A:Z",
+  },
   darwinbox: {
     endpoint: process.env.DARWINBOX_ENDPOINT || "",
     username: process.env.DARWINBOX_USERNAME || "",

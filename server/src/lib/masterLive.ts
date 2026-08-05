@@ -33,6 +33,13 @@ const DARWINBOX_CORE_KEYS = new Set<string>(["employeeId", "name", "email", "cam
 // the Training Stats grid (Department is a Darwinbox field, so it must be read-only in both).
 export const isDarwinboxOwnedKey = (key: string) => DARWINBOX_CORE_KEYS.has(key) || DARWINBOX_VALUE_KEYS.has(key);
 
+// TeachOS-synced keys (read-only; hourly Google Sheet → Mongo, see teachosSync.ts) — kept as its own
+// set (not folded into DARWINBOX_VALUE_KEYS) so the source stays honest as more read-only syncs are
+// added later (e.g. a future direct Hex/BigQuery connection).
+export const TEACHOS_VALUE_KEYS = new Set<string>([
+  "teachos_manager_employee_id", "teachos_manager_name", "teachos_manager_category", "teachos_role", "teachos_institute_name",
+]);
+
 // The instructor's current lifecycle stage, shown in the Master's Lifecycle column. Reflects a CM's
 // finalised exit outcome when present, otherwise the plain active/exited (or in-progress) state.
 function lifecycleLabel(outcome: string | undefined, exited: boolean, rawStatus?: string): string {
@@ -52,6 +59,7 @@ export type LiveMasterResult = {
   rows: LiveMasterRow[];
   counts: { all: number; active: number; exited: number };
   darwinboxKeys: string[]; // which column keys are Darwinbox-owned (read-only) — for the client
+  teachosKeys: string[];   // which column keys are TeachOS-owned (read-only) — for the client
   departments: string[];   // unique department names in the set (for the department quick-filter)
 };
 
@@ -142,6 +150,10 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     row.reporting_manager_employee_id = mv("reporting_manager_employee_id") || rmid2(row.reporting_manager) || nameToIdResolve(row.reporting_manager);
     row.lifecycleStatus = String(d.status || "");
     row.currentManagerId = d.currentManagerId ? String(d.currentManagerId) : "";
+    // Not a registered Master column (internal, scope-only) — set explicitly so cmRowInScope (Master
+    // grid CM scoping) always has it, regardless of which value keys are registered.
+    row.teachos_manager_user_id = mv("teachos_manager_user_id");
+    row.teachos_matched = mv("teachos_matched"); // "1" if TeachOS lists this instructor at all (org-wide coverage view)
     row.status = exited ? "EXITED" : "ACTIVE";
     row.lifecycle = lifecycleLabel(outcome, exited, row.lifecycleStatus);
     // Training % quick-view: stored primary % (values.primary_pct), refreshed hourly by the
@@ -161,6 +173,7 @@ export async function loadLiveMasterRows(refresh?: boolean): Promise<LiveMasterR
     rows,
     counts: { all: rows.length, active: rows.length - exited, exited },
     darwinboxKeys: [...DARWINBOX_CORE_KEYS, ...DARWINBOX_VALUE_KEYS],
+    teachosKeys: [...TEACHOS_VALUE_KEYS],
     departments,
   };
 }

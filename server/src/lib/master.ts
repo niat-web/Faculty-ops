@@ -38,36 +38,40 @@ const ROLE_OPTS = [
 ];
 
 // The master grid columns, in spreadsheet order. (Seeds the editable MasterColumn docs on first use.)
-// Column order: core + Darwinbox-synced columns first (one by one), then the 6 manually-editable
-// FacultyOps-only columns LAST. Removed: managerId (Capability Manager), university_mail; replaced
-// cm_employee_id with reporting_manager_employee_id (extracted from Darwinbox direct_manager).
+// Column order: identity core, then the two "who manages this person" sources grouped together
+// (Darwinbox reporting line + TeachOS Capability Manager), then HR/Darwinbox data, then the
+// manually-editable FacultyOps-only columns, Lifecycle always last. Removed: managerId (Capability
+// Manager), university_mail, cm_employee_id (superseded by reporting_manager_employee_id), plus
+// native_language / workspace / emp_state / emp_district / emp_city / teachos_role — low-signal or
+// redundant with Campus/Contribution Region/Role, dropped to declutter the grid.
 export const MASTER_COLUMNS: MasterColumnDef[] = [
-  // --- Core + Darwinbox-synced (first) ---
+  // --- Identity ---
   { key: "employeeId", label: "Employee ID", source: "core", type: "TEXT", editable: false, locked: true },
   { key: "name", label: "Name", source: "core", type: "TEXT", editable: true, locked: true },
-  { key: "reporting_manager_employee_id", label: "Reporting Manager Employee ID", source: "value", type: "TEXT", editable: true },
-  { key: "department", label: "Department", source: "value", type: "DROPDOWN", options: DEPARTMENT_OPTS, editable: true },
-  { key: "designation", label: "Role", source: "value", type: "DROPDOWN", options: ROLE_OPTS, editable: true },
+  { key: "uid", label: "UID", source: "core", type: "TEXT", editable: true },
   { key: "campus", label: "Work Location", source: "core", type: "TEXT", editable: true },
   { key: "email", label: "Mail ID", source: "core", type: "TEXT", editable: true },
   { key: "phone", label: "Phone Number", source: "value", type: "TEXT", editable: true },
+  // --- Who manages this person (Darwinbox reporting line + TeachOS Capability Manager, grouped) ---
+  { key: "reporting_manager_employee_id", label: "Reporting Manager Employee ID", source: "value", type: "TEXT", editable: true },
+  { key: "reporting_manager", label: "Reporting Manager (Darwin)", source: "value", type: "TEXT", editable: true },
+  { key: "teachos_manager_employee_id", label: "Capability Manager Employee ID", source: "value", type: "TEXT", editable: true },
+  { key: "teachos_manager_name", label: "Capability Manager (TeachOS)", source: "value", type: "TEXT", editable: true },
+  { key: "teachos_manager_category", label: "TeachOS Manager Category", source: "value", type: "TEXT", editable: true },
+  { key: "teachos_institute_name", label: "Institute Name", source: "value", type: "TEXT", editable: true },
+  // --- HR / Darwinbox-synced ---
+  { key: "department", label: "Department", source: "value", type: "DROPDOWN", options: DEPARTMENT_OPTS, editable: true },
+  { key: "designation", label: "Role", source: "value", type: "DROPDOWN", options: ROLE_OPTS, editable: true },
   { key: "doj", label: "DOJ", source: "value", type: "DATE", editable: true },
   { key: "qualification", label: "Qualification", source: "value", type: "DROPDOWN", options: QUALIFICATION_OPTS, editable: true },
   { key: "domain", label: "Domain", source: "value", type: "TEXT", editable: true },
-  { key: "uid", label: "UID", source: "core", type: "TEXT", editable: true },
   { key: "gender", label: "Gender", source: "value", type: "DROPDOWN", options: GENDER_OPTS, editable: true },
-  { key: "native_language", label: "Native Language", source: "value", type: "TEXT", editable: true },
-  { key: "reporting_manager", label: "Reporting Manager (Darwin)", source: "value", type: "TEXT", editable: true },
-  { key: "workspace", label: "June 2026 Workspace", source: "value", type: "TEXT", editable: true },
-  { key: "emp_state", label: "State", source: "value", type: "TEXT", editable: true },
-  { key: "emp_district", label: "District", source: "value", type: "TEXT", editable: true },
-  { key: "emp_city", label: "City", source: "value", type: "TEXT", editable: true },
   { key: "exit_date", label: "Exit Date", source: "value", type: "TEXT", editable: true },
-  // --- Manually-editable, FacultyOps-managed (LAST; never touched by Darwinbox sync) ---
+  // --- Manually-editable, FacultyOps-managed (never touched by Darwinbox sync) ---
   { key: "contribution", label: "Contribution", source: "value", type: "DROPDOWN", options: CONTRIBUTION_OPTS, editable: true },
-  { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
   { key: "contribution_region", label: "Contribution Region", source: "value", type: "DROPDOWN", options: CONTRIBUTION_REGION_OPTS, editable: true },
   { key: "payroll_entity", label: "Payroll", source: "value", type: "DROPDOWN", options: PAYROLL_OPTS, editable: true },
+  { key: "hod_interaction", label: "HOD Interaction", source: "value", type: "TEXT", editable: true },
   { key: "access_status", label: "Portal / Assets / Drive Access", source: "value", type: "TEXT", editable: true },
   { key: "remarks", label: "Remarks", source: "value", type: "TEXT", editable: true },
   // Computed lifecycle stage (Active / Exit In Progress / Exited / University Payroll / Consultant → FTE),
@@ -76,7 +80,7 @@ export const MASTER_COLUMNS: MasterColumnDef[] = [
 ];
 
 // Columns removed from the grid during reconciliation (archived, not deleted — instructor values kept).
-export const REMOVED_MASTER_KEYS = ["managerId", "university_mail", "cm_employee_id"];
+export const REMOVED_MASTER_KEYS = ["managerId", "university_mail", "cm_employee_id", "native_language", "workspace", "emp_state", "emp_district", "emp_city", "teachos_role"];
 
 // Quick lookups (seed defaults — runtime reads come from the DB via getActiveMasterColumns).
 export const MASTER_COLUMN_BY_KEY: Record<string, MasterColumnDef> = Object.fromEntries(MASTER_COLUMNS.map((c) => [c.key, c]));
@@ -86,6 +90,11 @@ const NEW_FIELDS: { key: string; label: string; module: string; type: string; vi
   { key: "hod_interaction", label: "HOD Interaction", module: "DEPLOYMENT", type: "TEXT", visibility: "PUBLIC" },
   { key: "reporting_manager_employee_id", label: "Reporting Manager Employee ID", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
   { key: "exit_date", label: "Exit Date", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "teachos_manager_employee_id", label: "Capability Manager Employee ID", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "teachos_manager_name", label: "Capability Manager (TeachOS)", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "teachos_manager_category", label: "TeachOS Manager Category", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "teachos_role", label: "TeachOS Role", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
+  { key: "teachos_institute_name", label: "Institute Name", module: "DEPLOYMENT", type: "TEXT", visibility: "NECESSARY" },
 ];
 // Existing TEXT fields the user wants promoted to admin-editable DROPDOWNs (non-destructive: only
 // applied while the field is still a non-DROPDOWN — once converted, Ops owns the options in Fields).

@@ -15,7 +15,8 @@ router.use(requireUser());
 // client doesn't use it — kept for manual/API use.)
 router.get("/dashboard", async (req, res) => {
   const live = String(req.query.live || "") === "1";
-  res.json(await dashboardData(req.user!, live, live ? { fresh: true } : undefined));
+  const mappingSource = req.query.mappingSource === "teachos" ? "teachos" : "all";
+  res.json(await dashboardData(req.user!, live, { ...(live ? { fresh: true } : {}), mappingSource }));
 });
 
 // Org chart tree: Org → Senior Managers → their Capability Managers. Every role is derived from the

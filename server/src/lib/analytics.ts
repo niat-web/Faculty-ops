@@ -61,8 +61,18 @@ function gapDays(predicted: string, deadline: any) {
 // `live=false` (default) renders purely from MongoDB (last-saved training %) so the page is instant;
 // `live=true` layers the BigQuery values on top and attaches a `trainingSync` status — the client calls
 // the live variant in the background and patches only the training-derived widgets.
-export async function dashboardData(user: SessionUser, live = false, opts?: { fresh?: boolean }) {
-  const scope = instructorScopeFilter(user);
+export async function dashboardData(user: SessionUser, live = false, opts?: { fresh?: boolean; mappingSource?: "all" | "teachos" }) {
+  // "TeachOS Only" narrows the normal scope down: for a Capability Manager, only instructors TeachOS
+  // maps to THEM (values.teachos_manager_user_id — a real, recognized CM resolution, since this
+  // grants actual reportee visibility). For an org-wide viewer (Ops/SM), it's a broader coverage
+  // question — every instructor TeachOS lists AT ALL (values.teachos_matched), not just the subset
+  // whose named manager resolved to a recognized CM — matching the Master grid's org-wide tab.
+  // Per-CM auditing is the Master grid's "View as Capability Manager" picker instead.
+  let scope: Record<string, any> = instructorScopeFilter(user);
+  if (opts?.mappingSource === "teachos") {
+    if (user.role === Role.CAPABILITY_MANAGER) scope = { "values.teachos_manager_user_id": user.id };
+    else if (isOrgWide(user)) scope = { "values.teachos_matched": "1" };
+  }
   // Pull the scoped instructors once and compute most series in memory (mirrors the old app).
   // Deterministic order so an instructor with a duplicate email always resolves to the same self-record.
   const allDocs: DocWithSummary[] = await Instructor.find(scope).select("employeeId name email uid status campus currentManagerId values moduleStatus createdAt").sort({ createdAt: -1 }).lean();
@@ -90,7 +100,12 @@ export async function dashboardData(user: SessionUser, live = false, opts?: { fr
   const progress = live ? await attachLiveTrainingSummaries(docs, opts) : null;
 
   const total = docs.length;
-  const campuses = new Set(docs.map((d) => (d.campus || "").trim()).filter(Boolean)).size;
+  // "Campuses" KPI = distinct TeachOS Institute Name (values.teachos_institute_name), not the
+  // Darwinbox campus/work-location field — campus has messy non-institute values ("Exit",
+  // "University", duplicate "WFH"/"Work From Home") that inflated the count. Coverage is limited
+  // to TeachOS-matched instructors (~509 of ~992); instructors without a TeachOS row don't
+  // contribute an institute name here — this is a known, accepted tradeoff for a cleaner count.
+  const campuses = new Set(docs.map((d) => maybeDecrypt(d.values?.teachos_institute_name || "").trim()).filter(Boolean)).size;
   const trainingVals = docs.map((d) => d.livePrimaryPct ?? num(maybeDecrypt(d.values?.primary_pct))).filter((n): n is number => n != null);
   const avgTraining = trainingVals.length ? Math.round(trainingVals.reduce((a, b) => a + b, 0) / trainingVals.length) : 0;
   const exited = docs.filter((d) => d.status === "EXITED").length;

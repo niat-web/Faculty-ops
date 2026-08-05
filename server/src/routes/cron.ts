@@ -78,6 +78,14 @@ router.post("/training-sync", async (_req, res) => {
   res.status(report.ok ? 200 : 502).json(report);
 });
 
+// TeachOS (Google Sheet) → Mongo persist (scheduled): same engine as the in-process hourly job.
+// Keeps values.teachos_* fresh, UID-matched (instructor side and manager side both).
+router.post("/teachos-sync", async (_req, res) => {
+  const { persistTeachosSync } = await import("../lib/teachosSync");
+  const report = await persistTeachosSync();
+  res.status(report.ok ? 200 : 502).json(report);
+});
+
 // Darwinbox → Instructor Master sync (scheduled): same engine as the manual Data-page sync.
 // Department-scoped, Employee ID keyed; Darwinbox wins on synced fields only.
 router.post("/darwinbox-sync", async (_req, res) => {

@@ -77,6 +77,14 @@ async function runOnce() {
     if (t.ok) console.log(`[training-sync] ${t.matched} matched, ${t.updated} updated (of ${t.scanned})`);
     else console.warn(`[training-sync] skipped: ${t.error}`);
   } catch (e: any) { console.error("[training-sync] failed:", e?.message || e); }
+  // TeachOS (Google Sheet) → Mongo persist: keeps the manager/category/role/institute columns
+  // fresh, UID-matched. Independent of Darwinbox/BigQuery — skips cleanly when unconfigured.
+  try {
+    const { persistTeachosSync } = await import("./teachosSync");
+    const s = await persistTeachosSync();
+    if (s.ok) console.log(`[teachos-sync] ${s.matched} matched (${s.managersResolved} managers resolved), ${s.updated} updated (of ${s.scanned})`);
+    else console.warn(`[teachos-sync] skipped: ${s.error}`);
+  } catch (e: any) { console.error("[teachos-sync] failed:", e?.message || e); }
 }
 
 const darwinboxConfigured = () => Boolean(config.darwinbox.endpoint && config.darwinbox.username && config.darwinbox.password && config.darwinbox.apiKey && config.darwinbox.datasetKey);

@@ -25,9 +25,20 @@ export function requirePerm(perm: PermKey) {
 }
 
 // Row-level scope: which instructors a viewer may see.
+// A Capability Manager sees the union of the manual app assignment (currentManagerId, set via the
+// Assignments page) AND anyone TeachOS's Capability-Manager mapping resolves to them
+// (values.teachos_manager_user_id, written by teachosSync.ts — only ever a real, active
+// CAPABILITY_MANAGER User's own id, never arbitrary). TeachOS is an ADDITIONAL grant, not a
+// replacement — it never removes a manually-assigned reportee.
+// The OR condition is wrapped in $and (not a bare top-level $or) on purpose: many callers merge this
+// filter with their own `.$or = [...]` for text search (e.g. routes/instructors.ts) — a bare $or here
+// would get silently clobbered by that assignment, widening a CM's visible rows to everyone. $and is
+// a different key, so it always survives being merged/spread alongside a caller's own $or.
 export function instructorScopeFilter(user: SessionUser): Record<string, any> {
   if (isOrgWide(user)) return {};
-  if (user.role === Role.CAPABILITY_MANAGER) return { currentManagerId: user.id };
+  if (user.role === Role.CAPABILITY_MANAGER) {
+    return { $and: [{ $or: [{ currentManagerId: user.id }, { "values.teachos_manager_user_id": user.id }] }] };
+  }
   return { email: user.email }; // instructor → only self
 }
 
@@ -39,6 +50,7 @@ export async function canAccessInstructor(user: SessionUser, instructorId: strin
   if (!inst) return false;
   if (user.role === Role.CAPABILITY_MANAGER) {
     if (String(inst.currentManagerId) === user.id) return true;
+    if (String(inst.values?.teachos_manager_user_id || "") === user.id) return true;
     const { cmDarwinboxEmployeeId } = await import("./staffRoles");
     const cmId = await cmDarwinboxEmployeeId(user);
     if (!cmId) return false;

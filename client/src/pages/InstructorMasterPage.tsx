@@ -36,6 +36,9 @@ function lifecycleFromSearch(sp?: URLSearchParams): string[] {
 export default function InstructorMasterPage() {
   const { user } = useAuth();
   const isOps = user?.role === "OPS_ADMIN";
+  const isCM = user?.role === "CAPABILITY_MANAGER";
+  // Ops/SM/SuperAdmin — may pick "View as Capability Manager" to audit any CM's mapping.
+  const isOrgWideRole = user?.role === "SUPER_ADMIN" || user?.role === "OPS_ADMIN" || user?.role === "SENIOR_MANAGER";
   const toast = useToast();
   const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -59,6 +62,8 @@ export default function InstructorMasterPage() {
   const [err, setErr] = useState<string | null>(null);
   // Column keys sourced LIVE from Darwinbox → read-only in the grid (only manual columns are editable).
   const [darwinboxKeys, setDarwinboxKeys] = useState<Set<string>>(new Set());
+  // Column keys sourced from the TeachOS Google Sheet sync → also read-only in the grid.
+  const [teachosKeys, setTeachosKeys] = useState<Set<string>>(new Set());
   // Department quick-filter: `deptSel` = null means "use server default" (all except the 2 support depts);
   // a Set means an explicit user selection. `allDepts`/`defaultUnchecked` come from the response.
   const [allDepts, setAllDepts] = useState<string[]>([]);
@@ -75,6 +80,23 @@ export default function InstructorMasterPage() {
     const p = new URLSearchParams(window.location.search);
     return (p.get("scope") as "active" | "all" | "exited") || (p.get("status") ? "all" : "active");
   });
+  // "Total" (union of manual + Darwinbox + TeachOS) vs "TeachOS Only" — a Capability Manager's own
+  // reportee-mapping breakdown. Only meaningful once a CM scope is active (self, or an Ops/SM "View
+  // as" pick below), so the tab itself is hidden otherwise.
+  const [mappingSource, setMappingSource] = useState<"all" | "teachos">(() => {
+    const p = new URLSearchParams(window.location.search);
+    const fromUrl = p.get("mappingSource");
+    if (fromUrl === "all" || fromUrl === "teachos") return fromUrl;
+    // Default TeachOS Only for a CM's own view (or a deep-linked "View as" audit) — but a plain
+    // Ops/SM/SuperAdmin view (no CM in scope) defaults to Total, so Master keeps showing everyone by
+    // default rather than silently narrowing the org's primary instructor-management tool.
+    const isCmLike = user?.role === "CAPABILITY_MANAGER" || !!p.get("viewAsManagerId");
+    return isCmLike ? "teachos" : "all";
+  });
+  // Ops/SM/SuperAdmin audit pick: view the grid as if logged in as this Capability Manager (scope-only —
+  // doesn't change who they ARE, just replaces "see everyone" with that CM's own reportee scope).
+  const [viewAsManagerId, setViewAsManagerId] = useState<string>(() =>
+    new URLSearchParams(window.location.search).get("viewAsManagerId") || "");
   const [counts, setCounts] = useState<{ all: number; active: number; exited: number }>({ all: 0, active: 0, exited: 0 });
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
@@ -197,8 +219,10 @@ export default function InstructorMasterPage() {
     if (lifecycleStatus.length) p.set("status", lifecycleStatus.join(","));
     if (sort.sort && sort.dir) { p.set("sort", sort.sort); p.set("dir", sort.dir); }
     p.set("scope", scope);
+    p.set("mappingSource", mappingSource); // default "teachos" — explicit so URLs/back-button are faithful
+    if (viewAsManagerId) p.set("viewAsManagerId", viewAsManagerId);
     return p;
-  }, [dq, applied, rmNameFilter, scope, role, contribution, lifecycleStatus, sort.sort, sort.dir, deptSel]);
+  }, [dq, applied, rmNameFilter, scope, role, contribution, lifecycleStatus, sort.sort, sort.dir, deptSel, mappingSource, viewAsManagerId]);
 
   // Sticky header during PAGE scroll — pinned smoothly (measure-once + rAF + translate3d), so large
   // pages (500–1000 rows) scroll without the per-frame reflow jank. See useStickyThead.
@@ -213,7 +237,7 @@ export default function InstructorMasterPage() {
     api.get(`/master?${p}`, { signal: ac.signal })
       .then((r) => {
         setRows(r.instructors); setTotal(r.total); setCounts(r.counts || { all: 0, active: 0, exited: 0 });
-        setDarwinboxKeys(new Set(r.darwinboxKeys || [])); setAllDepts(r.departments || []); setDefaultUnchecked(r.defaultUnchecked || []);
+        setDarwinboxKeys(new Set(r.darwinboxKeys || [])); setTeachosKeys(new Set(r.teachosKeys || [])); setAllDepts(r.departments || []); setDefaultUnchecked(r.defaultUnchecked || []);
         setErr(null); setLoadingRows(false);
       })
       .catch((e) => { if (!isAbort(e)) { setErr(e.message); setLoadingRows(false); } });
@@ -446,6 +470,22 @@ export default function InstructorMasterPage() {
               </button>
             ))}
           </div>
+          {/* Reportee-mapping breakdown — for a CM, their own manual+Darwinbox+TeachOS union vs TeachOS
+              Only. For Ops/SM/SuperAdmin: either a specific "View as" CM's breakdown, or (with no CM
+              picked) an org-wide Total-vs-TeachOS-coverage view. */}
+          {(isCM || isOrgWideRole) && (
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
+              {([["all", "Total"], ["teachos", "TeachOS Only"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => { setMappingSource(key); setPage(1); }}
+                  className={`rounded-md px-3 py-1 font-medium transition ${mappingSource === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div ref={wrapRef} className="data-grid-scroll">
           <table className="data-grid-table whitespace-nowrap">
@@ -459,7 +499,7 @@ export default function InstructorMasterPage() {
                 {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`px-3 py-3 font-semibold ${c.editable && !darwinboxKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
+                      className={`px-3 py-3 font-semibold ${c.editable && !darwinboxKeys.has(c.key) && !teachosKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
                         c.key === "name"
                           ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px] border-r border-slate-200 bg-slate-50 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.1)]`
                           : "z-20"}`} />
@@ -491,7 +531,7 @@ export default function InstructorMasterPage() {
                     const display = row[c.key] === "" || row[c.key] == null ? "—" : row[c.key];
                     const isEditing = edit?.empId === row.employeeId && edit?.key === c.key;
                     // Darwinbox-sourced columns are read-only; only the manual FacultyOps columns are editable.
-                    const editable = c.editable && !darwinboxKeys.has(c.key);
+                    const editable = c.editable && !darwinboxKeys.has(c.key) && !teachosKeys.has(c.key);
                     // Only Name opens the instructor details drawer — and only when a Mongo record exists.
                     const isLink = c.key === "name";
                     return (
@@ -605,6 +645,15 @@ export default function InstructorMasterPage() {
             <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
               <div><label className="label">Capability Manager</label>
                 <MultiSelect values={draft.reportingManager} onChange={(v) => setDraft({ ...draft, reportingManager: v })} options={meta.reportingManagers.map((m) => ({ value: m.id, label: m.name }))} placeholder="All managers" /></div>
+              {isOrgWideRole && (
+                <div>
+                  <label className="label">View as Capability Manager</label>
+                  <ScrollSelect value={viewAsManagerId} placeholder="— Not viewing as anyone —"
+                    onChange={(v) => { setViewAsManagerId(v); if (v) setMappingSource("teachos"); setPage(1); }}
+                    options={[{ value: "", label: "— Not viewing as anyone —" }, ...meta.managers.map((m) => ({ value: m.id, label: m.name }))]} />
+                  <p className="mt-1 text-xs text-slate-400">Audit tool — see exactly what this Capability Manager sees on their own login (their manual + Darwinbox + TeachOS reportees), with a Total/TeachOS Only breakdown.</p>
+                </div>
+              )}
               <div><label className="label">Department</label>
                 <MultiSelect values={draft.department} onChange={(v) => setDraft({ ...draft, department: v })} options={meta.filters.departments.map((d) => ({ value: d, label: d }))} placeholder="All departments" /></div>
               <div><label className="label">Role</label>
