@@ -499,7 +499,7 @@ export default function InstructorMasterPage() {
                 {displayColumns.map((c) => (
                   <Fragment key={c.key}>
                     <SortHeader label={c.label} k={c.source === "manager" ? undefined : c.key} state={sort} onToggle={sort.toggle}
-                      className={`px-3 py-3 font-semibold ${c.editable && !darwinboxKeys.has(c.key) && !teachosKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
+                      className={`px-3 py-3 font-semibold ${c.editable && (c.key === "uid" || !darwinboxKeys.has(c.key)) && !teachosKeys.has(c.key) ? "bg-amber-50 text-amber-900" : "bg-slate-50"} ${
                         c.key === "name"
                           ? `sticky ${selectMode ? "left-8" : "left-0"} z-30 w-[200px] min-w-[200px] border-r border-slate-200 bg-slate-50 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.1)]`
                           : "z-20"}`} />
@@ -531,7 +531,10 @@ export default function InstructorMasterPage() {
                     const display = row[c.key] === "" || row[c.key] == null ? "—" : row[c.key];
                     const isEditing = edit?.empId === row.employeeId && edit?.key === c.key;
                     // Darwinbox-sourced columns are read-only; only the manual FacultyOps columns are editable.
-                    const editable = c.editable && !darwinboxKeys.has(c.key) && !teachosKeys.has(c.key);
+                    // UID is the one Darwinbox-owned exception — Ops can manually fix a wrong/missing UID
+                    // (Darwinbox's create/fill-only sync never overwrites an existing value, so a bad value
+                    // never self-heals) even though the rest of the Darwinbox core fields stay locked.
+                    const editable = c.editable && (c.key === "uid" || !darwinboxKeys.has(c.key)) && !teachosKeys.has(c.key);
                     // Only Name opens the instructor details drawer — and only when a Mongo record exists.
                     const isLink = c.key === "name";
                     return (

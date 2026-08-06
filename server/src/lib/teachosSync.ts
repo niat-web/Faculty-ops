@@ -1,7 +1,8 @@
 import { Instructor, User } from "../models";
-import { fetchTeachosRows, TeachosRow } from "./teachosSheet";
+import { fetchTeachosRowsFromBigQuery, TeachosRow } from "./teachosBigQuery";
 
-// Hourly TeachOS (Google Sheet) → MongoDB persist. Matches sheet rows to instructors by UID
+// Hourly TeachOS (BigQuery table niat_instructor_managers_and_instructors_details) → MongoDB
+// persist. Matches rows to instructors by UID
 // (instructor_user_id ↔ Instructor.uid, hyphen/case-normalized — UUIDs differ by format across
 // systems, same as the BigQuery training match in bigqueryTraining.ts) and writes read-only fields
 // into Instructor.values:
@@ -34,9 +35,9 @@ import { fetchTeachosRows, TeachosRow } from "./teachosSheet";
 // instructors does TeachOS know about, period) — a broader question than "who reports to a CM via
 // TeachOS," which is what teachos_manager_user_id answers.
 //
-// Safety rule (mirrors trainingSync.ts): only instructors matched by a sheet row this run are
-// touched. An instructor with no UID match is left completely untouched — a transient sheet fetch
-// hiccup or a UID that hasn't been backfilled yet never blanks out previously-synced data.
+// Safety rule (mirrors trainingSync.ts): only instructors matched by a BigQuery row this run are
+// touched. An instructor with no UID match is left completely untouched — a transient BigQuery
+// fetch hiccup or a UID that hasn't been backfilled yet never blanks out previously-synced data.
 
 const normId = (v: any) => String(v ?? "").replace(/-/g, "").toLowerCase().trim();
 
@@ -77,9 +78,9 @@ export async function persistTeachosSync(): Promise<TeachosSyncReport> {
 
   let rows: TeachosRow[];
   try {
-    rows = await fetchTeachosRows();
+    rows = await fetchTeachosRowsFromBigQuery();
   } catch (e: any) {
-    return { ok: false, matched: 0, managersResolved: 0, updated: 0, scanned, error: e?.message || "TeachOS sheet fetch failed" };
+    return { ok: false, matched: 0, managersResolved: 0, updated: 0, scanned, error: e?.message || "TeachOS BigQuery fetch failed" };
   }
 
   // Group sheet rows by instructor (multiple category rows per instructor are normal).

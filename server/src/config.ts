@@ -17,6 +17,9 @@ export const config = {
     projectId: process.env.BIGQUERY_PROJECT_ID || "",
     dataset: process.env.BIGQUERY_DATASET || "",
     table: process.env.BIGQUERY_TABLE || "",
+    // TeachOS instructor/manager table — same dataset/project/credentials as the training table
+    // above, just a different table name (see lib/teachosBigQuery.ts).
+    teachosTable: process.env.BIGQUERY_TEACHOS_TABLE || "",
   },
   // Google Drive — certificate uploads land in this (Shared Drive) folder, using the same
   // service-account credentials as BigQuery. Files are made "anyone with the link (viewer)".
@@ -29,15 +32,6 @@ export const config = {
     apiKey: process.env.MISTRAL_API_KEY || "",
     model: process.env.MISTRAL_MODEL || "ministral-3b-2512",
     baseUrl: (process.env.MISTRAL_BASE_URL || "https://api.mistral.ai/v1").replace(/\/$/, ""),
-  },
-  // TeachOS instructor/manager data — temporary stopgap sourced from a Google Sheet (a Hex/BigQuery
-  // export) ahead of a future direct Hex/BigQuery connection. Its own dedicated service-account
-  // credentials (a DIFFERENT GCP project than the BigQuery-training one above) — the sheet is
-  // shared with that service account's client_email.
-  teachosSheet: {
-    credentials: process.env.TEACHOS_GOOGLE_CREDENTIALS || "",
-    spreadsheetId: process.env.TEACHOS_SHEET_ID || "",
-    range: process.env.TEACHOS_SHEET_RANGE || "A:Z",
   },
   darwinbox: {
     endpoint: process.env.DARWINBOX_ENDPOINT || "",

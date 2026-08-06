@@ -430,8 +430,12 @@ router.get("/export.csv", guard, async (req, res) => {
 });
 
 // Master value keys that are sourced LIVE from Darwinbox → read-only in this live-join view.
+// UID is deliberately left OUT of this set: it's the one Darwinbox-owned core field Ops can still
+// manually fix (Darwinbox's sync is create/fill-only, so a wrong/blank UID never self-heals, and a
+// bad UID silently breaks the BigQuery training match and TeachOS manager match for that instructor —
+// see the "uid" branch below, which does the actual write).
 const DARWINBOX_READONLY_KEYS = new Set<string>([
-  "employeeId", "name", "email", "campus", "uid", // core Darwinbox-owned
+  "employeeId", "name", "email", "campus", // core Darwinbox-owned
   "phone", "doj", "department", "designation", "reporting_manager", "reporting_manager_employee_id",
   "qualification", "gender", "native_language", "workspace", "emp_state", "emp_district", "emp_city", "exit_date",
 ]);
@@ -520,7 +524,9 @@ router.post("/cell", guard, async (req, res) => {
   } else if (col.key === "campus") {
     oldValue = inst.campus || ""; inst.campus = val.trim() || null;
   } else if (col.key === "uid") {
-    oldValue = inst.uid || ""; inst.uid = val.trim() || null;
+    const u = val.trim();
+    if (u) { const dup = await Instructor.findOne({ uid: u, _id: { $ne: inst._id } }).select("_id").lean(); if (dup) return res.status(409).json({ error: "Another instructor already uses this UID." }); }
+    oldValue = inst.uid || ""; inst.uid = u || null;
   } else {
     return res.status(400).json({ error: "Unsupported column" });
   }
