@@ -632,7 +632,7 @@ export default function InstructorMasterPage() {
                   <ScrollSelect value={viewAsManagerId} placeholder="— Not viewing as anyone —"
                     onChange={(v) => { setViewAsManagerId(v); if (v) setMappingSource("teachos"); setPage(1); }}
                     options={[{ value: "", label: "— Not viewing as anyone —" }, ...meta.managers.map((m) => ({ value: m.id, label: m.name }))]} />
-                  <p className="mt-1 text-xs text-slate-400">Audit tool — see exactly what this Capability Manager sees on their own login (their manual + Darwinbox + TeachOS reportees), with a Total/TeachOS Only breakdown.</p>
+                  <p className="mt-1 text-xs text-slate-400">Audit tool — see exactly what this Capability Manager sees on their own login (their manual + Darwinbox + TeachOS reportees).</p>
                 </div>
               )}
               <div><label className="label">Department</label>

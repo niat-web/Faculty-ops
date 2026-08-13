@@ -341,7 +341,7 @@ export default function TrainingPage() {
   // "Total" vs "TeachOS Only" — mirrors Instructor Master / Dashboard. Default: TeachOS Only for a
   // Capability Manager's own view; Total for Ops/SM's org-wide view (doesn't silently narrow the
   // main Training Stats grid — they switch to the org-wide TeachOS-coverage view deliberately).
-  const [mappingSource, setMappingSource] = useState<"all" | "teachos">(user?.role === "CAPABILITY_MANAGER" ? "teachos" : "all");
+  const [mappingSource] = useState<"all" | "teachos">(user?.role === "CAPABILITY_MANAGER" ? "teachos" : "all");
   // Two-stage load: the FAST fetch (fast=1, no BigQuery) renders the grid instantly from stored
   // data; a background fetch WITHOUT fast then overlays live BigQuery progress silently.
   const { data: resp, setData: setResp, loading, error: err } = useCachedGet<any>(`/training?track=${tabKey}&fast=1&mappingSource=${mappingSource}`);
@@ -563,16 +563,7 @@ export default function TrainingPage() {
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} placeholder="Search name or ID…" className="input w-56 pl-9" />
               </div>
-              {["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"].includes(user?.role || "") && (
-                <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
-                  {([["all", "Total"], ["teachos", "TeachOS Only"]] as const).map(([key, label]) => (
-                    <button key={key} onClick={() => { setMappingSource(key); setPage(0); }}
-                      className={`rounded-md px-3 py-1 font-medium transition ${mappingSource === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* Total / TeachOS-Only toggle removed per request — the grid keeps each role's default mapping view. */}
               <div className="w-48"><ScrollSelect value={cmFilter} placeholder="All managers" onChange={(v) => { setCmFilter(v); setPage(0); }}
                 options={[{ value: "", label: "All managers" }, ...managers.map((m) => ({ value: m, label: m }))]} /></div>
               <button onClick={exportCsv} className="btn btn-ghost btn-sm" title="Export the current table as CSV"><Download className="h-4 w-4" /> Export CSV</button>
