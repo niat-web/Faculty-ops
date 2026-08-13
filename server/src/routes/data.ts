@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireUser } from "../middleware";
 import { canViewData } from "../lib/rbac";
 import { config } from "../config";
-import { fetchBigQueryRows, streamBigQueryCsv, bigQueryFacets } from "../lib/bigqueryTraining";
+import { fetchBigQueryRows, streamBigQueryCsv, bigQueryFacets, listBigQueryDatasets, fetchBigQueryTable, streamBigQueryTableCsv } from "../lib/bigqueryTraining";
 import { fetchDarwinboxRows, streamDarwinboxCsv, darwinboxFacets } from "../lib/darwinbox";
 import { buildDarwinboxSyncPlan, applyDarwinboxSync } from "../lib/darwinboxSync";
 
@@ -49,6 +49,20 @@ router.get("/bigquery", async (req, res) => {
   const { limit, offset, q } = paging(req);
   const page = await fetchBigQueryRows(limit, offset, q || undefined, parseFilters(req.query.filters));
   res.status(page.ok ? 200 : 502).json(page);
+});
+
+// Browse ANY dataset/table the service account can see (Data page → BigQuery card).
+router.get("/bigquery/datasets", async (_req, res) => {
+  const r = await listBigQueryDatasets();
+  res.status(r.ok ? 200 : 502).json(r);
+});
+router.get("/bigquery/table", async (req, res) => {
+  const { limit, offset, q } = paging(req);
+  const page = await fetchBigQueryTable(String(req.query.dataset || ""), String(req.query.table || ""), limit, offset, q || undefined);
+  res.status(page.ok ? 200 : 502).json(page);
+});
+router.get("/bigquery/table/export.csv", async (req, res) => {
+  await streamBigQueryTableCsv(res, String(req.query.dataset || ""), String(req.query.table || ""), String(req.query.q || "").trim() || undefined);
 });
 
 router.get("/darwinbox", async (req, res) => {

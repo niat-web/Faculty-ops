@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Database, Cloud, Building2, Search, RefreshCw, AlertTriangle, ArrowRightLeft, CheckCircle2, ChevronDown, Download, SlidersHorizontal, X } from "lucide-react";
+import { Database, Cloud, Building2, Search, RefreshCw, AlertTriangle, ArrowRightLeft, CheckCircle2, ChevronDown, Download, SlidersHorizontal, X, UserMinus } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useDebouncedValue, isAbort } from "../hooks";
 import { useConfirm } from "../confirm";
@@ -10,7 +10,7 @@ import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import MultiSelect from "../components/MultiSelect";
 
-type SourceKey = "bigquery" | "darwinbox";
+type SourceKey = "bigquery" | "darwinbox" | "exited";
 
 type TablePage = {
   ok: boolean;
@@ -19,13 +19,21 @@ type TablePage = {
   total: number;
   fetchedAt: string;
   source: string;
+  note?: string;
   error?: string;
 };
 
 const SOURCES: { key: SourceKey; title: string; desc: string; icon: any }[] = [
   { key: "bigquery", title: "BigQuery", desc: "Instructor training progress table (Google BigQuery)", icon: Cloud },
   { key: "darwinbox", title: "Darwinbox", desc: "Employee master data (Darwinbox HRMS)", icon: Building2 },
+  { key: "exited", title: "Exited Employees", desc: "Left / separated employees (Darwinbox Report Builder)", icon: UserMinus },
 ];
+
+// The "exited" source uses its own dedicated endpoint (/api/darwinbox-check/*); the others use /api/data/*.
+const rowsPath = (s: SourceKey) => (s === "exited" ? "/darwinbox-check/rows" : `/data/${s}`);
+const exportPath = (s: SourceKey) => (s === "exited" ? "/darwinbox-check/export.csv" : `/data/${s}/export.csv`);
+const sourceTitle = (s: SourceKey | null) => (s === "bigquery" ? "BigQuery" : s === "darwinbox" ? "Darwinbox" : s === "exited" ? "Exited Employees" : "");
+const canRefresh = (s: SourceKey) => s === "darwinbox" || s === "exited";
 
 // Prettify snake_case column names for the header row.
 const colLabel = (c: string) => c.replace(/[_.]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -50,14 +58,32 @@ export default function DataPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const filtersKey = JSON.stringify(filters);
   const activeFilterCols = Object.entries(filters).filter(([, v]) => v.length).length;
+  // BigQuery browser: list of datasets → tables, plus the currently-open table.
+  const [bqDatasets, setBqDatasets] = useState<{ project: string; datasets: { id: string; tables: string[] }[] } | null>(null);
+  const [bqSel, setBqSel] = useState<{ dataset: string; table: string } | null>(null);
+  const [bqOpen, setBqOpen] = useState<Record<string, boolean>>({});
+  const bqKey = bqSel ? `${bqSel.dataset}.${bqSel.table}` : "";
 
-  useEffect(() => { api.get("/data/sources").then(setSources).catch(() => {}); }, []);
+  useEffect(() => {
+    Promise.all([
+      api.get("/data/sources").catch(() => ({})),
+      api.get("/darwinbox-check/status").catch(() => null),
+    ]).then(([s, ex]: any[]) => setSources({ ...s, exited: ex ? { configured: ex.configured, label: ex.endpoint } : { configured: false } }));
+  }, []);
+
+  // When BigQuery is selected, load its datasets + tables and clear any open table.
+  useEffect(() => {
+    if (source !== "bigquery") return;
+    setBqSel(null); setBqDatasets(null);
+    api.get("/data/bigquery/datasets").then(setBqDatasets).catch(() => setBqDatasets({ project: "", datasets: [] }));
+  }, [source]);
 
   // On source change: reset filters and load that source's facets (unique values per column).
+  // Only Darwinbox has facets — "exited" and the BigQuery browser use server-side search only.
   useEffect(() => {
     setFilters({});
     setFacets({});
-    if (!source) return;
+    if (source !== "darwinbox") return;
     setFacetsLoading(true);
     const ctrl = new AbortController();
     api.get(`/data/${source}/facets`, { signal: ctrl.signal })
@@ -67,27 +93,41 @@ export default function DataPage() {
     return () => ctrl.abort();
   }, [source]);
 
-  // Back to page 1 whenever the source, search or filters change.
-  useEffect(() => { setPage(1); }, [source, dq, filtersKey]);
+  // Back to page 1 whenever the source, selected BigQuery table, search or filters change.
+  useEffect(() => { setPage(1); }, [source, bqKey, dq, filtersKey]);
 
   useEffect(() => {
     if (!source) return;
+    if (source === "bigquery" && !bqSel) { setData(null); return; } // waiting for a table to be picked
     const ctrl = new AbortController();
     setLoading(true);
     setError("");
     const params = new URLSearchParams({ limit: String(per), offset: String((page - 1) * per) });
     if (dq.trim()) params.set("q", dq.trim());
-    if (activeFilterCols) params.set("filters", filtersKey);
-    if (source === "darwinbox" && forceRefresh.current) { params.set("refresh", "1"); forceRefresh.current = false; }
-    api.get<TablePage>(`/data/${source}?${params}`, { signal: ctrl.signal })
+    let url: string;
+    if (source === "bigquery") {
+      params.set("dataset", bqSel!.dataset); params.set("table", bqSel!.table);
+      url = `/data/bigquery/table?${params}`;
+    } else {
+      if (activeFilterCols) params.set("filters", filtersKey);
+      if (canRefresh(source) && forceRefresh.current) { params.set("refresh", "1"); forceRefresh.current = false; }
+      url = `${rowsPath(source)}?${params}`;
+    }
+    api.get<TablePage>(url, { signal: ctrl.signal })
       .then((r) => setData(r))
       .catch((e) => { if (!isAbort(e)) { setData(null); setError(e.message || "Failed to load data."); } })
       .finally(() => setLoading(false));
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, dq, page, per, refreshTick, filtersKey]);
+  }, [source, bqKey, dq, page, per, refreshTick, filtersKey]);
 
   const pages = Math.max(1, Math.ceil((data?.total || 0) / per));
+
+  // CSV export URL — BigQuery browses arbitrary tables (dataset+table params); the others are fixed.
+  const exportHref = !source ? "#"
+    : source === "bigquery"
+      ? (bqSel ? `${API_BASE}/api/data/bigquery/table/export.csv?${new URLSearchParams({ dataset: bqSel.dataset, table: bqSel.table, ...(dq.trim() ? { q: dq.trim() } : {}) })}` : "#")
+      : `${API_BASE}/api${exportPath(source)}?${new URLSearchParams({ ...(dq.trim() ? { q: dq.trim() } : {}), ...(activeFilterCols ? { filters: filtersKey } : {}) })}`;
 
   return (
     <div className="space-y-5">
@@ -97,7 +137,7 @@ export default function DataPage() {
       </div>
 
       {/* Source picker — the page starts empty until one is chosen. */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SOURCES.map((s) => {
           const info = sources?.[s.key];
           const active = source === s.key;
@@ -127,7 +167,52 @@ export default function DataPage() {
         <div className="card p-10 text-center text-sm text-slate-400">Select a data source above to view its records.</div>
       )}
 
-      {source && (
+      {/* BigQuery: dataset → table browser. Click a table to load it below. */}
+      {source === "bigquery" && (
+        <div className="card p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <Cloud className="h-4 w-4 text-brand-600" /> Datasets &amp; tables
+            {bqDatasets?.project && <span className="text-[11px] font-normal text-slate-400">{bqDatasets.project}</span>}
+          </div>
+          {!bqDatasets && <div className="text-sm text-slate-400">Loading datasets…</div>}
+          {bqDatasets && !bqDatasets.datasets.length && <div className="text-sm text-slate-400">No datasets accessible with the configured service account.</div>}
+          <div className="space-y-1.5">
+            {(bqDatasets?.datasets || []).map((ds) => {
+              const open = bqOpen[ds.id] ?? false;
+              return (
+                <div key={ds.id} className="rounded-lg border border-slate-200">
+                  <button onClick={() => setBqOpen((o) => ({ ...o, [ds.id]: !open }))} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+                    <span className="flex-1">{ds.id}</span>
+                    <span className="chip chip-gray">{ds.tables.length} table{ds.tables.length === 1 ? "" : "s"}</span>
+                  </button>
+                  {open && (
+                    <div className="flex flex-wrap gap-1.5 border-t border-slate-100 px-3 py-2">
+                      {ds.tables.length === 0 && <span className="text-xs text-slate-400">No tables.</span>}
+                      {ds.tables.map((t) => {
+                        const sel = bqSel?.dataset === ds.id && bqSel?.table === t;
+                        return (
+                          <button key={t} onClick={() => setBqSel({ dataset: ds.id, table: t })}
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${sel ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-brand-50 hover:text-brand-700"}`}>
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {bqSel && <div className="mt-3 text-xs text-slate-500">Showing <span className="font-semibold text-slate-700">{bqSel.dataset}.{bqSel.table}</span></div>}
+        </div>
+      )}
+
+      {source === "bigquery" && !bqSel && (
+        <div className="card p-10 text-center text-sm text-slate-400">Select a table above to view its records.</div>
+      )}
+
+      {source && (source !== "bigquery" || bqSel) && (
         <>
           <div className="card flex flex-wrap items-end gap-3 p-4">
             <div className="relative min-w-[240px] flex-1">
@@ -149,21 +234,25 @@ export default function DataPage() {
               onClick={() => { forceRefresh.current = true; setRefreshTick((t) => t + 1); }}
               disabled={loading}
               className="btn btn-ghost btn-sm disabled:opacity-40"
-              title={source === "darwinbox" ? "Pull fresh data from Darwinbox" : "Re-run the query"}
+              title={canRefresh(source) ? "Pull fresh data" : "Re-run the query"}
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>
-            {/* Column filters — dropdowns populated with unique values from the WHOLE dataset. */}
-            <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm" title="Filter by column values">
-              <SlidersHorizontal className="h-4 w-4" /> Filters
-              {activeFilterCols > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeFilterCols}</span>}
-            </button>
-            {activeFilterCols > 0 && <button onClick={() => setFilters({})} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
+            {/* Column filters — Darwinbox only (facets come from its full dataset). */}
+            {source === "darwinbox" && (
+              <>
+                <button onClick={() => setFilterOpen(true)} className="btn btn-ghost btn-sm" title="Filter by column values">
+                  <SlidersHorizontal className="h-4 w-4" /> Filters
+                  {activeFilterCols > 0 && <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[11px] font-semibold text-white">{activeFilterCols}</span>}
+                </button>
+                {activeFilterCols > 0 && <button onClick={() => setFilters({})} className="text-sm font-medium text-rose-600 hover:text-rose-700">Clear filters</button>}
+              </>
+            )}
             {/* Export the ENTIRE source (all rows, streamed) as CSV — honours the search AND the column filters. */}
             <a
-              href={`${API_BASE}/api/data/${source}/export.csv?${new URLSearchParams({ ...(dq.trim() ? { q: dq.trim() } : {}), ...(activeFilterCols ? { filters: filtersKey } : {}) })}`}
+              href={exportHref}
               className="btn btn-ghost btn-sm"
-              title={dq.trim() || activeFilterCols ? `Download all matching rows as CSV` : `Download the entire ${source === "bigquery" ? "BigQuery" : "Darwinbox"} dataset as CSV`}
+              title={dq.trim() || activeFilterCols ? `Download all matching rows as CSV` : `Download the entire ${sourceTitle(source)} dataset as CSV`}
             >
               <Download className="h-4 w-4" /> Export CSV
             </a>
@@ -178,7 +267,7 @@ export default function DataPage() {
 
           {error && (
             <div className="card p-6">
-              <div className="mb-1 flex items-center gap-2 text-rose-600"><AlertTriangle className="h-5 w-5" /><h2 className="font-semibold">Couldn't load {source === "bigquery" ? "BigQuery" : "Darwinbox"} data</h2></div>
+              <div className="mb-1 flex items-center gap-2 text-rose-600"><AlertTriangle className="h-5 w-5" /><h2 className="font-semibold">Couldn't load {sourceTitle(source)} data</h2></div>
               <p className="text-sm text-slate-600">{error}</p>
               <button onClick={() => setRefreshTick((t) => t + 1)} className="btn btn-primary btn-sm mt-4">Retry</button>
             </div>
@@ -186,6 +275,9 @@ export default function DataPage() {
 
           {data && !error && (
             <>
+              {data.note && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{data.note}</div>
+              )}
               <div className={`table-shell page-bleed overflow-hidden ${loading ? "opacity-60" : ""}`}>
                 <div className="data-grid-scroll">
                   <table className="data-grid-table whitespace-nowrap text-sm">
@@ -201,6 +293,17 @@ export default function DataPage() {
                           <td className="table-body-cell text-xs text-gray-400">{(page - 1) * per + i + 1}</td>
                           {data.columns.map((c) => {
                             const v = String(r[c] ?? "");
+                            // Color-code the computed "Employment State" column (exited source only).
+                            if (c === "Employment State" && v) {
+                              const exited = /exited/i.test(v);
+                              return (
+                                <td key={c} className="table-body-cell whitespace-nowrap">
+                                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${exited ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${exited ? "bg-rose-500" : "bg-amber-500"}`} />{v}
+                                  </span>
+                                </td>
+                              );
+                            }
                             return (
                               <td key={c} className="table-body-cell max-w-[280px] truncate text-gray-700" title={v}>
                                 {v || <span className="text-gray-300">—</span>}

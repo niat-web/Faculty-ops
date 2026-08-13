@@ -218,6 +218,93 @@ export async function streamBigQueryCsv(res: Response, q?: string, filters?: Col
   }
 }
 
+// ---- Dataset / table browser (Data page → BigQuery) -------------------------------------------
+// Lists every dataset + table the service account can see, and lets the UI open ANY table (not just
+// the configured training table). Identifiers are validated against a strict regex before being
+// interpolated into backtick-quoted SQL (injection-safe); values are always parameterized.
+const BQ_IDENT = /^[A-Za-z0-9_]+$/;
+function bqConnected() { return Boolean(config.bigQuery.projectId && config.bigQuery.credentials); }
+
+export async function listBigQueryDatasets(): Promise<{ ok: boolean; project: string; datasets: { id: string; tables: string[] }[]; error?: string }> {
+  const project = config.bigQuery.projectId;
+  if (!bqConnected()) return { ok: false, project, datasets: [], error: "BigQuery is not configured." };
+  try {
+    const bq = client();
+    const [datasets] = await bq.getDatasets();
+    const out: { id: string; tables: string[] }[] = [];
+    for (const ds of datasets) {
+      let tables: string[] = [];
+      try { const [ts] = await bq.dataset(ds.id!).getTables(); tables = ts.map((t: any) => String(t.id)).filter(Boolean).sort((a, b) => a.localeCompare(b)); }
+      catch { /* no access to this dataset's tables — skip */ }
+      out.push({ id: String(ds.id), tables });
+    }
+    out.sort((a, b) => a.id.localeCompare(b.id));
+    return { ok: true, project, datasets: out };
+  } catch (e: any) {
+    return { ok: false, project, datasets: [], error: e?.message || "Failed to list BigQuery datasets." };
+  }
+}
+
+function assertIdent(dataset: string, table: string) {
+  if (!BQ_IDENT.test(dataset) || !BQ_IDENT.test(table)) throw new Error("Invalid dataset or table name.");
+}
+
+export async function fetchBigQueryTable(dataset: string, table: string, limit: number, offset: number, q?: string): Promise<RawTablePage> {
+  const source = `${config.bigQuery.projectId}.${dataset}.${table}`;
+  const fetchedAt = new Date().toISOString();
+  if (!bqConnected()) return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: "BigQuery is not configured." };
+  try {
+    assertIdent(dataset, table);
+    const bq = client();
+    const tref = `\`${config.bigQuery.projectId}.${dataset}.${table}\``;
+    const params: any = {};
+    let where = "";
+    if (q && q.trim()) { where = "WHERE LOWER(TO_JSON_STRING(t)) LIKE @q"; params.q = `%${q.trim().toLowerCase()}%`; }
+    const [countRows] = await bq.query({ query: `SELECT COUNT(*) AS n FROM ${tref} t ${where}`, params });
+    const total = Number(cellValue((countRows[0] as any)?.n)) || 0;
+    const [rows] = await bq.query({ query: `SELECT * FROM ${tref} t ${where} LIMIT @limit OFFSET @offset`, params: { ...params, limit, offset } });
+    const columns: string[] = [];
+    const seen = new Set<string>();
+    for (const r of rows as any[]) for (const k of Object.keys(r || {})) if (!seen.has(k)) { seen.add(k); columns.push(k); }
+    const flat = (rows as any[]).map((r) => { const o: Record<string, any> = {}; for (const c of columns) o[c] = cellValue(r[c]); return o; });
+    return { ok: true, columns, rows: flat, total, fetchedAt, source };
+  } catch (e: any) {
+    return { ok: false, columns: [], rows: [], total: 0, fetchedAt, source, error: e?.message || "BigQuery query failed." };
+  }
+}
+
+export async function streamBigQueryTableCsv(res: Response, dataset: string, table: string, q?: string): Promise<void> {
+  if (!bqConnected()) { res.status(502).json({ error: "BigQuery is not configured." }); return; }
+  try {
+    assertIdent(dataset, table);
+    const bq = client();
+    const tref = `\`${config.bigQuery.projectId}.${dataset}.${table}\``;
+    const params: any = {};
+    let where = "";
+    if (q && q.trim()) { where = "WHERE LOWER(TO_JSON_STRING(t)) LIKE @q"; params.q = `%${q.trim().toLowerCase()}%`; }
+    // Discover columns from a 1-row probe so the CSV header is stable before streaming.
+    const [probe] = await bq.query({ query: `SELECT * FROM ${tref} t ${where} LIMIT 1`, params });
+    const columns = probe.length ? Object.keys(probe[0] as any) : [];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${dataset}-${table}-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.write("﻿" + columns.map(csvCell).join(",") + "\r\n");
+    const stream = bq.createQueryStream({ query: `SELECT * FROM ${tref} t ${where}`, params });
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (row: any) => {
+        const line = columns.map((c) => csvCell(cellValue(row[c]))).join(",") + "\r\n";
+        if (!res.write(line)) { stream.pause(); res.once("drain", () => stream.resume()); }
+      });
+      stream.on("end", () => resolve());
+      stream.on("error", (e) => reject(e));
+      res.on("close", () => { try { (stream as any).destroy?.(); } catch { /* aborted */ } resolve(); });
+    });
+    res.end();
+  } catch (e: any) {
+    if (!res.headersSent) res.status(502).json({ error: e?.message || "BigQuery export failed." });
+    else res.end();
+  }
+}
+
 // Short-lived cache so Dashboard + Training Stats (and repeated loads of either) reuse the SAME
 // BigQuery result instead of re-querying every time. Keyed by the exact course + instructor identity
 // set, so different pages/tracks cache independently but identical requests are instant.
