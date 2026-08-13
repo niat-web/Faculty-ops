@@ -59,6 +59,7 @@ const CertificationAdminFormPage = lazy(() => import("./pages/CertificationAdmin
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
+const DarwinboxCheckPage = lazy(() => import("./pages/DarwinboxCheckPage"));
 const DocsPage = lazy(() => import("./pages/DocsPage"));
 const SettingsLayout = lazy(() => import("./pages/settings/SettingsLayout"));
 // Settings tabs merged into 4 grouped pages (each wrapper renders the existing sub-pages unchanged).
@@ -185,6 +186,8 @@ export default function App() {
                 <Route path="notifications" element={<NotificationsPage />} />
                 {/* Raw data browser (BigQuery / Darwinbox) — profile-menu entry, Ops only */}
                 <Route path="data" element={<RequireRole roles={ADMIN}><DataPage /></RequireRole>} />
+                {/* Standalone Darwinbox key-check + raw viewer — Ops / Super-Admin only */}
+                <Route path="darwinbox-check" element={<RequireRole roles={ADMIN}><DarwinboxCheckPage /></RequireRole>} />
                 {/* Personal account settings (all users) — moved from /app/settings */}
                 <Route path="account" element={<SettingsPage />} />
                 {/* Admin Settings (Ops only) — tabbed, each tab an in-app sub-route */}

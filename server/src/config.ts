@@ -43,6 +43,27 @@ export const config = {
     // app serves fast from Mongo; default 1h.
     syncIntervalHours: Number(process.env.DARWINBOX_SYNC_INTERVAL_HOURS ?? 1),
   },
+  // Separate, dedicated credentials for the standalone Darwinbox Check page — kept fully independent
+  // from the main `darwinbox` integration above so testing keys never affects the live sync.
+  // This page targets the Report Builder API (reportsbuilderapi/reportdatav2) so it can return a
+  // pre-filtered report — e.g. an "exited employees only" report — instead of all employees.
+  darwinboxCheck: {
+    endpoint: process.env.DBX_CHECK_ENDPOINT || "",
+    username: process.env.DBX_CHECK_USERNAME || "",
+    password: process.env.DBX_CHECK_PASSWORD || "",
+    apiKey: process.env.DBX_CHECK_API_KEY || "",
+    reportId: process.env.DBX_CHECK_REPORT_ID || "",
+    // Keep only rows whose `statusColumn` value is in this comma list (real leavers only) — the
+    // "deactivated" report includes Revoked/Rejected/Pending too. Blank = no status filtering.
+    statusColumn: process.env.DBX_CHECK_STATUS_COLUMN || "Status",
+    statusInclude: process.env.DBX_CHECK_STATUS_INCLUDE ?? "Approved,Admin Approved",
+    // Detail reports whose columns (department, designation, email, mobile, manager, exit category…)
+    // are JOINED onto each exited employee by Employee Id — the base report has only a few columns.
+    // Order = priority (first non-empty value wins). Default: EIF Main, TA Employee Master,
+    // Offboarding tracking, L&D Details. Blank disables enrichment. Add EMPLOYEE_MASTER's id for
+    // full personal fields (PAN/Aadhaar/passport) if desired.
+    enrichReportIds: process.env.DBX_CHECK_ENRICH_REPORT_IDS ?? "70c916bd0ed8bb,1d513a4ccdf2e8,9feb118d44726a,853905cf311922",
+  },
   isProd,
 };
 

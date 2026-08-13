@@ -23,6 +23,7 @@ import trainingRoutes from "./routes/training";
 import contributionRoutes from "./routes/contribution";
 import masterRoutes from "./routes/master";
 import dataRoutes from "./routes/data";
+import darwinboxCheckRoutes from "./routes/darwinboxCheck";
 import exitAlertRoutes from "./routes/exitAlerts";
 import certificationRoutes from "./routes/certifications";
 import removedRoutes from "./routes/removed";
@@ -77,6 +78,7 @@ async function main() {
   app.use("/api/training", trainingRoutes);
   app.use("/api/contribution", contributionRoutes);
   app.use("/api/data", dataRoutes); // raw BigQuery/Darwinbox browser (Data page, Ops only)
+  app.use("/api/darwinbox-check", darwinboxCheckRoutes); // standalone Darwinbox key-check + raw viewer (Ops/Super-Admin)
   app.use("/api/exit-alerts", exitAlertRoutes); // Darwinbox-driven exit alerts (banner + finalise)
   app.use("/api/certifications", certificationRoutes); // public Certificates form + admin management
   app.use("/api/removed", removedRoutes); // hide/restore people app-wide (Ops only) + removed list

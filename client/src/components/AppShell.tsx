@@ -45,6 +45,7 @@ const NAV_SECTIONS: any[] = [
     items: [
       { to: "/app/users", label: "Users", icon: UserCog, roles: ADMIN },
       { to: "/app/certifications", label: "Certifications", icon: GraduationCap, roles: ADMIN },
+      { to: "/app/darwinbox-check", label: "Exited Employees", icon: Database, roles: ADMIN },
       { to: "/app/audit", label: "Audit Log", icon: ScrollText, roles: [...ADMIN, "SENIOR_MANAGER"] },
       { to: "/app/settings", label: "Settings", icon: SettingsIcon, roles: ADMIN },
     ],
