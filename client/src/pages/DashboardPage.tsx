@@ -53,26 +53,17 @@ export default function DashboardPage() {
   // a Capability Manager's own dashboard; Total (org-wide, everyone) for Ops/SM's org-wide dashboard,
   // so it doesn't silently narrow the org-wide KPIs by default — they can still switch to the org-wide
   // TeachOS-coverage view deliberately.
-  const [mappingSource, setMappingSource] = useState<"all" | "teachos">(user?.role === "CAPABILITY_MANAGER" ? "teachos" : "all");
+  // Total/TeachOS-Only toggle removed per request. Each role keeps its default mapping view:
+  // a Capability Manager sees their TeachOS-scoped reportees; Ops/SM see the org-wide total.
+  const [mappingSource] = useState<"all" | "teachos">(user?.role === "CAPABILITY_MANAGER" ? "teachos" : "all");
   const { data: d, error: err, staleError, reload } = useCachedGet<any>(`/dashboard?mappingSource=${mappingSource}`);
   if (err && !d) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
   if (!d) return <DashboardSkeleton />;
 
   const first = (user!.name || "").split(" ")[0];
-  const mappingTabs = ["OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"].includes(d.role) && (
-    <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
-      {([["all", "Total"], ["teachos", "TeachOS Only"]] as const).map(([key, label]) => (
-        <button key={key} onClick={() => setMappingSource(key)}
-          className={`rounded-md px-3 py-1 font-medium transition ${mappingSource === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
   return (
     <>
       {staleError && <div className="mb-4"><StaleDataBanner message={staleError} onRetry={() => reload?.()} /></div>}
-      {mappingTabs && <div className="mb-4 flex justify-end">{mappingTabs}</div>}
       {d.role === "OPS_ADMIN" && <AdminDash d={d} first={first} />}
       {d.role === "SENIOR_MANAGER" && <SeniorDash d={d} first={first} />}
       {d.role === "CAPABILITY_MANAGER" && <CapabilityDash d={d} first={first} />}

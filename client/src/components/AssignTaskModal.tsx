@@ -39,6 +39,13 @@ const DEFAULT_REMINDERS = [
   { value: 86400000, label: "Every 1 day" },
 ];
 
+// Auto-saved draft so a sudden close / tab-shut never loses typed text. Persisted on every change,
+// restored on reopen, cleared on successful submit or explicit discard. (Attachment/File isn't saved.)
+const DRAFT_KEY = "fo_task_draft_v1";
+type TaskDraft = { title: string; description: string; dueAt: string; priority: "LOW" | "MEDIUM" | "HIGH"; priorityPick: number; reminderIntervalMs: number; labels: string[]; showDescription: boolean };
+function loadTaskDraft(): Partial<TaskDraft> { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}") || {}; } catch { return {}; } }
+function clearTaskDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } }
+
 type Popover = "deadline" | "priority" | "reminders" | "more" | "labels" | null;
 type Panel = "main" | "assign";
 
@@ -105,16 +112,19 @@ export default function AssignTaskModal({ meta, onClose, onDone }: { meta: any; 
 
   const [panel, setPanel] = useState<Panel>("main");
   const [popover, setPopover] = useState<Popover>(null);
-  const [showDescription, setShowDescription] = useState(true);
+  // Restore any unsaved draft (read once on mount) so text survives an accidental close / tab shut.
+  const draft0 = useRef(loadTaskDraft()).current;
+  const [draftRestored, setDraftRestored] = useState(() => Boolean(draft0.title || draft0.description || (draft0.labels && draft0.labels.length) || draft0.dueAt));
+  const [showDescription, setShowDescription] = useState(draft0.showDescription ?? true);
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH">("MEDIUM");
-  const [priorityPick, setPriorityPick] = useState(4);
-  const [reminderIntervalMs, setReminderIntervalMs] = useState(0);
+  const [title, setTitle] = useState(draft0.title || "");
+  const [description, setDescription] = useState(draft0.description || "");
+  const [dueAt, setDueAt] = useState(draft0.dueAt || "");
+  const [priority, setPriority] = useState<"LOW" | "MEDIUM" | "HIGH">(draft0.priority || "MEDIUM");
+  const [priorityPick, setPriorityPick] = useState(draft0.priorityPick || 4);
+  const [reminderIntervalMs, setReminderIntervalMs] = useState(draft0.reminderIntervalMs || 0);
   const [reminderTab, setReminderTab] = useState<"datetime" | "before">("before");
-  const [labels, setLabels] = useState<string[]>([]);
+  const [labels, setLabels] = useState<string[]>(draft0.labels || []);
   const [labelDraft, setLabelDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -154,6 +164,22 @@ export default function AssignTaskModal({ meta, onClose, onDone }: { meta: any; 
   useEffect(() => {
     resizeTextarea(titleRef.current);
   }, [title]);
+
+  // Persist the draft on every change (and drop it once everything is empty) so closing the modal —
+  // via Cancel, the ✕, Escape, or even shutting the tab — never loses the typed title/description.
+  useEffect(() => {
+    const empty = !title.trim() && !description.trim() && !dueAt && labels.length === 0 && reminderIntervalMs === 0;
+    try {
+      if (empty) localStorage.removeItem(DRAFT_KEY);
+      else localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, description, dueAt, priority, priorityPick, reminderIntervalMs, labels, showDescription }));
+    } catch { /* storage full / unavailable — ignore */ }
+  }, [title, description, dueAt, priority, priorityPick, reminderIntervalMs, labels, showDescription]);
+
+  function discardDraft() {
+    setTitle(""); setDescription(""); setDueAt(""); setPriority("MEDIUM"); setPriorityPick(4);
+    setReminderIntervalMs(0); setLabels([]); setShowDescription(true); setDraftRestored(false);
+    clearTaskDraft();
+  }
 
   function closePopoversUnlessKeep(e: React.MouseEvent) {
     const el = e.target as HTMLElement;
@@ -211,6 +237,7 @@ export default function AssignTaskModal({ meta, onClose, onDone }: { meta: any; 
 
       const r = await api.upload("/tasks", fd);
       toast.success(`Assigned ${r.count} task(s).`);
+      clearTaskDraft();
       onDone();
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   }
@@ -316,6 +343,12 @@ export default function AssignTaskModal({ meta, onClose, onDone }: { meta: any; 
           </>
         ) : (
           <>
+            {draftRestored && (
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+                <span>Draft restored from your last edit.</span>
+                <button type="button" onClick={discardDraft} className="font-semibold text-amber-700 underline hover:text-amber-900">Discard</button>
+              </div>
+            )}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3 pt-4 pr-12">
               <div className="max-h-28 shrink-0 overflow-y-auto overscroll-contain">
                 <textarea
