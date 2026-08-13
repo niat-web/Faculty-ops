@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle } from "lucide-react";
+import { ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle, ChevronDown } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL, lifecycleLabel } from "../auth";
 import { useToast } from "../toast";
@@ -488,13 +488,26 @@ export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onC
   );
 }
 
+// Collapsible card section — hidden by default, click the header (chevron) to reveal its content.
+export function CollapsibleSection({ title, count, defaultOpen = false, children }: { title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card p-6">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-2 text-left font-semibold text-slate-800">
+        <span>{title}{typeof count === "number" ? <span className="ml-1.5 text-sm font-normal text-slate-400">({count})</span> : null}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </div>
+  );
+}
+
 export function AuditTab({ instructorId }: { instructorId: string }) {
   const [entries, setEntries] = useState<any[] | null>(null);
   useEffect(() => { api.get(`/instructors/${instructorId}/audit`).then((r) => setEntries(r.entries)).catch(() => setEntries([])); }, [instructorId]);
   if (!entries) return <div className="py-16" />;
   return (
-    <div className="card p-6">
-      <h2 className="mb-4 font-semibold">Audit trail</h2>
+    <CollapsibleSection title="Audit trail" count={entries.length}>
       {entries.length ? (
         <ul className="space-y-3">
           {entries.map((a) => (
@@ -511,7 +524,7 @@ export function AuditTab({ instructorId }: { instructorId: string }) {
           ))}
         </ul>
       ) : <p className="text-sm text-slate-400">No audit entries for this instructor.</p>}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -584,9 +597,9 @@ export function HistoryTab({ instructorId }: { instructorId: string }) {
         </div>
       )}
       {h.fieldChanges?.length > 0 && (
-        <div className="card p-6"><h2 className="mb-3 font-semibold">Field changes</h2>
+        <CollapsibleSection title="Field changes" count={h.fieldChanges.length}>
           <ul className="space-y-2 text-sm">{h.fieldChanges.map((c: any, i: number) => <li key={i}><span className="font-medium">{c.fieldName}:</span> <span className="text-slate-400 line-through">{c.oldValue || "—"}</span> → <span className="text-slate-700">{c.newValue || "—"}</span> <span className="text-[11px] text-slate-400">· {c.actorName} · {new Date(c.createdAt).toLocaleString()}</span></li>)}</ul>
-        </div>
+        </CollapsibleSection>
       )}
       {h.logins?.length > 0 && (
         <div className="card p-6"><h2 className="mb-3 font-semibold">Recent logins</h2>
