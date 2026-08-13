@@ -17,16 +17,16 @@ import { useSort, SortHeader } from "../components/SortHeader";
 import InstructorDetailDrawer from "../components/InstructorDetailDrawer";
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
-type MetaFilters = { departments: string[]; roles: string[]; payrolls: string[]; regions: string[]; campuses: string[]; qualifications: string[]; genders: string[]; domains: string[]; states: string[]; workspaces: string[] };
+type MetaFilters = { departments: string[]; roles: string[]; payrolls: string[]; regions: string[]; campuses: string[]; qualifications: string[]; genders: string[]; domains: string[]; states: string[]; workspaces: string[]; cities: string[]; districts: string[]; nativeLanguages: string[] };
 type Meta = { columns: Column[]; managers: { id: string; name: string }[]; reportingManagers: { id: string; name: string }[]; filters: MetaFilters };
-type Filters = { reportingManager: string[]; managerId: string[]; department: string[]; designation: string[]; payroll: string[]; region: string[]; campus: string[]; qualification: string[]; gender: string[]; domain: string[]; state: string[]; workspace: string[] };
-const EMPTY: Filters = { reportingManager: [], managerId: [], department: [], designation: [], payroll: [], region: [], campus: [], qualification: [], gender: [], domain: [], state: [], workspace: [] };
+type Filters = { reportingManager: string[]; managerId: string[]; department: string[]; designation: string[]; payroll: string[]; region: string[]; campus: string[]; qualification: string[]; gender: string[]; domain: string[]; state: string[]; workspace: string[]; city: string[]; district: string[]; nativeLanguage: string[] };
+const EMPTY: Filters = { reportingManager: [], managerId: [], department: [], designation: [], payroll: [], region: [], campus: [], qualification: [], gender: [], domain: [], state: [], workspace: [], city: [], district: [], nativeLanguage: [] };
 
 // Deep-link filters from the URL (Contribution, Dashboard lifecycle, Org chart, etc.).
 function filtersFromSearch(sp?: URLSearchParams): Filters {
   const p = sp || new URLSearchParams(window.location.search);
   const arr = (k: string) => (p.get(k) || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return { reportingManager: arr("rmid"), managerId: arr("managerId"), department: arr("department"), designation: arr("designation"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus"), qualification: arr("qualification"), gender: arr("gender"), domain: arr("domain"), state: arr("state"), workspace: arr("workspace") };
+  return { reportingManager: arr("rmid"), managerId: arr("managerId"), department: arr("department"), designation: arr("designation"), payroll: arr("payroll"), region: arr("region"), campus: arr("campus"), qualification: arr("qualification"), gender: arr("gender"), domain: arr("domain"), state: arr("state"), workspace: arr("workspace"), city: arr("city"), district: arr("district"), nativeLanguage: arr("nativeLanguage") };
 }
 function lifecycleFromSearch(sp?: URLSearchParams): string[] {
   const p = sp || new URLSearchParams(window.location.search);
@@ -213,6 +213,9 @@ export default function InstructorMasterPage() {
     if (applied.domain.length) p.set("domain", applied.domain.join(","));
     if (applied.state.length) p.set("state", applied.state.join(","));
     if (applied.workspace.length) p.set("workspace", applied.workspace.join(","));
+    if (applied.city.length) p.set("city", applied.city.join(","));
+    if (applied.district.length) p.set("district", applied.district.join(","));
+    if (applied.nativeLanguage.length) p.set("nativeLanguage", applied.nativeLanguage.join(","));
     // Department quick-filter: only send `depts` once the user has made an explicit choice; until then
     // the server applies its default (all except the 2 support departments).
     if (deptSel) p.set("depts", [...deptSel].join(","));
@@ -459,33 +462,8 @@ export default function InstructorMasterPage() {
               </span>
             )}
           </span>
-          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
-            {([["active", "Active", counts.active], ["all", "All", counts.all], ["exited", "Exited", counts.exited]] as const).map(([key, label, n]) => (
-              <button
-                key={key}
-                onClick={() => { setScope(key); setPage(1); }}
-                className={`rounded-md px-3 py-1 font-medium transition ${scope === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-              >
-                {label} <span className={scope === key ? "text-brand-500" : "text-slate-400"}>{loadingRows && !rows.length ? "·" : n}</span>
-              </button>
-            ))}
-          </div>
-          {/* Reportee-mapping breakdown — for a CM, their own manual+Darwinbox+TeachOS union vs TeachOS
-              Only. For Ops/SM/SuperAdmin: either a specific "View as" CM's breakdown, or (with no CM
-              picked) an org-wide Total-vs-TeachOS-coverage view. */}
-          {(isCM || isOrgWideRole) && (
-            <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-sm">
-              {([["all", "Total"], ["teachos", "TeachOS Only"]] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => { setMappingSource(key); setPage(1); }}
-                  className={`rounded-md px-3 py-1 font-medium transition ${mappingSource === key ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Scope (Active/All/Exited) and mapping (Total/TeachOS Only) toggle tabs removed per request —
+              the grid shows the default Active scope; exited people live on the Instructor Exited page. */}
         </div>
         <div ref={wrapRef} className="data-grid-scroll">
           <table className="data-grid-table whitespace-nowrap">
@@ -677,9 +655,19 @@ export default function InstructorMasterPage() {
                 <MultiSelect values={draft.state} onChange={(v) => setDraft({ ...draft, state: v })} options={meta.filters.states.map((d) => ({ value: d, label: d }))} placeholder="All states" /></div>
               <div><label className="label">Workspace</label>
                 <MultiSelect values={draft.workspace} onChange={(v) => setDraft({ ...draft, workspace: v })} options={meta.filters.workspaces.map((d) => ({ value: d, label: d }))} placeholder="All workspaces" /></div>
+              <div><label className="label">City</label>
+                <MultiSelect values={draft.city} onChange={(v) => setDraft({ ...draft, city: v })} options={(meta.filters.cities || []).map((d) => ({ value: d, label: d }))} placeholder="All cities" /></div>
+              <div><label className="label">District</label>
+                <MultiSelect values={draft.district} onChange={(v) => setDraft({ ...draft, district: v })} options={(meta.filters.districts || []).map((d) => ({ value: d, label: d }))} placeholder="All districts" /></div>
+              <div><label className="label">Native Language</label>
+                <MultiSelect values={draft.nativeLanguage} onChange={(v) => setDraft({ ...draft, nativeLanguage: v })} options={(meta.filters.nativeLanguages || []).map((d) => ({ value: d, label: d }))} placeholder="All languages" /></div>
+              {/* Lifecycle Status — applies immediately (server ignores the Active default when statuses are picked),
+                  so this replaces the removed Active/All/Exited scope tabs. */}
+              <div><label className="label">Lifecycle Status</label>
+                <MultiSelect values={lifecycleStatus} onChange={(v) => { setLifecycleStatus(v); setPage(1); }} options={Object.entries(LIFECYCLE_LABEL).map(([k, v]) => ({ value: k, label: v }))} placeholder="All statuses" /></div>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
-              <button onClick={() => setDraft(EMPTY)} className="btn btn-ghost btn-sm">Clear</button>
+              <button onClick={() => { setDraft(EMPTY); setLifecycleStatus([]); setPage(1); }} className="btn btn-ghost btn-sm">Clear</button>
               <button onClick={applyFilters} className="btn btn-primary btn-sm">Apply filters</button>
             </div>
           </div>

@@ -83,6 +83,9 @@ router.get("/meta", guard, async (req, res) => {
       domains: uniq("domain"),
       states: uniq("emp_state"),
       workspaces: uniq("workspace"),
+      cities: uniq("emp_city"),
+      districts: uniq("emp_district"),
+      nativeLanguages: uniq("native_language"),
     },
   });
 });
@@ -120,6 +123,9 @@ router.get("/", guard, async (req, res) => {
   const domains = listParam(req.query.domain);
   const states = listParam(req.query.state);
   const workspaces = listParam(req.query.workspace);
+  const cities = listParam(req.query.city);
+  const districts = listParam(req.query.district);
+  const nativeLanguages = listParam(req.query.nativeLanguage);
   const statuses = listParam(req.query.status); // lifecycle drill-down from Dashboard (ONBOARDING, IN_TRAINING, …)
   const scope = String(req.query.scope || "active").trim(); // active | all | exited (default active)
   const mappingSource = req.query.mappingSource === "teachos" ? "teachos" : "all"; // "Total" vs "TeachOS Only" tab
@@ -204,6 +210,9 @@ router.get("/", guard, async (req, res) => {
     if (domains.length && !has(domains, r.domain)) return false;
     if (states.length && !has(states, r.emp_state)) return false;
     if (workspaces.length && !has(workspaces, r.workspace)) return false;
+    if (cities.length && !has(cities, r.emp_city)) return false;
+    if (districts.length && !has(districts, r.emp_district)) return false;
+    if (nativeLanguages.length && !has(nativeLanguages, r.native_language)) return false;
     if (statuses.length && !has(statuses, r.lifecycleStatus || r.status)) return false;
     if (q) {
       const hay = `${r.name} ${r.employeeId} ${r.email} ${r.uid}`.toLowerCase();
