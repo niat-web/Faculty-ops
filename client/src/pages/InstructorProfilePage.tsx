@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send, CheckCircle2, AlertCircle, MinusCircle, ChevronDown } from "lucide-react";
+import {
+  ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send,
+  CheckCircle2, AlertCircle, MinusCircle, ChevronDown, Award, MessageSquare, CalendarClock, User,
+  Briefcase, Star, LogOut, StickyNote, Clock, Rocket, ScrollText, GaugeCircle, ClipboardCheck,
+} from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL, lifecycleLabel } from "../auth";
 import { useToast } from "../toast";
@@ -58,6 +62,26 @@ const CELL_EDIT = `${CELL_BASE} w-full max-w-lg border-slate-300 bg-white text-s
 const CELL_VIEW = `${CELL_BASE} block w-full max-w-lg cursor-text border-transparent text-left text-slate-800 hover:border-slate-300 hover:bg-slate-50`;
 const CELL_STATIC = `${CELL_BASE} border-transparent text-slate-800`;
 const FIELD_ROW = "group grid grid-cols-1 items-start gap-x-6 gap-y-1 py-2.5 sm:grid-cols-[11rem_minmax(0,28rem)] sm:items-center";
+
+// Per-section icons for the Details card layout.
+const MODULE_ICON: Record<string, any> = { PERSONAL: User, HIRING: Briefcase, DEPLOYMENT: Rocket, LIFECYCLE: GitBranch };
+const moduleIcon = (k: string) => MODULE_ICON[k] || FileText;
+
+// A Details section rendered as a card with an icon header + collapse chevron (open by default,
+// so everything shows at once — no sidebar). Used for the field-definition modules & lifecycle.
+function DetailsSection({ icon: Icon, title, defaultOpen = true, children }: { icon: any; title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card select-text p-5">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2.5 text-left">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Icon className="h-4 w-4" /></span>
+        <span className="flex-1 font-semibold text-slate-800">{title}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </div>
+  );
+}
 const EDIT_BTN = "shrink-0 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100";
 const EMPTY = <span className="text-slate-400">—</span>;
 
@@ -137,6 +161,9 @@ export default function InstructorProfilePage() {
   // ones rendered with special UI (Lifecycle timeline / Exit form).
   const modLabel: Record<string, string> = Object.fromEntries((p.modules || []).map((m: any) => [m.key, m.label]));
   const moduleTabs = (p.modules || []).map((m: any) => m.key).filter((k: string) => k !== "LIFECYCLE" && k !== "EXIT" && p.byModule?.[k]?.length);
+  // Details field-module sections (as cards), excluding Training Stats & Performance (removed per request —
+  // Training has its own page + the TeachOS tab; Performance is superseded by TeachOS).
+  const detailModules = moduleTabs.filter((k: string) => k !== "TRAINING" && k !== "PERFORMANCE");
   const tabs = [...moduleTabs, ...(p.skills?.list?.length || p.skills?.moduleStatus?.length ? ["SKILLS"] : []), "LIFECYCLE", ...(p.exit ? ["EXIT"] : []), "NOTES", ...(p.documents !== null ? ["DOCUMENTS"] : []), "HISTORY", ...(canEdit && !p.isStaff ? ["MAILS"] : []), ...(canAudit ? ["AUDIT"] : [])];
   const active = tab || tabs[0] || "LIFECYCLE";
   const inst = p.instructor || {};
@@ -176,75 +203,66 @@ export default function InstructorProfilePage() {
       {topTab === "teachos" && <TeachosTab instructorId={id!} />}
 
       {topTab === "details" && (
-      <div className="flex flex-col gap-5 lg:flex-row">
-        <nav className="shrink-0 select-none lg:w-56" aria-label="Profile sections">
-          <div className="space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 lg:sticky lg:top-4">
-            {tabs.map((t) => (
-              <button key={t} type="button" onClick={() => setTab(t)} className={`profile-tab ${active === t ? "profile-tab-active" : ""}`}>{label(t)}</button>
-            ))}
-          </div>
-        </nav>
-        <div className="min-w-0 flex-1 space-y-5">
-          {moduleTabs.includes(active) && (
-            <div className="card p-6 select-text">
-              <h2 className="mb-4 font-semibold">{label(active)}</h2>
-              <dl className="max-w-3xl divide-y divide-slate-100">
-                {(p.byModule?.[active] || []).map((f: any) => (
-                  <div key={f.key} className={FIELD_ROW}>
-                    <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
-                    <dd className="flex min-w-0 items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                      {pendingByKey[f.key] ? (
-                        <div>
-                          <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-amber-600">
-                            <span>Pending approval → "{pendingByKey[f.key].newValue}" (by {pendingByKey[f.key].requesterName})</span>
-                            {pendingByKey[f.key].requesterId === user!.id && (
-                              <button onClick={() => withdrawRequest(pendingByKey[f.key])} title="Delete request" className="text-rose-500 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
-                            )}
-                          </div>
+      <div className="space-y-4">
+        {/* Field-definition modules as icon cards — all shown (no sidebar). Training Stats & Performance removed. */}
+        {detailModules.map((modKey: string) => (
+          <DetailsSection key={modKey} icon={moduleIcon(modKey)} title={modLabel[modKey] || modKey}>
+            <dl className="max-w-3xl divide-y divide-slate-100">
+              {(p.byModule?.[modKey] || []).map((f: any) => (
+                <div key={f.key} className={FIELD_ROW}>
+                  <dt className="text-sm font-medium text-slate-600">{f.label}</dt>
+                  <dd className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                    {pendingByKey[f.key] ? (
+                      <div>
+                        <div className={CELL_STATIC}>{fmt(f.value) || EMPTY}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-amber-600">
+                          <span>Pending approval → "{pendingByKey[f.key].newValue}" (by {pendingByKey[f.key].requesterName})</span>
+                          {pendingByKey[f.key].requesterId === user!.id && (
+                            <button onClick={() => withdrawRequest(pendingByKey[f.key])} title="Delete request" className="text-rose-500 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )}
                         </div>
-                      ) : editKey === f.key ? (
-                        f.type === "DROPDOWN" ? (
-                          <ScrollSelect autoOpen value={String(f.value ?? "")} options={[{ value: "", label: "— select —" }, ...(f.options || []).map((o: string) => ({ value: o, label: o }))]} onChange={(v) => saveInline(f, v)} onClose={() => setEditKey(null)} className={`${CELL_EDIT} flex items-center justify-between gap-2`} />
-                        ) : f.type === "BOOLEAN" ? (
-                          <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "false")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="false">No</option><option value="true">Yes</option></select>
-                        ) : (
-                          <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
-                        )
-                      ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
-                        <button onClick={() => startEdit(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
-                      ) : (
-                        <div className={CELL_STATIC}>{isHealthKey(f.key) && f.value ? <HealthChip value={f.value} /> : (fmt(f.value) || EMPTY)}</div>
-                      )}
                       </div>
-                      {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
-                        <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className={EDIT_BTN}><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-          {active === "SKILLS" && <SkillsTab skills={p.skills} instructorId={id!} canEdit={canEdit} onChange={load} />}
-          {active === "LIFECYCLE" && (
-            <div className="card p-6">
-              <h2 className="mb-4 font-semibold">Lifecycle & Status</h2>
-              <ul className="space-y-3">
-                {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
-                  <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{lifecycleLabel(l.status)}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
-                )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
-              </ul>
-            </div>
-          )}
-          {active === "EXIT" && p.exit && <ExitTab exit={p.exit} instructorId={id!} canEdit={canEdit} onChange={load} />}
-          {active === "NOTES" && <NotesTab notes={inst.notes} instructorId={id!} canEdit={canEdit} onChange={load} />}
-          {active === "DOCUMENTS" && p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} employeeId={inst.employeeId} canEdit={canEdit} onChange={load} />}
-          {active === "HISTORY" && <HistoryTab instructorId={id!} />}
-          {active === "MAILS" && <MailsTab instructorId={id!} canSend={canEdit} />}
-          {active === "AUDIT" && <AuditTab instructorId={id!} />}
-        </div>
+                    ) : editKey === f.key ? (
+                      f.type === "DROPDOWN" ? (
+                        <ScrollSelect autoOpen value={String(f.value ?? "")} options={[{ value: "", label: "— select —" }, ...(f.options || []).map((o: string) => ({ value: o, label: o }))]} onChange={(v) => saveInline(f, v)} onClose={() => setEditKey(null)} className={`${CELL_EDIT} flex items-center justify-between gap-2`} />
+                      ) : f.type === "BOOLEAN" ? (
+                        <select autoFocus ref={inlineRef as any} defaultValue={String(f.value ?? "false")} onBlur={() => setEditKey(null)} onChange={(e) => saveInline(f, e.target.value)} className={CELL_EDIT}><option value="false">No</option><option value="true">Yes</option></select>
+                      ) : (
+                        <input autoFocus ref={inlineRef as any} type={f.type === "NUMBER" ? "number" : "text"} defaultValue={String(f.value ?? "")} min={f.min ?? undefined} max={f.max ?? undefined} pattern={f.pattern || undefined} onBlur={(e) => saveInline(f, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditKey(null); }} className={CELL_EDIT} />
+                      )
+                    ) : ((canEditFields || canRequest) && f.type !== "FILE" && !f.computed) ? (
+                      <button onClick={() => startEdit(f)} title={canRequest ? "Click to request change" : "Click to edit"} className={CELL_VIEW}>{fmt(f.value) || EMPTY}</button>
+                    ) : (
+                      <div className={CELL_STATIC}>{isHealthKey(f.key) && f.value ? <HealthChip value={f.value} /> : (fmt(f.value) || EMPTY)}</div>
+                    )}
+                    </div>
+                    {!pendingByKey[f.key] && (canEditFields || canRequest) && f.type !== "FILE" && !f.computed && (
+                      <button onClick={() => startEdit(f)} title={canRequest ? "Request change" : "Edit"} aria-label={`Edit ${f.label}`} className={EDIT_BTN}><Pencil className="h-4 w-4 text-slate-400 hover:text-brand-600" /></button>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </DetailsSection>
+        ))}
+
+        {/* Lifecycle timeline */}
+        <DetailsSection icon={GitBranch} title="Lifecycle & Status">
+          <ul className="space-y-3">
+            {inst.lifecycle?.length ? inst.lifecycle.map((l: any, i: number) => (
+              <li key={i} className="flex items-start gap-3"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" /><div><div className="text-sm font-medium">{lifecycleLabel(l.status)}</div>{l.note && <div className="text-xs text-slate-500">{l.note}</div>}<div className="text-[11px] text-slate-400">{l.actorName} · {new Date(l.createdAt).toLocaleString()}</div></div></li>
+            )) : <li className="text-sm text-slate-400">No lifecycle events.</li>}
+          </ul>
+        </DetailsSection>
+
+        {/* Supplementary sections (each renders its own card). Audit removed per request. */}
+        {(p.skills?.list?.length || p.skills?.moduleStatus?.length) ? <SkillsTab skills={p.skills} instructorId={id!} canEdit={canEdit} onChange={load} /> : null}
+        {p.exit && <ExitTab exit={p.exit} instructorId={id!} canEdit={canEdit} onChange={load} />}
+        <NotesTab notes={inst.notes} instructorId={id!} canEdit={canEdit} onChange={load} />
+        {p.documents !== null && <DocumentsTab documents={p.documents} instructorId={id!} employeeId={inst.employeeId} canEdit={canEdit} onChange={load} />}
+        <HistoryTab instructorId={id!} />
+        {canEdit && !p.isStaff && <MailsTab instructorId={id!} canSend={canEdit} />}
       </div>
       )}
 
@@ -626,9 +644,11 @@ export function HistoryTab({ instructorId }: { instructorId: string }) {
 }
 
 // TeachOS performance metrics — read live from BigQuery (instructor tables), matched by uid.
-const teachosNum = (v: any, d = 1) => (v == null || v === "" || isNaN(Number(v)) ? "—" : Number(v).toFixed(d).replace(/\.0$/, ""));
+const teachosNum = (v: any, d = 1) => (v == null || v === "" || isNaN(Number(v)) ? "—" : Number(v).toFixed(d).replace(/\.?0+$/, ""));
 const teachosInt = (v: any) => (v == null || isNaN(Number(v)) ? "—" : String(Math.round(Number(v))));
+const teachosDate = (v: any) => { if (!v) return "—"; const d = new Date(v); return isNaN(d.getTime()) ? String(v).slice(0, 10) : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); };
 
+// Plain count/value tile.
 function MetricTile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -638,14 +658,33 @@ function MetricTile({ label, value, sub }: { label: string; value: React.ReactNo
     </div>
   );
 }
-function MetricGroup({ title, children }: { title: string; children: React.ReactNode }) {
+// Rating tile with a value / max and a progress bar (proper rating format).
+function RatingTile({ label, value, max, decimals = 2, sub }: { label: string; value: number | null; max?: number; decimals?: number; sub?: string }) {
+  const v = value == null || isNaN(Number(value)) ? null : Number(value);
+  const pct = v != null && max ? Math.max(0, Math.min(100, (v / max) * 100)) : null;
   return (
-    <div>
-      <h3 className="mb-2 text-sm font-semibold text-slate-800">{title}</h3>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-baseline gap-1">
+        <span className="text-xl font-bold text-slate-900">{v == null ? "—" : v.toFixed(decimals).replace(/\.?0+$/, "")}</span>
+        {max != null && v != null && <span className="text-xs text-slate-400">/ {max}</span>}
+      </div>
+      {pct != null && <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${pct}%` }} /></div>}
+      <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
+      {sub && <div className="text-[11px] text-slate-400">{sub}</div>}
     </div>
   );
 }
+function TeachosSection({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+  return (
+    <div className="card p-5">
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Icon className="h-4 w-4" /></span>{title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+const grid4 = "grid gap-3 sm:grid-cols-2 lg:grid-cols-4";
 
 export function TeachosTab({ instructorId }: { instructorId: string }) {
   const [m, setM] = useState<any>(null);
@@ -658,50 +697,143 @@ export function TeachosTab({ instructorId }: { instructorId: string }) {
   }, [instructorId]);
 
   if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
-  if (!m) return <div className="card space-y-4 p-6">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height="72px" borderRadius="12px" />)}</div>;
+  if (!m) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="card p-5"><Skeleton width="40%" height="16px" /><div className="mt-4 grid gap-3 sm:grid-cols-4">{Array.from({ length: 4 }).map((__, j) => <Skeleton key={j} width="100%" height="72px" borderRadius="12px" />)}</div></div>)}</div>;
   if (!m.configured) return <div className="card p-8 text-center text-sm text-slate-500">TeachOS metrics require BigQuery to be configured on the server.</div>;
   if (!m.found) return <div className="card p-8 text-center text-sm text-slate-400">No TeachOS performance data found for this instructor{m.uid ? " (no BigQuery match by UID)" : " — this record has no UID to match against BigQuery"}.</div>;
 
-  const sc = m.scorecard, fb = m.feedback, qa = m.qa, dm = m.demos, as = m.assessments, ss = m.sessionsSummary;
+  const sc = m.scorecard, fb = m.feedback, qa = m.qa, dm = m.demos, as = m.assessments, ss = m.sessionsSummary, ctx = m.context, se = m.sentiment;
+  const comments: any[] = m.comments || [], sessions: any[] = m.recentSessions || [];
+  const sTotal = se ? se.positive + se.negative + se.neutral : 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold text-slate-800">TeachOS Performance</h2>
+        <h2 className="text-lg font-bold text-slate-900">TeachOS Performance</h2>
         {m.category && <span className="chip chip-status">{m.category}</span>}
       </div>
 
-      {(sc || qa || fb) && (
-        <MetricGroup title="Performance & Quality">
-          {sc && <MetricTile label="Overall Score" value={`${teachosNum(sc.overall)}${sc.max ? ` / ${teachosNum(sc.max)}` : ""}`} sub={sc.max ? `${teachosNum((Number(sc.overall) / Number(sc.max)) * 100, 0)}%` : undefined} />}
-          {sc && <MetricTile label="Lecture Session Score" value={teachosNum(sc.lecture)} />}
-          {sc && <MetricTile label="Practice Session Score" value={teachosNum(sc.practice)} />}
-          {qa && <MetricTile label="Avg QA Rating" value={teachosNum(qa.avgRating, 2)} sub={qa.sessions ? `${teachosInt(qa.sessions)} sessions` : undefined} />}
-          {fb && <MetricTile label="Student Feedback Score" value={teachosNum(fb.studentScore, 2)} />}
-          {fb && <MetricTile label="Teaching Quality" value={teachosNum(fb.teachingQuality, 2)} />}
-          {fb && <MetricTile label="Guidance Clarity" value={teachosNum(fb.guidanceClarity, 2)} />}
-          {fb && fb.understanding != null && <MetricTile label="Understanding Rating" value={teachosNum(fb.understanding, 2)} />}
-        </MetricGroup>
+      {/* Context — role / category / manager / institute */}
+      {ctx && (
+        <div className="flex flex-wrap gap-2">
+          {[["Role", ctx.role], ["Category", ctx.category], ["Manager", ctx.manager], ["Institute", ctx.institute]].filter(([, v]) => v).map(([k, v]) => (
+            <span key={k as string} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs">
+              <span className="text-slate-400">{k}:</span><span className="font-medium text-slate-700">{v as string}</span>
+            </span>
+          ))}
+        </div>
       )}
 
-      {fb && (fb.lectureSessions != null || fb.practiceSessions != null) && (
-        <MetricGroup title="Activity">
-          <MetricTile label="Total Lecture Sessions" value={teachosInt(fb.lectureSessions)} />
-          <MetricTile label="Total Practice Sessions" value={teachosInt(fb.practiceSessions)} />
-        </MetricGroup>
+      {/* Performance & Quality */}
+      {(sc || qa) && (
+        <TeachosSection icon={Award} title="Performance & Quality">
+          <div className={grid4}>
+            {sc && <RatingTile label="Overall Score" value={sc.overall} max={sc.max || undefined} decimals={1} sub={sc.max && sc.overall != null ? `${teachosNum((Number(sc.overall) / Number(sc.max)) * 100, 0)}%` : undefined} />}
+            {sc && <RatingTile label="Lecture Session Score" value={sc.lecture} max={sc.max || undefined} decimals={1} />}
+            {sc && <RatingTile label="Practice Session Score" value={sc.practice} max={sc.max || undefined} decimals={1} />}
+            {qa && <RatingTile label="Avg QA Rating" value={qa.avgRating} max={10} sub={qa.sessions ? `${teachosInt(qa.sessions)} sessions` : undefined} />}
+          </div>
+        </TeachosSection>
       )}
 
+      {/* Student ratings (1–5 scale) */}
+      {fb && (fb.studentScore != null || fb.teachingQuality != null) && (
+        <TeachosSection icon={Star} title="Student Ratings">
+          <div className={grid4}>
+            {fb.studentScore != null && <RatingTile label="Student Feedback Score" value={fb.studentScore} max={5} />}
+            {fb.teachingQuality != null && <RatingTile label="Teaching Quality" value={fb.teachingQuality} max={5} />}
+            {fb.guidanceClarity != null && <RatingTile label="Guidance Clarity" value={fb.guidanceClarity} max={5} />}
+            {fb.understanding != null && <RatingTile label="Understanding" value={fb.understanding} max={5} />}
+          </div>
+        </TeachosSection>
+      )}
+
+      {/* Activity */}
+      {(fb && (fb.lectureSessions != null || fb.practiceSessions != null)) && (
+        <TeachosSection icon={GaugeCircle} title="Activity">
+          <div className={grid4}>
+            <MetricTile label="Total Lecture Sessions" value={teachosInt(fb.lectureSessions)} />
+            <MetricTile label="Total Practice Sessions" value={teachosInt(fb.practiceSessions)} />
+            {qa && <MetricTile label="QA-Evaluated Sessions" value={teachosInt(qa.sessions)} />}
+          </div>
+        </TeachosSection>
+      )}
+
+      {/* Demos, Readiness & Self-assessment */}
       {(dm || as || ss) && (
-        <MetricGroup title="Demos, Readiness & Self-assessment">
-          {dm && <MetricTile label="Demos (taken / scheduled)" value={`${teachosInt(dm.taken)} / ${teachosInt(dm.scheduled)}`} sub={dm.pending != null ? `${teachosInt(dm.pending)} pending` : undefined} />}
-          {dm && dm.avgRating != null && <MetricTile label="Avg Demo QA Rating" value={teachosNum(dm.avgRating, 2)} />}
-          {as && as.codingScore != null && <MetricTile label="Coding Assessment" value={`${teachosNum(as.codingScore, 0)}%`} />}
-          {as && as.mcqScore != null && <MetricTile label="MCQ Assessment" value={`${teachosNum(as.mcqScore, 0)}%`} />}
-          {ss && ss.grooming != null && <MetricTile label="Grooming Score" value={teachosNum(ss.grooming, 2)} />}
-          {ss && ss.performance != null && <MetricTile label="Performance Rating" value={teachosNum(ss.performance, 2)} />}
-        </MetricGroup>
+        <TeachosSection icon={ClipboardCheck} title="Demos, Readiness & Self-assessment">
+          <div className={grid4}>
+            {dm && <MetricTile label="Demos (taken / scheduled)" value={`${teachosInt(dm.taken)} / ${teachosInt(dm.scheduled)}`} sub={dm.pending != null ? `${teachosInt(dm.pending)} pending` : undefined} />}
+            {dm && dm.avgRating != null && <RatingTile label="Avg Demo QA Rating" value={dm.avgRating} max={10} />}
+            {as && as.codingScore != null && <RatingTile label="Coding Assessment" value={as.codingScore} max={100} decimals={0} sub="%" />}
+            {as && as.mcqScore != null && <RatingTile label="MCQ Assessment" value={as.mcqScore} max={100} decimals={0} sub="%" />}
+            {ss && ss.grooming != null && <RatingTile label="Grooming Score" value={ss.grooming} max={5} />}
+            {ss && ss.performance != null && <RatingTile label="Performance Rating" value={ss.performance} max={5} />}
+          </div>
+        </TeachosSection>
       )}
 
-      <p className="text-[11px] text-slate-400">Read live from BigQuery (TeachOS instructor tables), matched by UID. Read-only.</p>
+      {/* Student Feedback — sentiment + real comments */}
+      {(se || comments.length > 0) && (
+        <TeachosSection icon={MessageSquare} title="Student Feedback">
+          {se && sTotal > 0 && (
+            <div className="mb-4">
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div className="bg-emerald-500" style={{ width: `${(se.positive / sTotal) * 100}%` }} title={`Positive ${se.positive}`} />
+                <div className="bg-slate-300" style={{ width: `${(se.neutral / sTotal) * 100}%` }} title={`Neutral ${se.neutral}`} />
+                <div className="bg-rose-500" style={{ width: `${(se.negative / sTotal) * 100}%` }} title={`Negative ${se.negative}`} />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                <span className="text-emerald-700">● {se.positive} positive</span>
+                <span className="text-slate-500">● {se.neutral} neutral</span>
+                <span className="text-rose-600">● {se.negative} negative</span>
+                <span className="text-slate-400">of {sTotal} comments</span>
+              </div>
+            </div>
+          )}
+          {comments.length > 0 && (
+            <ul className="space-y-2">
+              {comments.map((c, i) => {
+                const tone = /pos|appreci/i.test(c.sentiment || c.category || "") ? "border-emerald-200 bg-emerald-50/50" : /neg/i.test(c.sentiment || "") ? "border-rose-200 bg-rose-50/50" : "border-slate-200 bg-slate-50/50";
+                return (
+                  <li key={i} className={`rounded-lg border px-3 py-2 text-sm ${tone}`}>
+                    <span className="text-slate-700">"{c.text}"</span>
+                    {c.session && <span className="mt-0.5 block text-[11px] text-slate-400">{c.session}{c.category ? ` · ${c.category}` : ""}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </TeachosSection>
+      )}
+
+      {/* Recent sessions */}
+      {sessions.length > 0 && (
+        <TeachosSection icon={CalendarClock} title="Recent Sessions">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="py-2 pr-3">Session</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Teaching Q.</th><th className="px-3 py-2">QA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s, i) => (
+                  <tr key={i} className="border-b border-slate-100 last:border-0">
+                    <td className="max-w-[220px] truncate py-2 pr-3 font-medium text-slate-800" title={s.title}>{s.title}</td>
+                    <td className="px-3 py-2 text-slate-600">{s.type || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{teachosDate(s.date)}</td>
+                    <td className="px-3 py-2"><span className="chip chip-gray">{(s.status || "—").toLowerCase()}</span></td>
+                    <td className="px-3 py-2 text-slate-700">{teachosNum(s.teachingQuality, 2)}</td>
+                    <td className="px-3 py-2 text-slate-700">{teachosNum(s.qaRating, 2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </TeachosSection>
+      )}
+
+      <p className="text-[11px] text-slate-400">Read live from BigQuery (TeachOS instructor tables), matched by UID · cached ~10 min · read-only.</p>
     </div>
   );
 }
