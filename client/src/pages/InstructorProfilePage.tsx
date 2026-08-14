@@ -98,7 +98,6 @@ export default function InstructorProfilePage() {
   const [topTab, setTopTab] = useState<"details" | "teachos">("details"); // top-level Details / TeachOS tabs
   const [tab, setTab] = useState<string>("");
   const [editField, setEditField] = useState<any>(null);
-  const [statusOpen, setStatusOpen] = useState(false);
   const [editKey, setEditKey] = useState<string | null>(null); // inline-edit: which field key
   const inlineRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
 
@@ -176,16 +175,14 @@ export default function InstructorProfilePage() {
     <div className="space-y-5">
       <Link to="/app/instructors/master" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800"><ArrowLeft className="h-4 w-4 shrink-0" aria-hidden /><span>All instructors</span></Link>
 
-      <div className="card flex flex-wrap items-center gap-4 p-6 select-none">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-100 text-2xl font-bold text-brand-700">{(inst.name || "?").charAt(0)}</div>
-        <div className="flex-1">
+      {/* Clean header — no card box, thin divider underneath. */}
+      <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-5 select-none">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-xl font-bold text-brand-700">{(inst.name || "?").charAt(0)}</div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold">{inst.name}</h1>
           <p className="text-sm text-slate-500"><span className="font-mono">{inst.employeeId}</span> · {inst.campus || "no campus"} · Manager: {inst.managerName}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="chip chip-status text-sm">{lifecycleLabel(inst.status)}</span>
-          <a href={`/print/instructors/${id}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm"><Printer className="h-4 w-4" /> Report card</a>
-          {canEdit && <button onClick={() => setStatusOpen(true)} className="btn btn-ghost btn-sm"><GitBranch className="h-4 w-4" /> Change status</button>}
           {canEdit && inst.status === "EXITED" && <button onClick={rehire} className="btn btn-success btn-sm">Re-hire</button>}
           {isOps && <button onClick={remove} className="btn btn-danger btn-sm"><Trash2 className="h-4 w-4" /></button>}
         </div>
@@ -268,7 +265,6 @@ export default function InstructorProfilePage() {
       )}
 
       {editField && <EditFieldModal field={editField} instructorId={id!} mode={canEditFields ? "edit" : "request"} onClose={() => setEditField(null)} onDone={() => { setEditField(null); load(); }} />}
-      {statusOpen && <StatusModal current={inst.status} instructorId={id!} onClose={() => setStatusOpen(false)} onDone={() => { setStatusOpen(false); load(); }} />}
     </div>
   );
 }
