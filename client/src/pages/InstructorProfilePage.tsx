@@ -70,6 +70,7 @@ export default function InstructorProfilePage() {
   const prompt = usePrompt();
   const [p, setP] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [topTab, setTopTab] = useState<"details" | "teachos">("details"); // top-level Details / TeachOS tabs
   const [tab, setTab] = useState<string>("");
   const [editField, setEditField] = useState<any>(null);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -162,6 +163,19 @@ export default function InstructorProfilePage() {
         </div>
       </div>
 
+      {/* Top-level tabs: Details (full profile) · TeachOS (BigQuery performance metrics) */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {(["details", "teachos"] as const).map((t) => (
+          <button key={t} type="button" onClick={() => setTopTab(t)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition ${topTab === t ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+            {t === "details" ? "Details" : "TeachOS"}
+          </button>
+        ))}
+      </div>
+
+      {topTab === "teachos" && <TeachosTab instructorId={id!} />}
+
+      {topTab === "details" && (
       <div className="flex flex-col gap-5 lg:flex-row">
         <nav className="shrink-0 select-none lg:w-56" aria-label="Profile sections">
           <div className="space-y-0.5 rounded-xl border border-slate-200 bg-white p-1.5 lg:sticky lg:top-4">
@@ -232,6 +246,7 @@ export default function InstructorProfilePage() {
           {active === "AUDIT" && <AuditTab instructorId={id!} />}
         </div>
       </div>
+      )}
 
       {editField && <EditFieldModal field={editField} instructorId={id!} mode={canEditFields ? "edit" : "request"} onClose={() => setEditField(null)} onDone={() => { setEditField(null); load(); }} />}
       {statusOpen && <StatusModal current={inst.status} instructorId={id!} onClose={() => setStatusOpen(false)} onDone={() => { setStatusOpen(false); load(); }} />}
@@ -606,6 +621,87 @@ export function HistoryTab({ instructorId }: { instructorId: string }) {
           <ul className="space-y-1 text-sm">{h.logins.map((l: any, i: number) => <li key={i} className="flex justify-between gap-3 text-slate-600"><span className="truncate">{l.method} · {l.ip || "—"}{l.userAgent ? ` · ${l.userAgent.slice(0, 40)}` : ""}</span><span className="shrink-0 text-xs text-slate-400">{new Date(l.at).toLocaleString()}</span></li>)}</ul>
         </div>
       )}
+    </div>
+  );
+}
+
+// TeachOS performance metrics — read live from BigQuery (instructor tables), matched by uid.
+const teachosNum = (v: any, d = 1) => (v == null || v === "" || isNaN(Number(v)) ? "—" : Number(v).toFixed(d).replace(/\.0$/, ""));
+const teachosInt = (v: any) => (v == null || isNaN(Number(v)) ? "—" : String(Math.round(Number(v))));
+
+function MetricTile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="text-xl font-bold text-slate-900">{value}</div>
+      <div className="mt-0.5 text-xs font-medium text-slate-500">{label}</div>
+      {sub && <div className="text-[11px] text-slate-400">{sub}</div>}
+    </div>
+  );
+}
+function MetricGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold text-slate-800">{title}</h3>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+    </div>
+  );
+}
+
+export function TeachosTab({ instructorId }: { instructorId: string }) {
+  const [m, setM] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    setM(null); setErr(null);
+    api.get(`/instructors/${instructorId}/teachos`).then((r) => on && setM(r)).catch((e) => on && setErr(e.message || "Failed to load TeachOS metrics."));
+    return () => { on = false; };
+  }, [instructorId]);
+
+  if (err) return <div className="card p-6 text-sm text-rose-600">{err}</div>;
+  if (!m) return <div className="card space-y-4 p-6">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height="72px" borderRadius="12px" />)}</div>;
+  if (!m.configured) return <div className="card p-8 text-center text-sm text-slate-500">TeachOS metrics require BigQuery to be configured on the server.</div>;
+  if (!m.found) return <div className="card p-8 text-center text-sm text-slate-400">No TeachOS performance data found for this instructor{m.uid ? " (no BigQuery match by UID)" : " — this record has no UID to match against BigQuery"}.</div>;
+
+  const sc = m.scorecard, fb = m.feedback, qa = m.qa, dm = m.demos, as = m.assessments, ss = m.sessionsSummary;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold text-slate-800">TeachOS Performance</h2>
+        {m.category && <span className="chip chip-status">{m.category}</span>}
+      </div>
+
+      {(sc || qa || fb) && (
+        <MetricGroup title="Performance & Quality">
+          {sc && <MetricTile label="Overall Score" value={`${teachosNum(sc.overall)}${sc.max ? ` / ${teachosNum(sc.max)}` : ""}`} sub={sc.max ? `${teachosNum((Number(sc.overall) / Number(sc.max)) * 100, 0)}%` : undefined} />}
+          {sc && <MetricTile label="Lecture Session Score" value={teachosNum(sc.lecture)} />}
+          {sc && <MetricTile label="Practice Session Score" value={teachosNum(sc.practice)} />}
+          {qa && <MetricTile label="Avg QA Rating" value={teachosNum(qa.avgRating, 2)} sub={qa.sessions ? `${teachosInt(qa.sessions)} sessions` : undefined} />}
+          {fb && <MetricTile label="Student Feedback Score" value={teachosNum(fb.studentScore, 2)} />}
+          {fb && <MetricTile label="Teaching Quality" value={teachosNum(fb.teachingQuality, 2)} />}
+          {fb && <MetricTile label="Guidance Clarity" value={teachosNum(fb.guidanceClarity, 2)} />}
+          {fb && fb.understanding != null && <MetricTile label="Understanding Rating" value={teachosNum(fb.understanding, 2)} />}
+        </MetricGroup>
+      )}
+
+      {fb && (fb.lectureSessions != null || fb.practiceSessions != null) && (
+        <MetricGroup title="Activity">
+          <MetricTile label="Total Lecture Sessions" value={teachosInt(fb.lectureSessions)} />
+          <MetricTile label="Total Practice Sessions" value={teachosInt(fb.practiceSessions)} />
+        </MetricGroup>
+      )}
+
+      {(dm || as || ss) && (
+        <MetricGroup title="Demos, Readiness & Self-assessment">
+          {dm && <MetricTile label="Demos (taken / scheduled)" value={`${teachosInt(dm.taken)} / ${teachosInt(dm.scheduled)}`} sub={dm.pending != null ? `${teachosInt(dm.pending)} pending` : undefined} />}
+          {dm && dm.avgRating != null && <MetricTile label="Avg Demo QA Rating" value={teachosNum(dm.avgRating, 2)} />}
+          {as && as.codingScore != null && <MetricTile label="Coding Assessment" value={`${teachosNum(as.codingScore, 0)}%`} />}
+          {as && as.mcqScore != null && <MetricTile label="MCQ Assessment" value={`${teachosNum(as.mcqScore, 0)}%`} />}
+          {ss && ss.grooming != null && <MetricTile label="Grooming Score" value={teachosNum(ss.grooming, 2)} />}
+          {ss && ss.performance != null && <MetricTile label="Performance Rating" value={teachosNum(ss.performance, 2)} />}
+        </MetricGroup>
+      )}
+
+      <p className="text-[11px] text-slate-400">Read live from BigQuery (TeachOS instructor tables), matched by UID. Read-only.</p>
     </div>
   );
 }

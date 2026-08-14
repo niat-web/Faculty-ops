@@ -851,6 +851,16 @@ router.get("/:id/audit", async (req, res) => {
   res.json({ entries: rows.map((a: any) => ({ id: String(a._id), action: a.action, actorName: a.actorName, actorRole: a.actorRole, fieldName: a.fieldName, oldValue: a.oldValue, newValue: a.newValue, reason: a.reason, proofPath: a.proofPath || null, createdAt: a.createdAt })) });
 });
 
+// Per-instructor TeachOS performance metrics (profile → TeachOS tab), read live from BigQuery by uid.
+router.get("/:id/teachos", async (req, res) => {
+  if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });
+  const inst: any = await Instructor.findById(req.params.id).select("uid name").lean();
+  if (!inst) return res.status(404).json({ error: "Not found" });
+  const { fetchInstructorTeachosMetrics } = await import("../lib/bigqueryTraining");
+  const metrics = await fetchInstructorTeachosMetrics(String(inst.uid || ""));
+  res.status(metrics.ok ? 200 : 502).json({ ...metrics, uid: inst.uid || null });
+});
+
 // Per-instructor history (manager changes, lifecycle, field changes, logins).
 router.get("/:id/history", async (req, res) => {
   if (!(await canAccessInstructor(req.user!, req.params.id))) return res.status(403).json({ error: "Out of scope" });

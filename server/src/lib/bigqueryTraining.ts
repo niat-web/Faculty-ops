@@ -305,6 +305,66 @@ export async function streamBigQueryTableCsv(res: Response, dataset: string, tab
   }
 }
 
+// ---- Per-instructor TeachOS performance metrics (Instructor profile → TeachOS tab) ----------------
+// Aggregates one instructor's performance/quality data from the BigQuery instructor tables, matched
+// by uid (instructor_user_id / user_id), hyphen+case-insensitive. Every section is queried
+// independently and fails soft (null) so a missing/renamed table never breaks the whole response.
+const TEACHOS_DS_AUTOMATION = "niat_instructor_automation_data";
+const TEACHOS_DS_REVERSE = "niat_reverse_etl_bases";
+
+export type TeachosMetrics = {
+  ok: boolean;
+  configured: boolean;
+  found: boolean;
+  category: string | null;
+  scorecard: { overall: number | null; lecture: number | null; practice: number | null; max: number | null } | null;
+  feedback: { studentScore: number | null; teachingQuality: number | null; guidanceClarity: number | null; understanding: number | null; lectureSessions: number | null; practiceSessions: number | null } | null;
+  qa: { avgRating: number | null; sessions: number | null } | null;
+  demos: { scheduled: number | null; taken: number | null; pending: number | null; avgRating: number | null } | null;
+  assessments: { codingScore: number | null; mcqScore: number | null } | null;
+  sessionsSummary: { grooming: number | null; performance: number | null } | null;
+  error?: string;
+};
+
+const bqNum = (v: any): number | null => { const n = Number(cellValue(v)); return Number.isFinite(n) ? n : null; };
+
+export async function fetchInstructorTeachosMetrics(uid: string): Promise<TeachosMetrics> {
+  const empty: TeachosMetrics = { ok: true, configured: bqConnected(), found: false, category: null, scorecard: null, feedback: null, qa: null, demos: null, assessments: null, sessionsSummary: null };
+  const key = normId(uid);
+  if (!bqConnected()) return { ...empty, ok: false, configured: false, error: "BigQuery is not configured." };
+  if (!key) return empty;
+  const bq = client();
+  const P = config.bigQuery.projectId;
+  const ref = (ds: string, t: string) => `\`${P}.${ds}.${t}\``;
+  // Match either instructor_user_id or user_id (assessment tables), hyphen/case-insensitive.
+  const whereU = (col: string) => `LOWER(REPLACE(CAST(${col} AS STRING), '-', '')) = @uid`;
+  const one = async (sql: string): Promise<any | null> => {
+    try { const [rows] = await bq.query({ query: sql, params: { uid: key } }); return (rows as any[])[0] || null; }
+    catch { return null; } // table missing / column renamed → skip this section
+  };
+
+  const [sc, fb, qa, demo, coding, mcq, ss] = await Promise.all([
+    one(`SELECT AVG(SAFE_CAST(overall_score AS FLOAT64)) o, AVG(SAFE_CAST(overall_lecture_session_score AS FLOAT64)) l, AVG(SAFE_CAST(overall_practice_session_score AS FLOAT64)) p, AVG(SAFE_CAST(max_score AS FLOAT64)) m FROM ${ref(TEACHOS_DS_REVERSE, "niat_reverse_etl_instructor_overall_score_card_details")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(overall_student_feedback_score AS FLOAT64)) s, AVG(SAFE_CAST(teaching_quality AS FLOAT64)) tq, AVG(SAFE_CAST(guidance_clarity_rating AS FLOAT64)) gc, AVG(SAFE_CAST(session_understanding_rating AS FLOAT64)) u, SUM(SAFE_CAST(total_lecture_sessions AS FLOAT64)) ls, SUM(SAFE_CAST(total_practice_sessions AS FLOAT64)) ps FROM ${ref(TEACHOS_DS_REVERSE, "niat_instructor_team_performance_students_feedback_summary")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(final_score AS FLOAT64)) avg, COUNT(*) n, ANY_VALUE(instructor_category) cat FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_session_wise_qa_rating")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT SUM(SAFE_CAST(no_of_scheduled_demo_sessions AS FLOAT64)) s, SUM(SAFE_CAST(no_of_demo_taken_session AS FLOAT64)) t, SUM(SAFE_CAST(no_of_pending_demo_sessions AS FLOAT64)) p, AVG(SAFE_CAST(avg_demo_qa_rating AS FLOAT64)) r, ANY_VALUE(instructor_category) cat FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_training_instructors_online_demo_details")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_instructor_topin_assessment_coding_set_details")} WHERE ${whereU("user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_instructor_topin_assessment_mcq_set_details")} WHERE ${whereU("user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(overall_grooming_score AS FLOAT64)) g, AVG(SAFE_CAST(performance_rating AS FLOAT64)) p FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")}`),
+  ]);
+
+  const scorecard = sc && (bqNum(sc.o) != null || bqNum(sc.l) != null) ? { overall: bqNum(sc.o), lecture: bqNum(sc.l), practice: bqNum(sc.p), max: bqNum(sc.m) } : null;
+  const feedback = fb && (bqNum(fb.s) != null || bqNum(fb.tq) != null || bqNum(fb.ls) != null) ? { studentScore: bqNum(fb.s), teachingQuality: bqNum(fb.tq), guidanceClarity: bqNum(fb.gc), understanding: bqNum(fb.u), lectureSessions: bqNum(fb.ls), practiceSessions: bqNum(fb.ps) } : null;
+  const qaOut = qa && bqNum(qa.n) ? { avgRating: bqNum(qa.avg), sessions: bqNum(qa.n) } : null;
+  const demos = demo && (bqNum(demo.s) != null || bqNum(demo.t) != null) ? { scheduled: bqNum(demo.s), taken: bqNum(demo.t), pending: bqNum(demo.p), avgRating: bqNum(demo.r) } : null;
+  const assessments = (coding && bqNum(coding.v) != null) || (mcq && bqNum(mcq.v) != null) ? { codingScore: coding ? bqNum(coding.v) : null, mcqScore: mcq ? bqNum(mcq.v) : null } : null;
+  const sessionsSummary = ss && (bqNum(ss.g) != null || bqNum(ss.p) != null) ? { grooming: bqNum(ss.g), performance: bqNum(ss.p) } : null;
+  const category = (qa && qa.cat ? String(cellValue(qa.cat)) : null) || (demo && demo.cat ? String(cellValue(demo.cat)) : null) || null;
+  const found = Boolean(scorecard || feedback || qaOut || demos || assessments || sessionsSummary);
+
+  return { ok: true, configured: true, found, category, scorecard, feedback, qa: qaOut, demos, assessments, sessionsSummary };
+}
+
 // Short-lived cache so Dashboard + Training Stats (and repeated loads of either) reuse the SAME
 // BigQuery result instead of re-querying every time. Keyed by the exact course + instructor identity
 // set, so different pages/tracks cache independently but identical requests are instant.

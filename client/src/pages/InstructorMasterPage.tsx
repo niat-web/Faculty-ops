@@ -14,7 +14,6 @@ import { Skeleton, TableSkeleton } from "../components/Skeleton";
 import ScrollSelect from "../components/ScrollSelect";
 import MultiSelect from "../components/MultiSelect";
 import { useSort, SortHeader } from "../components/SortHeader";
-import InstructorDetailDrawer from "../components/InstructorDetailDrawer";
 
 type Column = { key: string; label: string; source: "core" | "manager" | "value"; type: string; options?: string[]; editable: boolean };
 type MetaFilters = { departments: string[]; roles: string[]; payrolls: string[]; regions: string[]; campuses: string[]; qualifications: string[]; genders: string[]; domains: string[]; states: string[]; workspaces: string[]; cities: string[]; districts: string[]; nativeLanguages: string[] };
@@ -103,7 +102,6 @@ export default function InstructorMasterPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [edit, setEdit] = useState<{ empId: string; key: string } | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null); // open instructor in the right-side drawer
 
   // Multi-select (bulk) mode — checkbox column + selection toolbar (Edit for all staff; Delete Ops-only).
   const [selectMode, setSelectMode] = useState(false);
@@ -520,7 +518,7 @@ export default function InstructorMasterPage() {
                       <td className={`px-3 py-2 ${sticky} ${c.key === "name" ? "font-medium" : ""}`}>
                         {isLink ? (
                           row.id
-                            ? <button type="button" onClick={() => setDetailId(row.id)} className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={String(display)}>{display}</button>
+                            ? <a href={`/app/instructors/${row.id}`} target="_blank" rel="noreferrer" className="block max-w-[280px] truncate px-2 py-1 text-left font-medium text-brand-700 hover:underline" title={`Open ${display} in a new tab`}>{display}</a>
                             : <span className="block max-w-[280px] truncate px-2 py-1 font-medium text-slate-700" title={String(display)}>{display}</span>
                         ) : isEditing ? (
                           <CellEditor col={c} managers={meta.managers} value={String(row[c.key] ?? "")} onCommit={(v) => save(row, c, v)} onCancel={() => setEdit(null)} />
@@ -597,7 +595,6 @@ export default function InstructorMasterPage() {
         <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={(n) => { setPer(n); setPage(1); }} />
       </div>
 
-      {detailId && <InstructorDetailDrawer instructorId={detailId} onClose={() => setDetailId(null)} onChanged={reload} onNavigate={setDetailId} />}
 
       {moveRow && <MoveToUniversityModal row={moveRow} universities={universities} onClose={() => setMoveRow(null)} onSubmit={saveMove} />}
 
