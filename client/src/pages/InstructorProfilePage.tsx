@@ -4,6 +4,7 @@ import {
   ArrowLeft, Pencil, Trash2, GitBranch, Upload, FileText, Download, Printer, Loader2, Mail, Send,
   CheckCircle2, AlertCircle, MinusCircle, ChevronDown, Award, MessageSquare, CalendarClock, User,
   Briefcase, Star, LogOut, StickyNote, Clock, Rocket, ScrollText, GaugeCircle, ClipboardCheck,
+  GraduationCap, TrendingUp, ListChecks, FileAudio, Flag, Presentation, ExternalLink,
 } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { useAuth, LIFECYCLE_LABEL, lifecycleLabel } from "../auth";
@@ -702,8 +703,11 @@ export function TeachosTab({ instructorId }: { instructorId: string }) {
   if (!m.found) return <div className="card p-8 text-center text-sm text-slate-400">No TeachOS performance data found for this instructor{m.uid ? " (no BigQuery match by UID)" : " — this record has no UID to match against BigQuery"}.</div>;
 
   const sc = m.scorecard, fb = m.feedback, qa = m.qa, dm = m.demos, as = m.assessments, ss = m.sessionsSummary, ctx = m.context, se = m.sentiment;
-  const comments: any[] = m.comments || [], sessions: any[] = m.recentSessions || [];
+  const st = m.sessionStats, tr = m.ownTraining, rd = m.readiness;
+  const comments: any[] = m.comments || [], sessions: any[] = m.recentSessions || [], themes: any[] = m.feedbackThemes || [];
   const sTotal = se ? se.positive + se.negative + se.neutral : 0;
+  const themeMax = themes.reduce((mx, t) => Math.max(mx, t.count), 0) || 1;
+  const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "—");
 
   return (
     <div className="space-y-5">
@@ -730,7 +734,8 @@ export function TeachosTab({ instructorId }: { instructorId: string }) {
             {sc && <RatingTile label="Overall Score" value={sc.overall} max={sc.max || undefined} decimals={1} sub={sc.max && sc.overall != null ? `${teachosNum((Number(sc.overall) / Number(sc.max)) * 100, 0)}%` : undefined} />}
             {sc && <RatingTile label="Lecture Session Score" value={sc.lecture} max={sc.max || undefined} decimals={1} />}
             {sc && <RatingTile label="Practice Session Score" value={sc.practice} max={sc.max || undefined} decimals={1} />}
-            {qa && <RatingTile label="Avg QA Rating" value={qa.avgRating} max={10} sub={qa.sessions ? `${teachosInt(qa.sessions)} sessions` : undefined} />}
+            {qa && <RatingTile label="Avg QA Rating" value={qa.avgRating} max={10} sub={qa.sessions ? `${teachosInt(qa.sessions)} evaluations` : undefined} />}
+            {qa && qa.live != null && <RatingTile label="Live Sessions QA" value={qa.live} max={10} sub={[qa.mock != null ? `mock ${teachosNum(qa.mock, 1)}` : "", qa.demo != null ? `demo ${teachosNum(qa.demo, 1)}` : ""].filter(Boolean).join(" · ") || undefined} />}
           </div>
         </TeachosSection>
       )}
@@ -747,28 +752,63 @@ export function TeachosTab({ instructorId }: { instructorId: string }) {
         </TeachosSection>
       )}
 
-      {/* Activity */}
-      {(fb && (fb.lectureSessions != null || fb.practiceSessions != null)) && (
-        <TeachosSection icon={GaugeCircle} title="Activity">
+      {/* Session Activity */}
+      {(st || (fb && (fb.lectureSessions != null || fb.practiceSessions != null)) || m.upcomingSessions != null) && (
+        <TeachosSection icon={GaugeCircle} title="Session Activity">
           <div className={grid4}>
-            <MetricTile label="Total Lecture Sessions" value={teachosInt(fb.lectureSessions)} />
-            <MetricTile label="Total Practice Sessions" value={teachosInt(fb.practiceSessions)} />
-            {qa && <MetricTile label="QA-Evaluated Sessions" value={teachosInt(qa.sessions)} />}
+            {st && <MetricTile label="Sessions Completed" value={`${teachosInt(st.completed)} / ${teachosInt(st.total)}`} sub={pct(st.completed, st.total)} />}
+            {st && st.flagTotal > 0 && <MetricTile label="Flagged Sessions" value={teachosInt(st.flagged)} sub={`${pct(st.flagged, st.flagTotal)} of ${teachosInt(st.flagTotal)}`} />}
+            {fb && fb.lectureSessions != null && <MetricTile label="Total Lecture Sessions" value={teachosInt(fb.lectureSessions)} />}
+            {fb && fb.practiceSessions != null && <MetricTile label="Total Practice Sessions" value={teachosInt(fb.practiceSessions)} />}
+            {st && (st.offline > 0 || st.online > 0) && <MetricTile label="Offline / Online" value={`${teachosInt(st.offline)} / ${teachosInt(st.online)}`} />}
+            {m.upcomingSessions != null && m.upcomingSessions > 0 && <MetricTile label="Upcoming Sessions" value={teachosInt(m.upcomingSessions)} />}
           </div>
         </TeachosSection>
       )}
 
-      {/* Demos, Readiness & Self-assessment */}
-      {(dm || as || ss) && (
-        <TeachosSection icon={ClipboardCheck} title="Demos, Readiness & Self-assessment">
+      {/* Instructor Development — own training + self-assessment + readiness */}
+      {(tr || as || rd) && (
+        <TeachosSection icon={GraduationCap} title="Instructor Development">
+          <div className={grid4}>
+            {tr && tr.completionPct != null && <RatingTile label="Own Course Completion" value={tr.completionPct} max={100} decimals={0} sub={tr.unitsTotal ? `${teachosInt(tr.unitsDone)}/${teachosInt(tr.unitsTotal)} units` : "%"} />}
+            {as && as.examScore != null && <RatingTile label="Practice Exam Score" value={as.examScore} max={100} decimals={0} sub={as.examAttempts ? `${teachosInt(as.examAttempts)} attempts` : "%"} />}
+            {as && as.codingScore != null && <RatingTile label="Coding Assessment" value={as.codingScore} max={100} decimals={0} sub="%" />}
+            {as && as.mcqScore != null && <RatingTile label="MCQ Assessment" value={as.mcqScore} max={100} decimals={0} sub="%" />}
+            {rd && <MetricTile label="Pre-lecture Readiness" value={teachosInt(rd.sessions)} sub={rd.avgItems != null ? `avg ${teachosNum(rd.avgItems, 1)} checks/session` : undefined} />}
+          </div>
+        </TeachosSection>
+      )}
+
+      {/* Demos & Grooming */}
+      {(dm || ss) && (
+        <TeachosSection icon={Presentation} title="Demos & Grooming">
           <div className={grid4}>
             {dm && <MetricTile label="Demos (taken / scheduled)" value={`${teachosInt(dm.taken)} / ${teachosInt(dm.scheduled)}`} sub={dm.pending != null ? `${teachosInt(dm.pending)} pending` : undefined} />}
             {dm && dm.avgRating != null && <RatingTile label="Avg Demo QA Rating" value={dm.avgRating} max={10} />}
-            {as && as.codingScore != null && <RatingTile label="Coding Assessment" value={as.codingScore} max={100} decimals={0} sub="%" />}
-            {as && as.mcqScore != null && <RatingTile label="MCQ Assessment" value={as.mcqScore} max={100} decimals={0} sub="%" />}
             {ss && ss.grooming != null && <RatingTile label="Grooming Score" value={ss.grooming} max={5} />}
             {ss && ss.performance != null && <RatingTile label="Performance Rating" value={ss.performance} max={5} />}
           </div>
+        </TeachosSection>
+      )}
+
+      {/* Feedback themes — what students raise most */}
+      {themes.length > 0 && (
+        <TeachosSection icon={ListChecks} title="Feedback Themes">
+          <ul className="space-y-2">
+            {themes.map((t, i) => {
+              const neg = /issue|dissatisf|improve|pace|clarity|complain/i.test(t.category);
+              const pos = /appreci|good|positive/i.test(t.category);
+              return (
+                <li key={i} className="flex items-center gap-3 text-sm">
+                  <span className="w-40 shrink-0 truncate capitalize text-slate-700" title={t.category}>{t.category}</span>
+                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <span className={`block h-full rounded-full ${neg ? "bg-rose-400" : pos ? "bg-emerald-400" : "bg-slate-300"}`} style={{ width: `${(t.count / themeMax) * 100}%` }} />
+                  </span>
+                  <span className="w-12 shrink-0 text-right tabular-nums text-slate-500">{t.count}</span>
+                </li>
+              );
+            })}
+          </ul>
         </TeachosSection>
       )}
 
@@ -806,25 +846,36 @@ export function TeachosTab({ instructorId }: { instructorId: string }) {
         </TeachosSection>
       )}
 
-      {/* Recent sessions */}
+      {/* Recent sessions + QA report / recording / transcript links + grooming remark */}
       {sessions.length > 0 && (
         <TeachosSection icon={CalendarClock} title="Recent Sessions">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  <th className="py-2 pr-3">Session</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Teaching Q.</th><th className="px-3 py-2">QA</th>
+                  <th className="py-2 pr-3">Session</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Teaching Q.</th><th className="px-3 py-2">QA</th><th className="px-3 py-2">Links</th>
                 </tr>
               </thead>
               <tbody>
                 {sessions.map((s, i) => (
-                  <tr key={i} className="border-b border-slate-100 last:border-0">
-                    <td className="max-w-[220px] truncate py-2 pr-3 font-medium text-slate-800" title={s.title}>{s.title}</td>
+                  <tr key={i} className="border-b border-slate-100 last:border-0 align-top">
+                    <td className="max-w-[220px] py-2 pr-3">
+                      <div className="truncate font-medium text-slate-800" title={s.title}>{s.title}</div>
+                      {s.groomingRemark && <div className="mt-0.5 truncate text-[11px] text-slate-400" title={s.groomingRemark}>{s.groomingRemark}</div>}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{s.type || "—"}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">{teachosDate(s.date)}</td>
                     <td className="px-3 py-2"><span className="chip chip-gray">{(s.status || "—").toLowerCase()}</span></td>
                     <td className="px-3 py-2 text-slate-700">{teachosNum(s.teachingQuality, 2)}</td>
                     <td className="px-3 py-2 text-slate-700">{teachosNum(s.qaRating, 2)}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {s.reportUrl && <a href={s.reportUrl} target="_blank" rel="noreferrer" title="QA report" className="text-slate-400 hover:text-brand-600"><ScrollText className="h-4 w-4" /></a>}
+                        {s.audioUrl && <a href={s.audioUrl} target="_blank" rel="noreferrer" title="Recording" className="text-slate-400 hover:text-brand-600"><FileAudio className="h-4 w-4" /></a>}
+                        {s.transcriptUrl && <a href={s.transcriptUrl} target="_blank" rel="noreferrer" title="Transcript" className="text-slate-400 hover:text-brand-600"><FileText className="h-4 w-4" /></a>}
+                        {!s.reportUrl && !s.audioUrl && !s.transcriptUrl && <span className="text-slate-300">—</span>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

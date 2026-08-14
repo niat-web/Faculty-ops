@@ -320,26 +320,31 @@ export type TeachosMetrics = {
   context: { role: string | null; category: string | null; manager: string | null; managerMail: string | null; institute: string | null } | null;
   scorecard: { overall: number | null; lecture: number | null; practice: number | null; max: number | null } | null;
   feedback: { studentScore: number | null; teachingQuality: number | null; guidanceClarity: number | null; understanding: number | null; lectureSessions: number | null; practiceSessions: number | null } | null;
-  qa: { avgRating: number | null; sessions: number | null } | null;
+  qa: { avgRating: number | null; sessions: number | null; live: number | null; mock: number | null; demo: number | null } | null;
   demos: { scheduled: number | null; taken: number | null; pending: number | null; avgRating: number | null } | null;
-  assessments: { codingScore: number | null; mcqScore: number | null } | null;
+  assessments: { codingScore: number | null; mcqScore: number | null; examScore: number | null; examAttempts: number | null } | null;
   sessionsSummary: { grooming: number | null; performance: number | null } | null;
+  sessionStats: { total: number; completed: number; flagged: number; flagTotal: number; offline: number; online: number } | null;
+  ownTraining: { completionPct: number | null; unitsDone: number | null; unitsTotal: number | null } | null;
+  readiness: { avgItems: number | null; sessions: number | null } | null;
+  upcomingSessions: number | null;
   sentiment: { positive: number; negative: number; neutral: number } | null;
+  feedbackThemes: { category: string; count: number }[];
   comments: { text: string; sentiment: string | null; category: string | null; session: string | null }[];
-  recentSessions: { title: string; type: string | null; date: string | null; status: string | null; teachingQuality: number | null; qaRating: number | null }[];
+  recentSessions: { title: string; type: string | null; date: string | null; status: string | null; teachingQuality: number | null; qaRating: number | null; reportUrl: string | null; audioUrl: string | null; transcriptUrl: string | null; groomingRemark: string | null }[];
   error?: string;
 };
 
 const bqNum = (v: any): number | null => { const n = Number(cellValue(v)); return Number.isFinite(n) ? n : null; };
 const bqStr = (v: any): string | null => { const s = String(cellValue(v) ?? "").trim(); return s || null; };
 
-// Per-instructor cache (10 min) — the TeachOS tab fans out ~11 BigQuery queries over large tables,
+// Per-instructor cache (10 min) — the TeachOS tab fans out ~18 BigQuery queries over large tables,
 // so caching keeps repeated profile opens fast and cheap.
 const TEACHOS_TTL = 10 * 60 * 1000;
 const teachosCache = new Map<string, { at: number; data: TeachosMetrics }>();
 
 export async function fetchInstructorTeachosMetrics(uid: string): Promise<TeachosMetrics> {
-  const empty: TeachosMetrics = { ok: true, configured: bqConnected(), found: false, category: null, context: null, scorecard: null, feedback: null, qa: null, demos: null, assessments: null, sessionsSummary: null, sentiment: null, comments: [], recentSessions: [] };
+  const empty: TeachosMetrics = { ok: true, configured: bqConnected(), found: false, category: null, context: null, scorecard: null, feedback: null, qa: null, demos: null, assessments: null, sessionsSummary: null, sessionStats: null, ownTraining: null, readiness: null, upcomingSessions: null, sentiment: null, feedbackThemes: [], comments: [], recentSessions: [] };
   const key = normId(uid);
   if (!bqConnected()) return { ...empty, ok: false, configured: false, error: "BigQuery is not configured." };
   if (!key) return empty;
@@ -359,43 +364,67 @@ export async function fetchInstructorTeachosMetrics(uid: string): Promise<Teacho
     try { const [rows] = await bq.query({ query: sql, params: { uid: key } }); return rows as any[]; }
     catch { return []; }
   };
+  const DA = TEACHOS_DS_AUTOMATION, DR = TEACHOS_DS_REVERSE;
 
-  const [sc, fb, qa, demo, coding, mcq, ss, ctx, sent, comm, sess] = await Promise.all([
-    one(`SELECT AVG(SAFE_CAST(overall_score AS FLOAT64)) o, AVG(SAFE_CAST(overall_lecture_session_score AS FLOAT64)) l, AVG(SAFE_CAST(overall_practice_session_score AS FLOAT64)) p, AVG(SAFE_CAST(max_score AS FLOAT64)) m FROM ${ref(TEACHOS_DS_REVERSE, "niat_reverse_etl_instructor_overall_score_card_details")} WHERE ${whereU("instructor_user_id")}`),
-    one(`SELECT AVG(SAFE_CAST(overall_student_feedback_score AS FLOAT64)) s, AVG(SAFE_CAST(teaching_quality AS FLOAT64)) tq, AVG(SAFE_CAST(guidance_clarity_rating AS FLOAT64)) gc, AVG(SAFE_CAST(session_understanding_rating AS FLOAT64)) u, SUM(SAFE_CAST(total_lecture_sessions AS FLOAT64)) ls, SUM(SAFE_CAST(total_practice_sessions AS FLOAT64)) ps FROM ${ref(TEACHOS_DS_REVERSE, "niat_instructor_team_performance_students_feedback_summary")} WHERE ${whereU("instructor_user_id")}`),
-    one(`SELECT AVG(SAFE_CAST(final_score AS FLOAT64)) avg, COUNT(*) n, ANY_VALUE(instructor_category) cat FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_session_wise_qa_rating")} WHERE ${whereU("instructor_user_id")}`),
-    one(`SELECT SUM(SAFE_CAST(no_of_scheduled_demo_sessions AS FLOAT64)) s, SUM(SAFE_CAST(no_of_demo_taken_session AS FLOAT64)) t, SUM(SAFE_CAST(no_of_pending_demo_sessions AS FLOAT64)) p, AVG(SAFE_CAST(avg_demo_qa_rating AS FLOAT64)) r, ANY_VALUE(instructor_category) cat FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_training_instructors_online_demo_details")} WHERE ${whereU("instructor_user_id")}`),
-    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_instructor_topin_assessment_coding_set_details")} WHERE ${whereU("user_id")}`),
-    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(TEACHOS_DS_AUTOMATION, "z_niat_instructor_topin_assessment_mcq_set_details")} WHERE ${whereU("user_id")}`),
-    one(`SELECT AVG(SAFE_CAST(overall_grooming_score AS FLOAT64)) g, AVG(SAFE_CAST(performance_rating AS FLOAT64)) p FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")}`),
-    // Context — role / manager / institute (from the instructor↔manager mapping table).
-    one(`SELECT ANY_VALUE(instructor_role) role, ANY_VALUE(instructor_manager_category) cat, ANY_VALUE(instructor_manager) mgr, ANY_VALUE(instructor_manager_mail) mail, ANY_VALUE(institute_name) inst FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_instructor_managers_and_instructors_details")} WHERE ${whereU("instructor_user_id")}`),
-    // Student-feedback sentiment breakdown.
-    many(`SELECT LOWER(sentiment) s, COUNT(*) c FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_session_wise_user_feedback_details_with_sentiment_type")} WHERE ${whereU("instructor_user_id")} AND sentiment IS NOT NULL GROUP BY LOWER(sentiment)`),
-    // Recent student comments (actual text).
-    many(`SELECT learning_session_additional_feedback t, sentiment se, feedback_category cat, session_title sess FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_session_wise_user_feedback_details_with_sentiment_type")} WHERE ${whereU("instructor_user_id")} AND learning_session_additional_feedback IS NOT NULL AND LENGTH(TRIM(learning_session_additional_feedback)) > 3 ORDER BY feedback_submission_datetime DESC LIMIT 8`),
-    // Recent sessions with their ratings.
-    many(`SELECT session_title title, session_type type, session_start_datetime dt, session_status status, SAFE_CAST(average_session_teaching_quality_rating AS FLOAT64) tq, SAFE_CAST(qa_rating AS FLOAT64) qa FROM ${ref(TEACHOS_DS_AUTOMATION, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")} AND session_title IS NOT NULL ORDER BY session_start_datetime DESC LIMIT 8`),
+  const [sc, fb, qat, demo, coding, mcq, ss, ctx, sent, themes, comm, sess, sstat, train, exam, ready, up] = await Promise.all([
+    one(`SELECT AVG(SAFE_CAST(overall_score AS FLOAT64)) o, AVG(SAFE_CAST(overall_lecture_session_score AS FLOAT64)) l, AVG(SAFE_CAST(overall_practice_session_score AS FLOAT64)) p, AVG(SAFE_CAST(max_score AS FLOAT64)) m FROM ${ref(DR, "niat_reverse_etl_instructor_overall_score_card_details")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(overall_student_feedback_score AS FLOAT64)) s, AVG(SAFE_CAST(teaching_quality AS FLOAT64)) tq, AVG(SAFE_CAST(guidance_clarity_rating AS FLOAT64)) gc, AVG(SAFE_CAST(session_understanding_rating AS FLOAT64)) u, SUM(SAFE_CAST(total_lecture_sessions AS FLOAT64)) ls, SUM(SAFE_CAST(total_practice_sessions AS FLOAT64)) ps FROM ${ref(DR, "niat_instructor_team_performance_students_feedback_summary")} WHERE ${whereU("instructor_user_id")}`),
+    // QA rating broken down by evaluation type (SCHEDULE = live sessions, MOCK, DEMO, …).
+    many(`SELECT UPPER(evaluation_type) et, AVG(SAFE_CAST(final_score AS FLOAT64)) a, COUNT(*) n, ANY_VALUE(instructor_category) cat FROM ${ref(DA, "niat_session_wise_qa_rating")} WHERE ${whereU("instructor_user_id")} GROUP BY UPPER(evaluation_type)`),
+    one(`SELECT SUM(SAFE_CAST(no_of_scheduled_demo_sessions AS FLOAT64)) s, SUM(SAFE_CAST(no_of_demo_taken_session AS FLOAT64)) t, SUM(SAFE_CAST(no_of_pending_demo_sessions AS FLOAT64)) p, AVG(SAFE_CAST(avg_demo_qa_rating AS FLOAT64)) r, ANY_VALUE(instructor_category) cat FROM ${ref(DA, "z_niat_training_instructors_online_demo_details")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(DA, "z_niat_instructor_topin_assessment_coding_set_details")} WHERE ${whereU("user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(percentage_score AS FLOAT64)) v FROM ${ref(DA, "z_niat_instructor_topin_assessment_mcq_set_details")} WHERE ${whereU("user_id")}`),
+    one(`SELECT AVG(SAFE_CAST(overall_grooming_score AS FLOAT64)) g, AVG(SAFE_CAST(performance_rating AS FLOAT64)) p FROM ${ref(DA, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")}`),
+    one(`SELECT ANY_VALUE(instructor_role) role, ANY_VALUE(instructor_manager_category) cat, ANY_VALUE(instructor_manager) mgr, ANY_VALUE(instructor_manager_mail) mail, ANY_VALUE(institute_name) inst FROM ${ref(DA, "niat_instructor_managers_and_instructors_details")} WHERE ${whereU("instructor_user_id")}`),
+    many(`SELECT LOWER(sentiment) s, COUNT(*) c FROM ${ref(DA, "niat_session_wise_user_feedback_details_with_sentiment_type")} WHERE ${whereU("instructor_user_id")} AND sentiment IS NOT NULL GROUP BY LOWER(sentiment)`),
+    // Feedback themes (categories students actually raise).
+    many(`SELECT feedback_category cat, COUNT(*) c FROM ${ref(DA, "niat_session_wise_user_feedback_details_with_sentiment_type")} WHERE ${whereU("instructor_user_id")} AND feedback_category IS NOT NULL GROUP BY feedback_category ORDER BY c DESC LIMIT 10`),
+    many(`SELECT learning_session_additional_feedback t, sentiment se, feedback_category cat, session_title sess FROM ${ref(DA, "niat_session_wise_user_feedback_details_with_sentiment_type")} WHERE ${whereU("instructor_user_id")} AND learning_session_additional_feedback IS NOT NULL AND LENGTH(TRIM(learning_session_additional_feedback)) > 3 ORDER BY feedback_submission_datetime DESC LIMIT 8`),
+    // Recent sessions + their ratings + QA report / recording / transcript links + grooming remark.
+    many(`SELECT session_title title, session_type type, session_start_datetime dt, session_status status, SAFE_CAST(average_session_teaching_quality_rating AS FLOAT64) tq, SAFE_CAST(qa_rating AS FLOAT64) qa, evaluation_report_url rep, audio_file_url aud, transcript_url tr, grooming_check_remarks groom FROM ${ref(DA, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")} AND session_title IS NOT NULL ORDER BY session_start_datetime DESC LIMIT 8`),
+    // Session stats — completion + flag-rate + delivery-mode split.
+    one(`SELECT COUNT(*) total, COUNTIF(UPPER(session_status) = 'COMPLETED') completed, COUNTIF(LOWER(flag_status) = 'flagged') flagged, COUNTIF(flag_status IS NOT NULL) flagTotal, COUNTIF(UPPER(mode_of_delivery) = 'OFFLINE') offline, COUNTIF(UPPER(mode_of_delivery) = 'ONLINE') online FROM ${ref(DA, "niat_sessions_wise_summary_details")} WHERE ${whereU("instructor_user_id")}`),
+    // Instructor's OWN training completion (their course units).
+    one(`SELECT AVG(SAFE_CAST(completion_percentage AS FLOAT64)) pct, COUNTIF(UPPER(completion_status) = 'COMPLETED') done, COUNT(*) total FROM ${ref(DA, "niat_instructor_unit_wise_completion_and_best_attempt_details")} WHERE ${whereU("instructor_user_id")}`),
+    // Instructor's OWN practice-exam performance.
+    one(`SELECT AVG(SAFE_CAST(exam_attempt_percentage_score AS FLOAT64)) avg, COUNTIF(UPPER(examattempt_evaluation_result) = 'CORRECT') correct, COUNT(*) attempts FROM ${ref(DA, "niat_instructor_pracitce_exam_assessment_and_question_set_all_attempt_details")} WHERE ${whereU("instructor_user_id")}`),
+    // Pre-lecture readiness checks.
+    one(`SELECT AVG(SAFE_CAST(total_items_checked AS FLOAT64)) avgItems, COUNT(DISTINCT session_section_id) sessions FROM ${ref(DR, "niat_pre_lecture_readiness_check_list_details")} WHERE ${whereU("instructor_user_id")}`),
+    // Upcoming (future) scheduled sessions.
+    one(`SELECT COUNT(*) n FROM ${ref(DA, "niat_instructor_session_schedule_details")} WHERE ${whereU("instructor_user_id")} AND session_start_datetime > CURRENT_DATETIME()`),
   ]);
 
   const scorecard = sc && (bqNum(sc.o) != null || bqNum(sc.l) != null) ? { overall: bqNum(sc.o), lecture: bqNum(sc.l), practice: bqNum(sc.p), max: bqNum(sc.m) } : null;
   const feedback = fb && (bqNum(fb.s) != null || bqNum(fb.tq) != null || bqNum(fb.ls) != null) ? { studentScore: bqNum(fb.s), teachingQuality: bqNum(fb.tq), guidanceClarity: bqNum(fb.gc), understanding: bqNum(fb.u), lectureSessions: bqNum(fb.ls), practiceSessions: bqNum(fb.ps) } : null;
-  const qaOut = qa && bqNum(qa.n) ? { avgRating: bqNum(qa.avg), sessions: bqNum(qa.n) } : null;
+
+  // QA — overall (weighted) + per-type from the by-type rows.
+  const qaRows = qat.map((r) => ({ et: String(cellValue(r.et) || "").toUpperCase(), a: bqNum(r.a), n: bqNum(r.n) || 0, cat: r.cat }));
+  const qaTotalN = qaRows.reduce((s, r) => s + r.n, 0);
+  const qaWeighted = qaRows.reduce((s, r) => s + (r.a != null ? r.a * r.n : 0), 0);
+  const qaByType = (t: string) => { const r = qaRows.find((x) => x.et === t); return r ? r.a : null; };
+  const qaOut = qaTotalN ? { avgRating: qaWeighted / qaTotalN, sessions: qaTotalN, live: qaByType("SCHEDULE"), mock: qaByType("MOCK"), demo: qaByType("DEMO") } : null;
+
   const demos = demo && (bqNum(demo.s) != null || bqNum(demo.t) != null) ? { scheduled: bqNum(demo.s), taken: bqNum(demo.t), pending: bqNum(demo.p), avgRating: bqNum(demo.r) } : null;
-  const assessments = (coding && bqNum(coding.v) != null) || (mcq && bqNum(mcq.v) != null) ? { codingScore: coding ? bqNum(coding.v) : null, mcqScore: mcq ? bqNum(mcq.v) : null } : null;
+  const assessments = (coding && bqNum(coding.v) != null) || (mcq && bqNum(mcq.v) != null) || (exam && bqNum(exam.avg) != null)
+    ? { codingScore: coding ? bqNum(coding.v) : null, mcqScore: mcq ? bqNum(mcq.v) : null, examScore: exam ? bqNum(exam.avg) : null, examAttempts: exam ? bqNum(exam.attempts) : null } : null;
   const sessionsSummary = ss && (bqNum(ss.g) != null || bqNum(ss.p) != null) ? { grooming: bqNum(ss.g), performance: bqNum(ss.p) } : null;
   const context = ctx && (bqStr(ctx.role) || bqStr(ctx.mgr) || bqStr(ctx.inst)) ? { role: bqStr(ctx.role), category: bqStr(ctx.cat), manager: bqStr(ctx.mgr), managerMail: bqStr(ctx.mail), institute: bqStr(ctx.inst) } : null;
+  const sessionStats = sstat && bqNum(sstat.total) ? { total: bqNum(sstat.total) || 0, completed: bqNum(sstat.completed) || 0, flagged: bqNum(sstat.flagged) || 0, flagTotal: bqNum(sstat.flagTotal) || 0, offline: bqNum(sstat.offline) || 0, online: bqNum(sstat.online) || 0 } : null;
+  const ownTraining = train && bqNum(train.pct) != null ? { completionPct: bqNum(train.pct), unitsDone: bqNum(train.done), unitsTotal: bqNum(train.total) } : null;
+  const readiness = ready && (bqNum(ready.avgItems) != null && bqNum(ready.sessions)) ? { avgItems: bqNum(ready.avgItems), sessions: bqNum(ready.sessions) } : null;
+  const upcomingSessions = up ? bqNum(up.n) : null;
 
   const sMap: Record<string, number> = {};
   for (const r of sent) sMap[String(cellValue(r.s) || "").toLowerCase()] = bqNum(r.c) || 0;
   const sentiment = (sMap.positive || sMap.negative || sMap.neutral) ? { positive: sMap.positive || 0, negative: sMap.negative || 0, neutral: sMap.neutral || 0 } : null;
+  const feedbackThemes = themes.map((r) => ({ category: bqStr(r.cat) || "", count: bqNum(r.c) || 0 })).filter((t) => t.category);
   const comments = comm.map((r) => ({ text: bqStr(r.t) || "", sentiment: bqStr(r.se), category: bqStr(r.cat), session: bqStr(r.sess) })).filter((c) => c.text);
-  const recentSessions = sess.map((r) => ({ title: bqStr(r.title) || "", type: bqStr(r.type), date: bqStr(r.dt), status: bqStr(r.status), teachingQuality: bqNum(r.tq), qaRating: bqNum(r.qa) })).filter((s) => s.title);
+  const recentSessions = sess.map((r) => ({ title: bqStr(r.title) || "", type: bqStr(r.type), date: bqStr(r.dt), status: bqStr(r.status), teachingQuality: bqNum(r.tq), qaRating: bqNum(r.qa), reportUrl: bqStr(r.rep), audioUrl: bqStr(r.aud), transcriptUrl: bqStr(r.tr), groomingRemark: bqStr(r.groom) })).filter((s) => s.title);
 
-  const category = (context && context.category) || (qa && qa.cat ? bqStr(qa.cat) : null) || (demo && demo.cat ? bqStr(demo.cat) : null) || null;
-  const found = Boolean(scorecard || feedback || qaOut || demos || assessments || sessionsSummary || context || sentiment || comments.length || recentSessions.length);
+  const category = (context && context.category) || (qaRows.find((r) => r.cat)?.cat ? bqStr(qaRows.find((r) => r.cat)!.cat) : null) || (demo && demo.cat ? bqStr(demo.cat) : null) || null;
+  const found = Boolean(scorecard || feedback || qaOut || demos || assessments || sessionsSummary || context || sessionStats || ownTraining || readiness || sentiment || feedbackThemes.length || comments.length || recentSessions.length);
 
-  const result: TeachosMetrics = { ok: true, configured: true, found, category, context, scorecard, feedback, qa: qaOut, demos, assessments, sessionsSummary, sentiment, comments, recentSessions };
+  const result: TeachosMetrics = { ok: true, configured: true, found, category, context, scorecard, feedback, qa: qaOut, demos, assessments, sessionsSummary, sessionStats, ownTraining, readiness, upcomingSessions, sentiment, feedbackThemes, comments, recentSessions };
   teachosCache.set(key, { at: Date.now(), data: result });
   return result;
 }
