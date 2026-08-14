@@ -21,9 +21,11 @@ export const config = {
     // above, just a different table name (see lib/teachosBigQuery.ts).
     teachosTable: process.env.BIGQUERY_TEACHOS_TABLE || "",
   },
-  // Google Drive — certificate uploads land in this (Shared Drive) folder, using the same
-  // service-account credentials as BigQuery. Files are made "anyone with the link (viewer)".
-  googleCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
+  // Google Drive — certificate uploads land in this (Shared Drive) folder. Prefer a DEDICATED
+  // Drive service account (GDRIVE_CREDENTIALS) so certificates use our own Cloud project and don't
+  // depend on the BigQuery project's account; fall back to the BigQuery credential if unset.
+  // Files are made "anyone with the link (viewer)".
+  googleCredentials: process.env.GDRIVE_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
   driveCertFolderId: process.env.GDRIVE_CERTIFICATES_FOLDER_ID || "",
   // Mistral (OpenAI-compatible) — powers the Dashboard AI assistant. Model supports tool-calling;
   // all data access is role-scoped server-side. When MISTRAL_API_KEY is unset the assistant

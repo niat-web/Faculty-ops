@@ -3,8 +3,9 @@ import path from "path";
 import { GoogleAuth } from "google-auth-library";
 import { config } from "../config";
 
-// Google Drive uploads for certificate files. Uses the SAME service account as BigQuery
-// (GOOGLE_APPLICATION_CREDENTIALS) with the Drive scope, and drops every file into one
+// Google Drive uploads for certificate files. Uses a dedicated Drive service account
+// (GDRIVE_CREDENTIALS, falling back to GOOGLE_APPLICATION_CREDENTIALS) with the Drive scope,
+// and drops every file into one
 // Shared-Drive folder (GDRIVE_CERTIFICATES_FOLDER_ID), then makes it "anyone with the link (viewer)"
 // so the stored link opens for anyone. A service account can only write into a Shared Drive it is a
 // member of (add the SA email as a Content manager), which is why a Shared Drive folder is required.
@@ -51,7 +52,7 @@ export type DriveFile = { id: string; link: string };
 
 // Upload a buffer to the certificates folder and return its shareable link.
 export async function uploadCertificate(buffer: Buffer, filename: string, mimeType: string): Promise<DriveFile> {
-  if (!driveConfigured()) throw new Error("Google Drive isn't configured (set GOOGLE_APPLICATION_CREDENTIALS + GDRIVE_CERTIFICATES_FOLDER_ID, and add the service account to the Shared Drive).");
+  if (!driveConfigured()) throw new Error("Google Drive isn't configured (set GDRIVE_CREDENTIALS + GDRIVE_CERTIFICATES_FOLDER_ID, and add the service account to the Shared Drive).");
   const token = await accessToken();
   const folderId = config.driveCertFolderId;
 
