@@ -63,9 +63,33 @@ router.get("/employee-search", formGate, async (req, res) => {
 // (from the schema answers) so the profile display + queries keep working across old and new schemas.
 const LEGACY_KEYS = new Set(["employeeId", "fullName", "email", "department", "capabilityManagerName", "degreeType", "highestQualification", "domain", "yearOfPassing", "odHave", "odExpected", "odLink", "cmmHave", "cmmExpected", "cmmLink", "pcHave", "pcExpected", "pcLink", "remarks"]);
 
+// Upload the FILE fields to Drive in the BACKGROUND (after the response is sent) and patch the saved
+// record as each finishes: on success write the Drive link into `answers` + mark the upload "done";
+// on failure mark it "failed" so it stays visible/retriable. The submission itself is already durably
+// in Mongo before this runs, so nothing is lost — only the file link is deferred by a few seconds.
+function uploadFilesInBackground(docId: string, jobs: { key: string; file: any }[]) {
+  for (const { key, file } of jobs) {
+    (async () => {
+      try {
+        const { link } = await uploadCertificate(file.buffer, file.originalname || key, file.mimetype || "application/octet-stream");
+        await Certification.updateOne(
+          { _id: docId },
+          { $set: { [`answers.${key}`]: link, [`uploads.${key}`]: { status: "done", name: file.originalname || key } } }
+        );
+      } catch (e: any) {
+        await Certification.updateOne(
+          { _id: docId },
+          { $set: { [`uploads.${key}`]: { status: "failed", name: file.originalname || key, error: String(e?.message || "Drive error").slice(0, 300) } } }
+        ).catch(() => { /* record already saved; best-effort status */ });
+      }
+    })();
+  }
+}
+
 // Submit a response — schema-driven. Text answers come in the body by field key; FILE fields arrive as
-// uploads (field name = the field key). Files go to Drive; only the links are stored. Everything lands
-// in Certification.answers (+ mirrored to the legacy columns for known keys).
+// uploads (field name = the field key). We SAVE the record immediately and respond "Submitted" right
+// away, then upload the files to Drive in the BACKGROUND (see uploadFilesInBackground) so the submitter
+// never waits on the slow Drive upload. Only the Drive links are stored (never the file bytes).
 router.post("/submit", formGate, uploadAny, async (req, res) => {
   const { getCertSchema } = await import("../lib/settings");
   const schema = await getCertSchema();
@@ -75,19 +99,17 @@ router.post("/submit", formGate, uploadAny, async (req, res) => {
   for (const f of files) if (f?.fieldname && !fileByKey.has(f.fieldname)) fileByKey.set(f.fieldname, f);
 
   const answers: Record<string, string> = {};
-  let warning: string | undefined;
+  const uploads: Record<string, any> = {};
+  const jobs: { key: string; file: any }[] = [];
   for (const field of schema.fields) {
     if (field.type === "FILE") {
       const f = fileByKey.get(field.key);
       if (!f) continue;
+      // Validate the file bytes NOW (cheap magic-byte check) so bad files are rejected before we save.
       const issue = validateUploadBuffer(f.buffer, f.mimetype || "");
       if (issue) return res.status(400).json({ error: `${field.label}: ${issue}` });
-      try {
-        const { link } = await uploadCertificate(f.buffer, f.originalname || field.key, f.mimetype || "application/octet-stream");
-        answers[field.key] = link;
-      } catch (e: any) {
-        warning = `Your details were saved, but a file upload failed: ${e?.message || "Drive error"}.`;
-      }
+      uploads[field.key] = { status: "uploading", name: f.originalname || field.key };
+      jobs.push({ key: field.key, file: f });
     } else {
       const v = clean(b[field.key]);
       if (v) answers[field.key] = v;
@@ -105,8 +127,11 @@ router.post("/submit", formGate, uploadAny, async (req, res) => {
     employeeId: answers.employeeId || "NA",
     ...legacy,
     answers,
+    uploads,
   });
-  res.json({ ok: true, id: String(doc._id), warning });
+  // Respond immediately — the files upload in the background and patch this record when done.
+  res.json({ ok: true, id: String(doc._id) });
+  if (jobs.length) uploadFilesInBackground(String(doc._id), jobs);
 });
 
 // ── Admin (Ops) ─────────────────────────────────────────────────────
@@ -183,7 +208,11 @@ router.get("/for-employee/:employeeId", requireUser(), staffOnly, async (req, re
   const rows = await Certification.find({ employeeId }).sort({ createdAt: -1 }).lean();
   const items = rows.map((c) => {
     const s = serialize(c);
-    const files = fileFields.map((f) => ({ label: f.label, url: s.answers[f.key] })).filter((x) => x.url);
+    // Include files that are still uploading / failed (no url yet) so the profile can show status,
+    // not just finished ones with a Drive link.
+    const files = fileFields
+      .map((f) => ({ label: f.label, url: s.answers[f.key] || "", status: (s.uploads as any)?.[f.key]?.status || (s.answers[f.key] ? "done" : "") }))
+      .filter((x) => x.url || x.status);
     return { ...s, files };
   });
   res.json({ items });
@@ -235,7 +264,8 @@ function serialize(c: any) {
   const legacy: Record<string, string> = {};
   for (const k of LEGACY_KEYS) { const v = c[k]; if (v) legacy[k] = String(v); }
   const answers = { ...legacy, ...(c.answers instanceof Map ? Object.fromEntries(c.answers.entries()) : (c.answers || {})) };
-  return { id: String(c._id), employeeId: c.employeeId || answers.employeeId || "", createdAt: c.createdAt, answers };
+  const uploads = c.uploads instanceof Map ? Object.fromEntries(c.uploads.entries()) : (c.uploads || {});
+  return { id: String(c._id), employeeId: c.employeeId || answers.employeeId || "", createdAt: c.createdAt, answers, uploads };
 }
 
 async function buildAnswersFromRequest(schema: any, body: any, files: any[], existing: Record<string, string> = {}) {

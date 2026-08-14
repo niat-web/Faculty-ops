@@ -406,6 +406,14 @@ const CertificationSchema = new Schema(
     // FILE fields store their Drive link here. New submissions use this; the legacy columns above are
     // kept for older data + backward-compatible reads.
     answers: { type: Map, of: String, default: {} },
+    // Per-FILE-field upload status. The public form saves the record immediately and uploads files to
+    // Drive in the BACKGROUND, so a file starts as "uploading" (link not yet in `answers`), then flips
+    // to "done" (link written) or "failed" (error). Keyed by field key.
+    uploads: {
+      type: Map,
+      of: new Schema({ status: String, name: String, error: String }, { _id: false }),
+      default: {},
+    },
   },
   { timestamps: true }
 );

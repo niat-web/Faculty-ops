@@ -464,7 +464,7 @@ export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onC
     api.get(`/certifications/for-employee/${encodeURIComponent(employeeId)}`).then((r) => setCerts(r.items || [])).catch(() => setCerts([]));
   }, [employeeId]);
   // Certificate file links come from the schema's FILE fields (labels + Drive urls) per submission.
-  const certLinks = certs.flatMap((c: any) => (c.files || []).map((fl: any) => ({ name: fl.label, url: fl.url, when: c.createdAt })));
+  const certLinks = certs.flatMap((c: any) => (c.files || []).map((fl: any) => ({ name: fl.label, url: fl.url, status: fl.status, when: c.createdAt })));
   async function upload() {
     if (!file) return;
     const form = new FormData(); form.append("file", file); form.append("name", docName.trim() || file.name);
@@ -508,7 +508,13 @@ export function DocumentsTab({ documents, instructorId, employeeId, canEdit, onC
               <li key={i} className="flex items-center gap-3 py-2.5 text-sm">
                 <FileText className="h-4 w-4 text-slate-400" />
                 <div className="min-w-0 flex-1"><div className="truncate font-medium text-slate-700">{c.name}</div><div className="text-[11px] text-slate-400">Submitted {new Date(c.when).toLocaleDateString()}</div></div>
-                <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-brand-600 hover:bg-brand-50 hover:underline">View <Download className="h-3.5 w-3.5" /></a>
+                {c.url ? (
+                  <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-brand-600 hover:bg-brand-50 hover:underline">View <Download className="h-3.5 w-3.5" /></a>
+                ) : c.status === "failed" ? (
+                  <span className="inline-flex items-center rounded-lg bg-red-50 px-2 py-1 text-[11px] font-medium text-red-600">Upload failed</span>
+                ) : (
+                  <span className="inline-flex items-center rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-600">Uploading…</span>
+                )}
               </li>
             ))}
           </ul>
