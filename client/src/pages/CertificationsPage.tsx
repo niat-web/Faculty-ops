@@ -131,13 +131,13 @@ export default function CertificationsPage() {
         <div className="table-shell-header border-b border-slate-100 px-5 py-3 text-sm font-medium text-slate-500">
           {items === null ? "Loading…" : `${filtered.length} submission(s)`}
         </div>
-        <div className="data-grid-scroll">
+        <div className="data-grid-scroll max-h-[calc(100vh-210px)] overflow-y-auto">
           <table className="data-grid-table whitespace-nowrap">
             <thead className="table-head-row bg-gray-50 text-left">
               <tr>
-                {fields.map((f) => <th key={f.id} className="table-head-cell">{f.label}</th>)}
-                <th className="table-head-cell">Submitted</th>
-                <th className="sticky right-0 z-10 table-head-cell border-l border-slate-100 bg-gray-50">Actions</th>
+                {fields.map((f) => <th key={f.id} className="sticky top-0 z-10 table-head-cell bg-gray-50">{f.label}</th>)}
+                <th className="sticky top-0 z-10 table-head-cell bg-gray-50">Submitted</th>
+                <th className="sticky right-0 top-0 z-20 table-head-cell border-l border-slate-100 bg-gray-50">Actions</th>
               </tr>
             </thead>
             <tbody>
