@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users2, GitBranch, GitPullRequest, Bell, UserCog, ScrollText,
   BarChart3, BookOpen, Award, LogOut, ChevronDown, UserCircle, Settings as SettingsIcon,
-  Database, Menu, X, CheckSquare, FileText, GraduationCap, Archive,
+  Database, Menu, X, CheckSquare, FileText, GraduationCap, Archive, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL } from "../auth";
 import { api } from "../api";
@@ -12,6 +12,8 @@ import { Wordmark } from "./Logo";
 const STAFF = ["SUPER_ADMIN", "OPS_ADMIN", "SENIOR_MANAGER", "CAPABILITY_MANAGER"];
 const ADMIN = ["SUPER_ADMIN", "OPS_ADMIN"];
 const SIDEBAR_W = 240;
+const RAIL_W = 64;               // collapsed (icon-only) width
+const COLLAPSE_KEY = "fo_sidebar_collapsed";
 
 const NAV_SECTIONS: any[] = [
   {
@@ -63,9 +65,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => { try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0"); } catch { /* ignore */ } }, [collapsed]);
 
   useEffect(() => {
     if (!user) return;
@@ -104,11 +110,24 @@ export default function AppShell({ children }: { children: ReactNode }) {
     .map((s) => ({ ...s, items: s.items.filter((n: any) => !n.roles || n.roles.includes(user.role)) }))
     .filter((s) => s.items.length);
 
-  const renderItem = (n: any) => {
+  // `mini` = icon-only rail. When collapsed, a group icon expands the sidebar and opens that group.
+  const renderItem = (n: any, mini: boolean) => {
     if (n.children) {
       const children = n.children.filter((c: any) => !c.roles || c.roles.includes(user.role));
       const childActive = children.some((c: any) => location.pathname.startsWith(c.to));
       const open = openGroups[n.label] ?? childActive;
+      if (mini) {
+        return (
+          <button
+            key={n.label}
+            title={n.label}
+            onClick={() => { setCollapsed(false); setOpenGroups((g) => ({ ...g, [n.label]: true })); }}
+            className={`nav-link justify-center ${childActive ? "nav-link-active" : ""}`}
+          >
+            <n.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
+          </button>
+        );
+      }
       return (
         <div key={n.label}>
           <button
@@ -123,12 +142,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div className="overflow-hidden">
               <div className="space-y-0.5 py-1">
                 {children.map((c: any) => (
-                  <NavLink
-                    key={c.to}
-                    to={c.to}
-                    end={c.end}
-                    className={({ isActive }) => `nav-sublink ${isActive ? "nav-sublink-active" : ""}`}
-                  >
+                  <NavLink key={c.to} to={c.to} end={c.end} className={({ isActive }) => `nav-sublink ${isActive ? "nav-sublink-active" : ""}`}>
                     {c.label}
                   </NavLink>
                 ))}
@@ -143,38 +157,53 @@ export default function AppShell({ children }: { children: ReactNode }) {
         key={n.to}
         to={n.to}
         end={n.end}
-        className={({ isActive }) => `nav-link ${isActive ? "nav-link-active" : ""}`}
+        title={mini ? n.label : undefined}
+        className={({ isActive }) => `nav-link ${mini ? "justify-center relative" : ""} ${isActive ? "nav-link-active" : ""}`}
       >
         <n.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-        <span className="flex-1">{n.label}</span>
+        {!mini && <span className="flex-1">{n.label}</span>}
         {n.badge && pendingRequests > 0 && (
-          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">{pendingRequests}</span>
+          mini
+            ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand-500" />
+            : <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">{pendingRequests}</span>
         )}
         {n.badgeTasks && openTasks > 0 && (
-          <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{openTasks}</span>
+          mini
+            ? <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500" />
+            : <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{openTasks}</span>
         )}
       </NavLink>
     );
   };
 
-  const sidebar = (
+  const renderSidebar = (mini: boolean) => (
     <aside
-      className="flex h-full flex-col overflow-visible bg-slate-900"
-      style={{ width: SIDEBAR_W }}
+      className="flex h-full flex-col overflow-visible bg-slate-900 transition-[width] duration-200"
+      style={{ width: mini ? RAIL_W : SIDEBAR_W }}
     >
-      <div className="border-b border-slate-700/80 px-4 py-4">
-        <Link to="/app" title="FacultyOps">
-          <Wordmark logoSize={32} dark />
-        </Link>
+      <div className={`flex items-center border-b border-slate-700/80 py-4 ${mini ? "justify-center px-2" : "justify-between px-4"}`}>
+        {!mini && (
+          <Link to="/app" title="FacultyOps">
+            <Wordmark logoSize={32} dark />
+          </Link>
+        )}
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          title={mini ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={mini ? "Expand sidebar" : "Collapse sidebar"}
+          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+        >
+          {mini ? <PanelLeftOpen className="h-5 w-5" strokeWidth={1.75} /> : <PanelLeftClose className="h-5 w-5" strokeWidth={1.75} />}
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-2 py-3">
         {sections.map((s, i) => (
-          <div key={s.label || `sec-${i}`} className={i > 0 ? "pt-4" : ""}>
-            {s.label && (
+          <div key={s.label || `sec-${i}`} className={i > 0 ? (mini ? "mt-3 border-t border-slate-700/60 pt-3" : "pt-4") : ""}>
+            {s.label && !mini && (
               <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{s.label}</div>
             )}
-            <div className="space-y-0.5">{s.items.map(renderItem)}</div>
+            <div className="space-y-0.5">{s.items.map((n: any) => renderItem(n, mini))}</div>
           </div>
         ))}
       </nav>
@@ -184,27 +213,31 @@ export default function AppShell({ children }: { children: ReactNode }) {
           href={`/docs?role=${encodeURIComponent(user.role)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="nav-link"
+          title={mini ? "Documentation" : undefined}
+          className={`nav-link ${mini ? "justify-center" : ""}`}
         >
           <FileText className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-          <span className="flex-1">Documentation</span>
+          {!mini && <span className="flex-1">Documentation</span>}
         </a>
       </div>
 
       <div ref={menuRef} className="relative shrink-0 border-t border-slate-700/80 p-3">
         <button
           onClick={() => setMenuOpen((o) => !o)}
-          className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-slate-800 ${menuOpen ? "bg-slate-800" : ""}`}
+          title={mini ? user.name : undefined}
+          className={`flex w-full items-center rounded-md text-left transition-colors hover:bg-slate-800 ${mini ? "justify-center p-1.5" : "gap-2.5 px-2 py-2"} ${menuOpen ? "bg-slate-800" : ""}`}
         >
           <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white">
             {user.name.charAt(0).toUpperCase()}
             {unread > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-brand-500" />}
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-white">{user.name}</div>
-            <div className="truncate text-[11px] font-medium text-slate-400">{ROLE_LABEL[user.role]}</div>
-          </div>
-          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${menuOpen ? "rotate-180" : ""}`} strokeWidth={1.75} />
+          {!mini && <>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-white">{user.name}</div>
+              <div className="truncate text-[11px] font-medium text-slate-400">{ROLE_LABEL[user.role]}</div>
+            </div>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${menuOpen ? "rotate-180" : ""}`} strokeWidth={1.75} />
+          </>}
         </button>
 
         {/* Popover opens to the RIGHT of the sidebar (Veytrix-style), not stacked inside it */}
@@ -241,7 +274,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-slate-100" style={{ ["--sb" as any]: `${collapsed ? RAIL_W : SIDEBAR_W}px` }}>
       {/* Mobile top bar */}
       <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 md:hidden">
         <button onClick={() => setMobileOpen(true)} className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Open menu">
@@ -250,12 +283,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <Wordmark logoSize={28} dark={false} />
       </header>
 
-      {/* Mobile overlay + sidebar */}
+      {/* Mobile overlay + sidebar (always expanded on mobile) */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-slate-900/60" onClick={() => setMobileOpen(false)} />
           <div className="absolute inset-y-0 left-0 flex shadow-xl">
-            {sidebar}
+            {renderSidebar(false)}
             <button onClick={() => setMobileOpen(false)} className="absolute right-[-44px] top-3 rounded-md bg-white/10 p-2 text-white" aria-label="Close menu">
               <X className="h-5 w-5" strokeWidth={1.75} />
             </button>
@@ -264,14 +297,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
       )}
 
       {/* Desktop sidebar */}
-      <div className="fixed top-0 left-0 z-30 hidden h-screen md:block">{sidebar}</div>
+      <div className="fixed top-0 left-0 z-30 hidden h-screen md:block">{renderSidebar(collapsed)}</div>
 
       {/* Main content */}
-      <main
-        className="min-h-screen bg-white pt-14 md:pt-0"
-        style={{ paddingLeft: undefined }}
-      >
-        <div className="md:pl-[240px]">
+      <main className="min-h-screen bg-white pt-14 md:pt-0">
+        <div className="transition-[padding] duration-200 md:pl-[var(--sb)]">
           <div className="px-4 py-5 sm:px-6 lg:px-8">{children}</div>
         </div>
       </main>
