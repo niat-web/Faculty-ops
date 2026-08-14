@@ -9,6 +9,7 @@ import { isAbort } from "../hooks";
 import SearchInput from "../components/SearchInput";
 import MultiSelect from "../components/MultiSelect";
 import RowActionsMenu from "../components/RowActionsMenu";
+import Pagination from "../components/Pagination";
 import { SkeletonRows } from "../components/scaffold";
 import type { CertSchema } from "../certForm";
 
@@ -26,6 +27,8 @@ export default function CertificationsPage() {
   const [applied, setApplied] = useState<Filters>(EMPTY);
   const [draft, setDraft] = useState<Filters>(EMPTY);
   const [drawer, setDrawer] = useState(false);
+  const [page, setPage] = useState(1);
+  const [per, setPer] = useState(100);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -81,6 +84,13 @@ export default function CertificationsPage() {
       return hay.includes(needle);
     });
   }, [items, q, applied, fields]);
+
+  // Client-side pagination over the filtered rows.
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / per));
+  useEffect(() => { setPage(1); }, [q, applied, per]);           // any filter/search/size change → back to page 1
+  useEffect(() => { if (page > pages) setPage(pages); }, [page, pages]);
+  const pageItems = useMemo(() => filtered.slice((page - 1) * per, page * per), [filtered, page, per]);
 
   const activeCount = (applied.department.length ? 1 : 0) + (applied.from ? 1 : 0) + (applied.to ? 1 : 0);
   const openDrawer = () => { setDraft(applied); setDrawer(true); };
@@ -142,7 +152,7 @@ export default function CertificationsPage() {
             </thead>
             <tbody>
               {items === null ? <SkeletonRows rows={10} cols={(fields.length || 6) + 2} cellClass="table-body-cell" /> : <>
-                {filtered.map((c) => (
+                {pageItems.map((c) => (
                   <tr key={c.id} className="table-body-row group">
                     {fields.map((f) => {
                       const v = c.answers?.[f.key] || "";
@@ -168,6 +178,7 @@ export default function CertificationsPage() {
             </tbody>
           </table>
         </div>
+        {items !== null && <Pagination page={page} pages={pages} per={per} total={total} onPage={setPage} onPer={setPer} />}
       </div>
 
       {drawer && (
